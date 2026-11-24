@@ -108,6 +108,11 @@ General > No Strumming On Gamepads** (on by default). It gives the profile the *
 modifier and the *Casual* engine preset, both of which you can see and change on the screen
 before a song. Turn the setting off to play with strums (D-pad up / down) like on a guitar.
 
+**Which button is which fret.** During a song, each fret on the highway has the controller button
+that plays it shown just under it, in the fret's color: L2, L1, R1, R2 and Cross with the Guitar
+Hero 2 layout, or whatever the profile has bound. It follows **Settings > General > Show
+Controller Buttons** and only appears for a player with a gamepad.
+
 **Difficulty and what the notes look like.** New profiles start on **Easy**: colored notes on
 three frets, like Guitar Hero and Rock Band. **Beginner** is different on purpose: every note is a
 rainbow bar across the whole track, meaning "strum, any fret". Pick the difficulty on the screen

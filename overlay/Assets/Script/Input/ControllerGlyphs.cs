@@ -17,7 +17,8 @@ namespace YARG.Input
         private const int SIZE = 96;
         private const float DISC_RADIUS = 46f;
 
-        private static readonly Dictionary<(ControllerLayoutType, PadButton), Sprite> _cache = new();
+        // Keyed by what is drawn: "#S" / "#E" / "#N" / "#W" for the PlayStation shapes, otherwise the letters
+        private static readonly Dictionary<string, Sprite> _cache = new();
 
         // 5x7 letters, top row first
         private static readonly Dictionary<char, string[]> _font = new()
@@ -29,6 +30,9 @@ namespace YARG.Input
             ['X'] = new[] { "10001", "10001", "01010", "00100", "01010", "10001", "10001" },
             ['Y'] = new[] { "10001", "10001", "01010", "00100", "00100", "00100", "00100" },
             ['1'] = new[] { "00100", "01100", "00100", "00100", "00100", "00100", "01110" },
+            ['2'] = new[] { "01110", "10001", "00001", "00010", "00100", "01000", "11111" },
+            ['T'] = new[] { "11111", "00100", "00100", "00100", "00100", "00100", "00100" },
+            ['Z'] = new[] { "11111", "00001", "00010", "00100", "01000", "10000", "11111" },
         };
 
         /// <summary>
@@ -49,42 +53,95 @@ namespace YARG.Input
                 return null;
             }
 
-            var key = (ControllerLayout.Current, button);
+            return GetByKey(KeyFor(ControllerLayout.Current, button, false));
+        }
+
+        public static bool HasSprite(MenuAction action) => GetSprite(action) != null;
+
+        /// <summary>
+        /// The icon for a control of a gamepad (a face button, shoulder button or trigger), named the way
+        /// the controller chosen in Controller Layout names it, or null for anything else (sticks,
+        /// D-pad, other kinds of device). Used to label the frets during a song.
+        /// </summary>
+        public static Sprite GetSpriteForControl(UnityEngine.InputSystem.InputControl control)
+        {
+            if (control?.device is not UnityEngine.InputSystem.Gamepad pad)
+            {
+                return null;
+            }
+
+            var layout = ControllerLayout.Current;
+            string key =
+                control == pad.buttonSouth ? KeyFor(layout, PadButton.South, false) :
+                control == pad.buttonEast ? KeyFor(layout, PadButton.East, false) :
+                control == pad.buttonNorth ? KeyFor(layout, PadButton.North, false) :
+                control == pad.buttonWest ? KeyFor(layout, PadButton.West, false) :
+                control == pad.leftShoulder ? KeyFor(layout, PadButton.LeftShoulder, true) :
+                control == pad.rightShoulder ? KeyFor(layout, PadButton.RightShoulder, true) :
+                control == pad.leftTrigger ? TriggerKey(layout, true) :
+                control == pad.rightTrigger ? TriggerKey(layout, false) :
+                null;
+
+            return key != null ? GetByKey(key) : null;
+        }
+
+        private static string TriggerKey(ControllerLayoutType layout, bool left) => layout switch
+        {
+            ControllerLayoutType.Xbox => left ? "LT" : "RT",
+            ControllerLayoutType.Nintendo => left ? "ZL" : "ZR",
+            _ => left ? "L2" : "R2",
+        };
+
+        // What to draw for a button: a PlayStation shape, or letters. "exactSide" names the right
+        // shoulder as itself (R1); without it both shoulders share the left one's icon, as in the menus.
+        private static string KeyFor(ControllerLayoutType layout, PadButton button, bool exactSide)
+        {
+            bool playStation = layout is ControllerLayoutType.PlayStation or ControllerLayoutType.PlayStationJapan;
+            bool right = exactSide && button == PadButton.RightShoulder;
+
+            if (button is PadButton.LeftShoulder or PadButton.RightShoulder)
+            {
+                return layout switch
+                {
+                    ControllerLayoutType.Xbox => right ? "RB" : "LB",
+                    ControllerLayoutType.Nintendo => right ? "R" : "L",
+                    _ => right ? "R1" : "L1",
+                };
+            }
+
+            if (playStation)
+            {
+                return button switch
+                {
+                    PadButton.South => "#S", PadButton.East => "#E", PadButton.North => "#N", _ => "#W",
+                };
+            }
+
+            return layout == ControllerLayoutType.Xbox
+                ? button switch { PadButton.South => "A", PadButton.East => "B", PadButton.North => "Y", _ => "X" }
+                : button switch { PadButton.South => "B", PadButton.East => "A", PadButton.North => "X", _ => "Y" };
+        }
+
+        private static Sprite GetByKey(string key)
+        {
             if (_cache.TryGetValue(key, out var sprite) && sprite != null)
             {
                 return sprite;
             }
 
-            sprite = Build(key.Item1, button);
+            sprite = Build(key);
             _cache[key] = sprite;
             return sprite;
         }
 
-        public static bool HasSprite(MenuAction action) => GetSprite(action) != null;
-
-        private static Sprite Build(ControllerLayoutType layout, PadButton button)
+        private static Sprite Build(string key)
         {
-            bool playStation = layout is ControllerLayoutType.PlayStation or ControllerLayoutType.PlayStationJapan;
-
             // What to cut out of the disc: a PlayStation shape, or letters
-            string text = null;
-            if (!playStation || button == PadButton.LeftShoulder)
+            string text = key.StartsWith("#") ? null : key;
+            var button = key switch
             {
-                text = layout switch
-                {
-                    ControllerLayoutType.Xbox => button switch
-                    {
-                        PadButton.South => "A", PadButton.East => "B", PadButton.North => "Y", PadButton.West => "X",
-                        _ => "LB",
-                    },
-                    ControllerLayoutType.Nintendo => button switch
-                    {
-                        PadButton.South => "B", PadButton.East => "A", PadButton.North => "X", PadButton.West => "Y",
-                        _ => "L",
-                    },
-                    _ => "L1",
-                };
-            }
+                "#S" => PadButton.South, "#E" => PadButton.East, "#N" => PadButton.North, _ => PadButton.West,
+            };
 
             var pixels = new Color32[SIZE * SIZE];
             float center = (SIZE - 1) / 2f;
@@ -105,7 +162,7 @@ namespace YARG.Input
 
             var texture = new Texture2D(SIZE, SIZE, TextureFormat.RGBA32, false)
             {
-                name = $"ControllerGlyph_{layout}_{button}",
+                name = $"ControllerGlyph_{key}",
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp,
                 hideFlags = HideFlags.HideAndDontSave,
