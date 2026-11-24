@@ -132,10 +132,43 @@ namespace YARG.Input
             return null;
         }
 
-        /// <summary>Shows controller button names in the help bar while a gamepad is connected.</summary>
-        public static bool ShowButtonNames =>
-            SettingsManager.Settings != null &&
-            SettingsManager.Settings.ShowControllerButtonNames.Value &&
-            Gamepad.all.Count > 0;
+        /// <summary>
+        /// Shows the controller's own buttons (symbols and names) next to menu actions while a real
+        /// gamepad is connected. Phones joined through the remote don't count: their buttons are the colors.
+        /// </summary>
+        public static bool ShowButtonNames
+        {
+            get
+            {
+                if (SettingsManager.Settings == null || !SettingsManager.Settings.ShowControllerButtonNames.Value)
+                {
+                    return false;
+                }
+
+                foreach (var gamepad in Gamepad.all)
+                {
+                    if (!YARG.Remote.RemotePlayManager.IsRemoteDevice(gamepad))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+
+        /// <summary>The face / shoulder button for a menu action in the current layout, if it has one.</summary>
+        public static PadButton? ButtonFor(MenuAction action)
+        {
+            foreach (PadButton button in System.Enum.GetValues(typeof(PadButton)))
+            {
+                if (button == PadButton.RightShoulder) continue;
+                if (ToMenuAction(button) == action)
+                {
+                    return button;
+                }
+            }
+            return null;
+        }
     }
 }

@@ -39,14 +39,24 @@ Any connected gamepad moves around the menus straight away, before it's in a pro
 | Move | D-pad or left stick (hold to scroll) | same | same | same |
 | Confirm / select (green) | Cross | A | A (right) | Circle |
 | Back (red) | Circle | B | B (bottom) | Cross |
-| Yellow action (Play Show / Start Setlist) | Triangle | Y | Y | Triangle |
+| Yellow action (Start Setlist; Play A Show if enabled) | Triangle | Y | Y | Triangle |
 | Blue action (Filters) | Square | X | X | Square |
 | More Options (orange) | L1 or R1 | LB or RB | L or R | L1 or R1 |
 | Start / pause | Options | Menu | + | Options |
 | Select ("go to the song that's playing" on the main menu) | Create | View | − | Create |
 
-While a gamepad is connected, the bar at the bottom of the screen names the button next to each
-action (e.g. "Back  Circle"). Turn this off with **Settings > General > Show Controller Button Names**.
+While a gamepad is connected, every button prompt shows the controller's own button in the
+action's color: a green disc with a cross for Confirm, a red one with a circle for Back, then
+triangle, square and L1 (A / B / X / Y / LB with the Xbox or Nintendo layout). The same icons are
+used in the bar at the bottom, on the music library's Play button, on the "Choose Your Fate"
+rows and in the binding menu. Turn this off with **Settings > General > Show Controller Buttons**.
+
+Lists in pop-ups (Add Device, "Which kind of controller is this?") work with the controller too:
+D-pad or stick moves the highlight and scrolls the list, Cross picks, Circle closes. On Android
+the Add Device list leaves out the phone's own touch screens, touchpads and sensors.
+
+**Play A Show** (build a show and vote for the next song on a "Choose Your Fate" screen) is off
+by default. Turn it on with **Settings > Songs > Enable Play A Show**.
 
 A gamepad in a profile uses that profile's menu buttons. They are set from the Controller Layout
 when you add the gamepad to the profile, so after changing the layout, remove the gamepad from
