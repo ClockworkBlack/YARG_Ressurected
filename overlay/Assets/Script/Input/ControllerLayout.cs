@@ -18,6 +18,17 @@ namespace YARG.Input
         PlayStationJapan, // Circle (right) = confirm, Cross (bottom) = back
     }
 
+    /// <summary>Where the five frets are when guitar or bass is played on an ordinary gamepad.</summary>
+    public enum GamepadGuitarLayout
+    {
+        // Frets on the same buttons as the menu colors: Cross green, Circle red, Triangle yellow,
+        // Square blue, L1 orange. Strum on the D-pad.
+        FaceButtons,
+
+        // Guitar Hero 2 on a DualShock: L2 green, L1 red, R1 yellow, R2 blue, Cross orange.
+        ShoulderButtons,
+    }
+
     /// <summary>The physical buttons, by position (Unity names them the same way on every pad).</summary>
     public enum PadButton
     {
@@ -35,6 +46,47 @@ namespace YARG.Input
     {
         public static ControllerLayoutType Current =>
             SettingsManager.Settings?.ControllerLayout.Value ?? ControllerLayoutType.PlayStation;
+
+        /// <summary>How an ordinary gamepad is set up for guitar: Settings > General > Gamepad Guitar Layout.</summary>
+        public static GamepadBindingMode GuitarBindingMode =>
+            SettingsManager.Settings != null &&
+            SettingsManager.Settings.GamepadGuitarLayout.Value == GamepadGuitarLayout.ShoulderButtons
+                ? GamepadBindingMode.Gamepad
+                : GamepadBindingMode.Gamepad_FaceButtons;
+
+        private static GamepadGuitarLayout? _appliedGuitarLayout;
+
+        /// <summary>
+        /// Called when the Gamepad Guitar Layout setting changes: gives PlayStation / Xbox pads that are
+        /// already in a profile the new guitar buttons. (Not at startup, so buttons changed by hand in a
+        /// profile's binding menu are only replaced when the layout is actually switched.)
+        /// </summary>
+        public static void OnGuitarLayoutChanged(GamepadGuitarLayout layout)
+        {
+            bool first = _appliedGuitarLayout == null;
+            bool changed = _appliedGuitarLayout != layout;
+            _appliedGuitarLayout = layout;
+            if (first || !changed)
+            {
+                return;
+            }
+
+            var mode = GuitarBindingMode;
+            foreach (var player in YARG.Player.PlayerContainer.Players)
+            {
+                if (player.Bindings == null) continue;
+
+                foreach (var device in player.Bindings.InputDevices)
+                {
+                    if (device is Gamepad gamepad && IsStandardGamepad(gamepad))
+                    {
+                        var guitar = player.Bindings[YARG.Core.GameMode.FiveFretGuitar];
+                        guitar.ClearBindingsForDevice(gamepad);
+                        guitar.SetDefaultBindings(gamepad, mode);
+                    }
+                }
+            }
+        }
 
         /// <summary>The menu action a face / shoulder / center button does in the current layout.</summary>
         public static MenuAction ToMenuAction(PadButton button) => ToMenuAction(button, Current);

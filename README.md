@@ -67,7 +67,30 @@ its profile and add it again (or change the buttons in the profile's binding men
 Add the gamepad to a profile in **Profiles > Add Device**. PlayStation and Xbox controllers are
 set up straight away; anything else is asked about once (pick **Gamepad** for a pad, or the guitar
 it is). The controller keeps working in the menus the whole time, including while that question
-is on screen. Guitar and bass use the Guitar Hero 2 layout on a DualShock / DualSense:
+is on screen.
+
+Guitar and bass on a gamepad have two layouts, chosen in **Settings > General > Gamepad Guitar
+Layout**. Changing it re-does the guitar buttons of PlayStation and Xbox controllers already in
+a profile.
+
+**Face buttons (default).** The frets are the same buttons as the colors in the menus:
+
+| Guitar | PS5 / PS4 | Xbox |
+|---|---|---|
+| Green | Cross | A |
+| Red | Circle | B |
+| Yellow | Triangle | Y |
+| Blue | Square | X |
+| Orange | L1 | LB |
+| Strum | D-pad Up / Down | D-pad Up / Down |
+| Star Power | R1 (or Create) | RB (or View) |
+| Whammy | R2 | RT |
+| Pause | Options | Menu |
+
+Hold the fret, then strum with the D-pad, like holding a fret and hitting the strum bar. Easy
+uses green, red and yellow only: Cross, Circle, Triangle.
+
+**Shoulder buttons.** The Guitar Hero 2 controller layout:
 
 | Guitar | PS5 / PS4 | Xbox |
 |---|---|---|
