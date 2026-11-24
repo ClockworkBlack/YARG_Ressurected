@@ -19,7 +19,7 @@ diff --git a/Assets/Script/Gameplay/GameManager.Audio.cs b/Assets/Script/Gamepla
 diff --git a/Assets/Script/Gameplay/GameManager.Loading.cs b/Assets/Script/Gameplay/GameManager.Loading.cs
 --- a/Assets/Script/Gameplay/GameManager.Loading.cs
 +++ b/Assets/Script/Gameplay/GameManager.Loading.cs
-@@ -106,6 +106,53 @@
+@@ -106,6 +106,54 @@
  
          private async void Start()
          {
@@ -57,7 +57,8 @@ diff --git a/Assets/Script/Gameplay/GameManager.Loading.cs b/Assets/Script/Gamep
 +                }
 +
 +                DialogManager.Instance.ShowMessage("Could Not Start This Song",
-+                    $"{ex.GetType().Name}: {ex.Message}\n\n<size=60%>{trace}</size>");
++                    $"{ex.GetType().Name}: {ex.Message}\n\n<size=60%>{trace}</size>" +
++                    "\n\nThe details were saved in Internal storage/YARG/logs.");
 +            }
 +            catch (Exception dialogException)
 +            {
@@ -73,7 +74,7 @@ diff --git a/Assets/Script/Gameplay/GameManager.Loading.cs b/Assets/Script/Gamep
              // Displays the loading screen
              using var context = new LoadingContext();
              var global = GlobalVariables.Instance;
-@@ -167,6 +214,13 @@
+@@ -167,6 +215,13 @@
              context.Queue(UniTask.RunOnThreadPool(LoadAudio), "Loading audio...");
              await context.Wait();
  
