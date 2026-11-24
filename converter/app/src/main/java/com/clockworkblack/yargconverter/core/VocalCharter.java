@@ -393,17 +393,20 @@ public final class VocalCharter {
 
     /**
      * Which way a borderline line leans: the same words elsewhere in the song (a chorus comes
-     * round again) decided clearly, or else the song as a whole.
+     * round again), going with most of those that were clear, or else the song as a whole.
      */
-    static boolean twinVerdict(List<Lrc.Line> lines, int[] verdict, int index, boolean songLean) {
+    public static boolean twinVerdict(List<Lrc.Line> lines, int[] verdict, int index, boolean songLean) {
         String text = normalised(lines.get(index).text);
+        int sung = 0, rapped = 0;
         if (text.length() >= 4) {
             for (int j = 0; j < lines.size(); j++) {
                 if (j == index || verdict[j] == UNCLEAR || !normalised(lines.get(j).text).equals(text)) continue;
-                return verdict[j] == CLEARLY_SUNG;
+                if (verdict[j] == CLEARLY_SUNG) sung++;
+                else rapped++;
             }
         }
-        return songLean;
+        // The repeats that were clear decide by majority; with none, or a tie, the song does
+        return sung == rapped ? songLean : sung > rapped;
     }
 
     private static String normalised(String text) {

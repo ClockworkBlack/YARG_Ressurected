@@ -239,6 +239,11 @@ final class VocalTest {
         check(VocalCharter.judgeSung(border, true) && !VocalCharter.judgeSung(border, false), "a borderline line follows the song");
         border.held = 0.05;
         check(!VocalCharter.judgeSung(border, true), "a clearly rapped line stays rapped in a sung song");
+        List<Lrc.Line> chorus = Lrc.parse("[00:01]same words here\n[00:05]same words here\n[00:09]same words here\n[00:13]other");
+        int[] verdicts = {1, 2, 2, 0};
+        check(!VocalCharter.twinVerdict(chorus, verdicts, 0, true), "a repeated line goes with most of its clear repeats");
+        check(VocalCharter.twinVerdict(chorus, new int[] {0, 1, 0, 0}, 0, false), "a borderline line follows its clearly sung repeat");
+        check(VocalCharter.twinVerdict(chorus, verdicts, 3, true), "a line with no repeats follows the song");
         border.held = 0.5;
         check(VocalCharter.judgeSung(border, false), "a clearly sung line stays sung in a rap song");
         check(chart.lines == 4, "four lines charted, the one after the end of the song dropped (" + chart.lines + ")");

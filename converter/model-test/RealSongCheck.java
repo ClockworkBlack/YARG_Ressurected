@@ -133,7 +133,8 @@ public final class RealSongCheck {
             lyrics = Lrc.parse(new String(java.nio.file.Files.readAllBytes(new File(args[5]).toPath()), "UTF-8"));
         } else {
             StringBuilder made = new StringBuilder();
-            for (double t = 4; t < seconds - 6; t += 8) made.append(Lrc.stamp(t)).append("made up words to sing here\n");
+            int n = 1;
+            for (double t = 4; t < seconds - 6; t += 8) made.append(Lrc.stamp(t)).append("made up line ").append(n++).append(" to sing\n");
             lyrics = Lrc.parse(made.toString());
         }
         stems.guessSingers = args.length > 5;
