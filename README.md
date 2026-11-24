@@ -24,39 +24,51 @@ copies `overlay/` on top, builds the native libraries (`android/native/`), then 
 
 > Status: **experimental.** Expect the first CI runs to need fixes from the logs.
 
-## Gamepad (Guitar Hero 2 layout)
+## Gamepad (PS5 controller layout, others supported)
 
-YARG's default gamepad layout already matches Guitar Hero 2 on a DualShock:
+The game is set up for a **PS5 DualSense** (PS4 works the same) and uses the usual PlayStation
+buttons. Xbox, Switch and generic Android pads work too: pick yours in
+**Settings > General > Controller Layout**.
 
-| Guitar | Gamepad |
-|---|---|
-| Green / Red / Yellow / Blue | L2 / L1 / R1 / R2 (LT / LB / RB / RT) |
-| Orange | Cross / A |
-| Strum | D-pad Up / Down |
-| Star Power | Select / Back |
-| Whammy | Left stick left/right |
+### Menus
 
-When you add a controller to a profile, pick **Gamepad**. You can remap any button in the profile's binding menu.
+Any connected gamepad moves around the menus straight away, before it's in a profile.
 
-### Moving around the menus with a gamepad
+| Menu action | PS5 / PS4 (default) | Xbox / generic | Nintendo Switch | PlayStation, Japan style |
+|---|---|---|---|---|
+| Move | D-pad or left stick (hold to scroll) | same | same | same |
+| Confirm / select (green) | Cross | A | A (right) | Circle |
+| Back (red) | Circle | B | B (bottom) | Cross |
+| Yellow action (Play Show / Start Setlist) | Triangle | Y | Y | Triangle |
+| Blue action (Filters) | Square | X | X | Square |
+| More Options (orange) | L1 or R1 | LB or RB | L or R | L1 or R1 |
+| Start / pause | Options | Menu | + | Options |
+| Select ("go to the song that's playing" on the main menu) | Create | View | − | Create |
 
-Any gamepad (Bluetooth or USB, Xbox / PlayStation / generic Android pads) drives the menus as soon
-as it's connected, before it's in a profile, so you can set everything up from the couch:
+While a gamepad is connected, the bar at the bottom of the screen names the button next to each
+action (e.g. "Back  Circle"). Turn this off with **Settings > General > Show Controller Button Names**.
 
-| Menu action | Gamepad |
-|---|---|
-| Move | D-pad or left stick (hold to scroll) |
-| Select / Confirm (green) | A / Cross |
-| Back (red) | B / Circle |
-| Yellow action (e.g. Play Show / Start Setlist) | Y / Triangle |
-| Blue action (e.g. Filters) | X / Square |
-| More Options (orange) | LB or RB / L1 or R1 |
-| Start (pause in a song) | Start / Options |
-| Select (e.g. "go to the song that's playing" on the main menu) | Back / View / Share |
+A gamepad in a profile uses that profile's menu buttons. They are set from the Controller Layout
+when you add the gamepad to the profile, so after changing the layout, remove the gamepad from
+its profile and add it again (or change the buttons in the profile's binding menu).
 
-The help bar at the bottom shows each action's color, and the buttons above match those colors.
-Once the gamepad is in a profile, that profile's own menu bindings take over (same layout unless
-you change it), so nothing fires twice.
+### Playing a song
+
+When you add a gamepad to a profile, pick **Gamepad: PS5 / PS4 / Xbox / other**. Guitar and bass
+use the Guitar Hero 2 layout on a DualShock / DualSense:
+
+| Guitar | PS5 / PS4 | Xbox |
+|---|---|---|
+| Green / Red / Yellow / Blue | L2 / L1 / R1 / R2 | LT / LB / RB / RT |
+| Orange | Cross | A |
+| Strum | D-pad Up / Down | D-pad Up / Down |
+| Star Power | Create | View |
+| Whammy | Left stick left/right | Left stick left/right |
+| Pause | Options | Menu |
+
+Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pause menu the menu buttons above apply.
+Any button can be remapped in the profile's binding menu. For a guitar controller, pick
+**CRKD Guitar** or **Other guitar** instead of Gamepad.
 
 ## Menu music: pick a startup song and a playlist
 
@@ -175,7 +187,7 @@ download the `.apk` and install it.
 2. Put songs (Clone Hero / YARG / Rock Band format folders) in `Internal storage/YARG/songs`.
    Songs from the [YARG Converter](converter/README.md#adding-a-converted-song-to-yarg) are put there for you.
 3. In YARG: **Settings → Songs → Scan Songs** (or in the music library: **More Options → Scan Songs**).
-4. Add your controller to a profile and pick **Gamepad** (or CRKD Guitar). Touch buttons: Profiles → Add Device → Virtual.
+4. Add your controller to a profile and pick **Gamepad: PS5 / PS4 / Xbox / other** (or CRKD Guitar). Touch buttons: Profiles → Add Device → Virtual.
 
 Only play songs you own (for example, charts ripped from your own Rock Band DLC) or free/official setlists.
 

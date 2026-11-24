@@ -10,36 +10,58 @@ namespace YARG.Input
     /// YARG normally only listens to devices that belong to a profile (plus the keyboard), so a fresh
     /// controller could do nothing until you had already made a profile with the touch screen.
     /// A gamepad that belongs to a profile is skipped here: its profile's own menu bindings are used.
+    /// Which button confirms / goes back follows Settings > General > Controller Layout
+    /// (PlayStation by default: Cross confirms, Circle goes back), read at each press.
     /// </summary>
     public sealed class DefaultGamepadMenuBindings : IDisposable
     {
-        // Same colors as the guitar layout (South = Green, East = Red, ...), so the help bar's
-        // colored hints match the face buttons on a pad and on the phone remote.
-        private static readonly (MenuAction action, string path)[] DefaultBindings =
+        private readonly struct Bind
         {
-            (MenuAction.Green,  "<Gamepad>/buttonSouth"),     // A / Cross: select
-            (MenuAction.Red,    "<Gamepad>/buttonEast"),      // B / Circle: back
-            (MenuAction.Yellow, "<Gamepad>/buttonNorth"),     // Y / Triangle
-            (MenuAction.Blue,   "<Gamepad>/buttonWest"),      // X / Square
-            (MenuAction.Orange, "<Gamepad>/leftShoulder"),    // LB / L1: more options
-            (MenuAction.Orange, "<Gamepad>/rightShoulder"),   // RB / R1: more options
-            (MenuAction.Start,  "<Gamepad>/start"),
-            (MenuAction.Select, "<Gamepad>/select"),
-            (MenuAction.Up,     "<Gamepad>/dpad/up"),
-            (MenuAction.Down,   "<Gamepad>/dpad/down"),
-            (MenuAction.Left,   "<Gamepad>/dpad/left"),
-            (MenuAction.Right,  "<Gamepad>/dpad/right"),
-            (MenuAction.Up,     "<Gamepad>/leftStick/up"),
-            (MenuAction.Down,   "<Gamepad>/leftStick/down"),
-            (MenuAction.Left,   "<Gamepad>/leftStick/left"),
-            (MenuAction.Right,  "<Gamepad>/leftStick/right"),
+            public readonly string Path;
+            public readonly PadButton? Button;   // face / shoulder / center button: action depends on layout
+            public readonly MenuAction Direction; // otherwise a fixed direction
+
+            public Bind(string path, PadButton button)
+            {
+                Path = path;
+                Button = button;
+                Direction = default;
+            }
+
+            public Bind(string path, MenuAction direction)
+            {
+                Path = path;
+                Button = null;
+                Direction = direction;
+            }
+        }
+
+        private static readonly Bind[] DefaultBindings =
+        {
+            new("<Gamepad>/buttonSouth",   PadButton.South),          // Cross / A
+            new("<Gamepad>/buttonEast",    PadButton.East),           // Circle / B
+            new("<Gamepad>/buttonNorth",   PadButton.North),          // Triangle / Y
+            new("<Gamepad>/buttonWest",    PadButton.West),           // Square / X
+            new("<Gamepad>/leftShoulder",  PadButton.LeftShoulder),   // L1 / LB
+            new("<Gamepad>/rightShoulder", PadButton.RightShoulder),  // R1 / RB
+            new("<Gamepad>/start",         PadButton.Start),          // Options / Menu
+            new("<Gamepad>/select",        PadButton.Select),         // Create / View
+            new("<Gamepad>/dpad/up",        MenuAction.Up),
+            new("<Gamepad>/dpad/down",      MenuAction.Down),
+            new("<Gamepad>/dpad/left",      MenuAction.Left),
+            new("<Gamepad>/dpad/right",     MenuAction.Right),
+            new("<Gamepad>/leftStick/up",   MenuAction.Up),
+            new("<Gamepad>/leftStick/down", MenuAction.Down),
+            new("<Gamepad>/leftStick/left", MenuAction.Left),
+            new("<Gamepad>/leftStick/right", MenuAction.Right),
         };
 
         private readonly InputAction[] _inputActions = new InputAction[DefaultBindings.Length];
 
-        // Presses we sent, so the release always follows even if the pad joins a profile in between
+        // Presses we sent and the action each one was sent as, so the release always follows with the
+        // same action, even if the pad joins a profile or the layout changes while it's held
         // (otherwise a held direction would keep scrolling forever).
-        private readonly HashSet<int> _pressed = new();
+        private readonly Dictionary<int, MenuAction> _pressed = new();
 
         private readonly Func<InputDevice, bool> _isOwnedByProfile;
 
@@ -55,26 +77,28 @@ namespace YARG.Input
             for (int i = 0; i < DefaultBindings.Length; i++)
             {
                 int index = i;
-                var (menuAction, path) = DefaultBindings[i];
+                var bind = DefaultBindings[i];
 
                 var action = new InputAction(
-                    name: $"GamepadMenu_{menuAction}_{i}",
+                    name: $"GamepadMenu_{i}",
                     type: InputActionType.Button,
-                    binding: path
+                    binding: bind.Path
                 );
 
                 action.performed += ctx =>
                 {
                     var device = ctx.control?.device;
-                    if (device == null || _isOwnedByProfile(device)) return;
-                    if (_pressed.Add(index))
-                    {
-                        InputManager.OnMenuAction(menuAction, true);
-                    }
+                    if (device == null || _isOwnedByProfile(device) || _pressed.ContainsKey(index)) return;
+
+                    var menuAction = bind.Button is { } button
+                        ? ControllerLayout.ToMenuAction(button)
+                        : bind.Direction;
+                    _pressed[index] = menuAction;
+                    InputManager.OnMenuAction(menuAction, true);
                 };
                 action.canceled += _ =>
                 {
-                    if (_pressed.Remove(index))
+                    if (_pressed.Remove(index, out var menuAction))
                     {
                         InputManager.OnMenuAction(menuAction, false);
                     }
