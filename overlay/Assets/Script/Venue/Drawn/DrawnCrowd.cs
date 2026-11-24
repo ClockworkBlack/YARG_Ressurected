@@ -193,7 +193,7 @@ namespace YARG.Venue.Drawn
                     Oval(head, 0.02f, 0.3f, 0.98f, 1.02f, hairColor);
                     break;
                 case Hair.Afro:
-                    Oval(head, -0.28f, 0.05f, 1.28f, 1.38f, hairColor);
+                    Oval(head, -0.2f, 0.05f, 1.2f, 1.28f, hairColor);
                     break;
                 case Hair.Puff:
                     Oval(head, 0f, 0f, 1f, 1f, hairColor);
