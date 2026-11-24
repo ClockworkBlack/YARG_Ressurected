@@ -127,6 +127,41 @@ Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pau
 Any button can be remapped in the profile's binding menu. For a guitar controller, pick
 **CRKD Guitar** or **Other guitar** instead of Gamepad.
 
+## Venues and crowd
+
+Songs are played in a venue, with a crowd in front of the stage dancing in time with the music.
+
+- **The venues** are stages drawn in the spirit of places that matter to Hip Hop and R&B history.
+  They are tributes, not copies: no logos or likenesses, and each one says what it is inspired by
+  when the song starts.
+  - *East:* a Harlem amateur-night theater (the Apollo), a Bronx park jam, a Midtown arena
+    (Madison Square Garden), a U Street theater (the Howard, Washington D.C.), a North Philly soul
+    hall, an uptown concert hall (Carnegie Hall), a capital arts center (the Kennedy Center).
+  - *South:* an Atlanta block party, a Crescent City blues house (House of Blues New Orleans) and
+    festival night (Essence), Houston slab Sunday, a Beale Street juke (Memphis), a Miami beach stage.
+  - *Midwest:* the Pontiac ballroom (the Crofoot, Michigan), a Motor City grand theater (the Fox,
+    Detroit), the South Side Regal (Chicago), a Minneapolis star-wall club (First Avenue).
+  - *West:* an Inglewood arena (the Forum), a Compton lot party, an Oakland deco theater, a Las
+    Vegas residency room.
+  - *International:* a London stadium night and a Bucharest open-air show (Michael Jackson's 1988
+    Wembley and 1992 Bucharest concerts), Tokyo Dome, a lakeside jazz festival (Montreux), a
+    Johannesburg festival field.
+- **Choosing one:** **Settings > General > Venue**. Random by default; or random among street and
+  club venues only, random among high-class rooms only, one venue in particular, or None for the
+  game's own background. A song that comes with its own background still uses that.
+- **Your own pictures or videos:** each venue has a folder in `Internal storage/YARG/venues/`
+  (made the first time a song is played). Put a `.jpg`, `.png`, `.mp4` or `.webm` in a venue's
+  folder and it is used as that venue's backdrop instead of the drawn stage, with the crowd in
+  front of it. Several files in a folder are picked from at random.
+- **The crowd** is seen from behind, three rows deep, with mixed skin tones, hair and clothes and
+  a strong Black presence; dressed up in the high-class rooms. Groups of neighbors dance simplified
+  versions of party dances from the mid-2000s on (Lean wit It, Crank That, Walk It Out, the Jerk,
+  the Dougie, Cat Daddy, the Nae Nae, the Whip, the Dab, Hit the Quan, the Milly Rock, the Woah),
+  change every sixteen beats, and now and then the whole room swag surfs or puts its hands up.
+  Turn it off with **Settings > General > Dancing Crowd**.
+
+Everything here is drawn by code from simple shapes, so it is cartoon-like rather than realistic.
+
 ## Menu music: pick a startup song and a playlist
 
 The menus play songs from your library in the background. You choose what plays:

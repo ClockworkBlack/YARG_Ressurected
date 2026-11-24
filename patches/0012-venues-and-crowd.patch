@@ -1,0 +1,103 @@
+diff --git a/Assets/Script/Gameplay/BackgroundManager.cs b/Assets/Script/Gameplay/BackgroundManager.cs
+index 2e32be9..682ba3f 100644
+--- a/Assets/Script/Gameplay/BackgroundManager.cs
++++ b/Assets/Script/Gameplay/BackgroundManager.cs
+@@ -174,8 +174,32 @@ namespace YARG.Gameplay
+             }
+ #endif
+ 
+-            using var result = VenueLoader.GetVenue(GameManager.Song, out _source);
+-            if (result == null)
++            using var loaded = VenueLoader.GetVenue(GameManager.Song, out _source);
++            var result = loaded;
++
++            // YARG Resurrected venues (Settings > General > Venue). A song's own background still wins.
++            // The venue is one of your pictures or videos from YARG/venues/<venue>, or else a stage
++            // drawn in code; either way the dancing crowd goes in front of it.
++            YARG.Venue.Drawn.DrawnVenue drawnVenue = null;
++            BackgroundResult venueMedia = null;
++            if (loaded == null || _source != VenueSource.Song)
++            {
++                YARG.Venue.Drawn.VenueCatalog.EnsureFolders();
++                drawnVenue = YARG.Venue.Drawn.VenueCatalog.Choose();
++                if (drawnVenue != null)
++                {
++                    venueMedia = YARG.Venue.Drawn.VenueCatalog.LoadMedia(drawnVenue);
++                    if (venueMedia != null)
++                    {
++                        result = venueMedia;
++                        _source = VenueSource.Global;
++                    }
++                }
++            }
++            using var venueMediaOwner = venueMedia;
++
++            bool drawnStage = drawnVenue != null && venueMedia == null;
++            if (result == null && !drawnStage)
+             {
+                 return;
+             }
+@@ -184,6 +208,16 @@ namespace YARG.Gameplay
+ 
+             _backgroundDimmer.color = colorDim;
+ 
++            if (drawnVenue != null)
++            {
++                YARG.Venue.Drawn.VenueDirector.Show(_backgroundImage, GameManager, drawnVenue, drawnStage);
++                if (drawnStage)
++                {
++                    _type = BackgroundType.Image;
++                    return;
++                }
++            }
++
+             _type = result.Type;
+             switch (_type)
+             {
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 5510cdb..73681d1 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -123,6 +123,10 @@ namespace YARG.Settings
+ 
+             public ToggleSetting AccountForHardwareLatency { get; } = new(true);
+ 
++            // Where songs are played: a random venue, one in particular, or the game's own background
++            public VenueChoiceSetting VenueChoice { get; } = new(YARG.Venue.Drawn.VenueCatalog.CHOICE_RANDOM);
++            public ToggleSetting VenueCrowd { get; } = new(true);
++
+             public void OpenVenueFolder()
+             {
+                 FileExplorerHelper.OpenFolder(VenueLoader.VenueFolder);
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 2430aa4..a3b6c18 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -37,6 +37,8 @@ namespace YARG.Settings
+                 new FieldMetadata(nameof(Settings.AccountForHardwareLatency), true, isAdvanced: true),
+ 
+                 new HeaderMetadata("Venues"),
++                nameof(Settings.VenueChoice),
++                nameof(Settings.VenueCrowd),
+                 new ButtonRowMetadata(nameof(Settings.OpenVenueFolder)),
+                 new FieldMetadata(nameof(Settings.DisableDefaultBackground), isAdvanced: true),
+                 new FieldMetadata(nameof(Settings.DisableGlobalBackgrounds), isAdvanced: true),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 034e6ff..8caba9b 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1686,6 +1686,14 @@
+                 "Name": "No Strumming On Gamepads",
+                 "Description": "On: when you play guitar or bass on a gamepad, pressing the fret button plays the note, with no strumming. Hold the buttons of a chord together; press again for a repeated note. It works by giving the profile the \"All Taps\" modifier and the Casual engine preset, which you can see and change on the screen before a song and in the profile. Off: notes need a strum (D-pad up or down) like on a guitar controller. Takes effect the next time you choose a song."
+             },
++            "VenueChoice": {
++                "Name": "Venue",
++                "Description": "Where songs are played. Each venue is a stage drawn in the spirit of a place that matters to Hip Hop and R&B history, from Harlem, the Bronx and Atlanta to Detroit, Los Angeles, London and Tokyo. Pick one, or let the game choose at random (any, street and club only, or high class only). To use your own picture or video for a venue, put it in the venue's folder in Internal storage/YARG/venues. A song that comes with its own background still uses that."
++            },
++            "VenueCrowd": {
++                "Name": "Dancing Crowd",
++                "Description": "Shows a crowd in front of the stage, dancing in time with the song."
++            },
+             "TouchControls": {
+                 "Name": "Touch Buttons",
+                 "Description": "The colored fret buttons and strum bar on the screen during a song. Automatic shows them only when the guitar player has no controller, so they stay out of the way when you play with a gamepad or guitar.",
