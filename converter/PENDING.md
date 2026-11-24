@@ -15,6 +15,7 @@ Saved for later, roughly in the order they would help most.
 - [ ] Let the user pick which instrument the "guitar" chart follows when a song has no guitar.
 
 ## Would improve what is there
+- [ ] **Long stretches with no notes** when the song has little guitar (found play-testing a hip-hop song: nothing to play for the first half minute with "Split into instruments" on). Fill gaps longer than a few measures from the other pitched instruments or the full mix. Until then, converting that song with the box unticked charts the whole mix from the start.
 - [ ] **Play-test on real songs** in YARG on the Z Fold 7. The engine is now scored against synthetic band recordings with known answers, but only one real record has been through it (in the automated build, with nobody listening). Things to listen for: are there too many or too few notes (try the Fewer / More setting), do frets change where the music changes, do drum hits pull the chart away from the guitar.
 - [ ] Confirm in-game that YARG's lyric bar shows `.chart` lyrics the way this app writes them; if not, switch lyrics to a `notes.mid` vocals track.
 - [ ] Forced strums / hammer-ons and tap sections; open notes.

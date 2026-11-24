@@ -157,6 +157,44 @@ namespace YARG.Input
             }
         }
 
+        /// <summary>
+        /// True for controllers that are certainly ordinary gamepads (PlayStation and Xbox pads), going by
+        /// what the device calls itself. On Android guitars and drum kits also show up as "gamepads", so
+        /// anything else is asked about when it's added to a profile.
+        /// </summary>
+        public static bool IsStandardGamepad(Gamepad gamepad)
+        {
+            if (gamepad == null || YARG.Remote.RemotePlayManager.IsRemoteDevice(gamepad))
+            {
+                return false;
+            }
+
+            if (gamepad is UnityEngine.InputSystem.DualShock.DualShockGamepad)
+            {
+                return true;
+            }
+
+            foreach (string name in new[] { gamepad.description.product, gamepad.displayName, gamepad.name })
+            {
+                if (string.IsNullOrEmpty(name)) continue;
+
+                string lower = name.ToLowerInvariant();
+                if (lower.Contains("guitar") || lower.Contains("drum"))
+                {
+                    return false;
+                }
+
+                // "DualSense Wireless Controller", "Wireless Controller" (PS4), "Xbox Wireless Controller"
+                if (lower.Contains("dualsense") || lower.Contains("dualshock") ||
+                    lower.Contains("wireless controller"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>The face / shoulder button for a menu action in the current layout, if it has one.</summary>
         public static PadButton? ButtonFor(MenuAction action)
         {

@@ -64,8 +64,10 @@ its profile and add it again (or change the buttons in the profile's binding men
 
 ### Playing a song
 
-When you add a gamepad to a profile, pick **Gamepad: PS5 / PS4 / Xbox / other**. Guitar and bass
-use the Guitar Hero 2 layout on a DualShock / DualSense:
+Add the gamepad to a profile in **Profiles > Add Device**. PlayStation and Xbox controllers are
+set up straight away; anything else is asked about once (pick **Gamepad** for a pad, or the guitar
+it is). The controller keeps working in the menus the whole time, including while that question
+is on screen. Guitar and bass use the Guitar Hero 2 layout on a DualShock / DualSense:
 
 | Guitar | PS5 / PS4 | Xbox |
 |---|---|---|
@@ -75,6 +77,16 @@ use the Guitar Hero 2 layout on a DualShock / DualSense:
 | Star Power | Create | View |
 | Whammy | Left stick left/right | Left stick left/right |
 | Pause | Options | Menu |
+
+**Difficulty and what the notes look like.** New profiles start on **Easy**: colored notes on
+three frets, like Guitar Hero and Rock Band. **Beginner** is different on purpose: every note is a
+rainbow bar across the whole track, meaning "strum, any fret". Pick the difficulty on the screen
+before a song. The note style is per profile: **Profiles > (profile) > Theme**, where
+*Rectangular* is the Rock Band look and *Circular* the Guitar Hero look.
+
+**Touch buttons.** The big colored squares and strum bar are the on-screen controls for playing
+on the phone's screen. They now only appear when the guitar player has no controller. Change it
+in **Settings > General > Touch Buttons** (Automatic / Always show / Never show).
 
 Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pause menu the menu buttons above apply.
 Any button can be remapped in the profile's binding menu. For a guitar controller, pick
