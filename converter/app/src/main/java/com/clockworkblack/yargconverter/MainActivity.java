@@ -84,7 +84,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private Button pickButton, findButton, lrcButton, tapButton, convertButton;
     private ProgressBar progress;
     private RadioGroup densityGroup;
-    private CheckBox stemsCheck, guessCheck;
+    private CheckBox stemsCheck, guessCheck, rnbCheck;
     private Button singersButton;
     private TextView singersStatus;
     /** The two artists' names as typed on the "Who sings what" screen; null until that has been used. */
@@ -287,6 +287,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
         guessCheck = new CheckBox(this);
         guessCheck.setText("Two artists: where the lyrics don't say who sings a line, guess it from their voices. Needs the split above. It is a guess; check it afterwards with \"Choose who sings what\".");
         root.addView(guessCheck);
+        rnbCheck = new CheckBox(this);
+        rnbCheck.setText("R&B mode: put the voice first. The guitar chart follows the lead singer's melody (the notes come with the words and runs, the frets climb with the tune, held notes are sustains) instead of the band, and the vocals part follows runs note by note. For R&B, soul and vocal-led pop. Needs the split above.");
+        root.addView(rnbCheck);
         refreshModelUi(true);
 
         TextView densityLabel = new TextView(this);
@@ -371,6 +374,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
         singersButton.setEnabled(!value);
         stemsCheck.setEnabled(!value && ModelStore.installed(this));
         guessCheck.setEnabled(!value && ModelStore.installed(this));
+        rnbCheck.setEnabled(!value && ModelStore.installed(this));
         if (value) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
@@ -383,7 +387,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
         boolean installed = ModelStore.installed(this);
         stemsCheck.setEnabled(installed && !busy);
         guessCheck.setEnabled(installed && !busy);
+        rnbCheck.setEnabled(installed && !busy);
         if (!installed) guessCheck.setChecked(false);
+        if (!installed) rnbCheck.setChecked(false);
         if (!installed) stemsCheck.setChecked(false);
         else if (tickIfInstalled) stemsCheck.setChecked(true);
         modelButton.setVisibility(installed ? View.GONE : View.VISIBLE);
@@ -817,6 +823,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
         options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
         final boolean useStems = stemsCheck.isChecked() && ModelStore.installed(this);
         final boolean guessSingers = useStems && guessCheck.isChecked();
+        final boolean rnb = useStems && rnbCheck.isChecked();
         meta.singers = singers();
 
         setBusy(true);
@@ -836,7 +843,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 String summary;
                 boolean ok = false;
                 try {
-                    summary = runConversion(uri, name, meta, lyrics, lrcText, options, useStems, guessSingers);
+                    summary = runConversion(uri, name, meta, lyrics, lrcText, options, useStems, guessSingers, rnb);
                     ok = true;
                 } catch (IOException e) {
                     summary = "Conversion failed: " + e.getMessage();
@@ -861,7 +868,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
     }
 
     private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options,
-                                 boolean useStems, boolean guessSingers) throws IOException {
+                                 boolean useStems, boolean guessSingers, boolean rnb) throws IOException {
         File songs = new File(new File(Environment.getExternalStorageDirectory(), "YARG"), "songs");
         File dir = new File(new File(songs, SUBFOLDER), meta.folderName());
         if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -931,7 +938,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             if (useStems) {
                 long started = System.currentTimeMillis();
                 try {
-                    stems = separate(pcmFile, pcmFrames[0]);
+                    stems = separate(pcmFile, pcmFrames[0], rnb);
                     separationMs = System.currentTimeMillis() - started;
                 } catch (Exception | LinkageError | OutOfMemoryError e) {
                     // The charts can still be made the old way, from the full mix.
@@ -945,7 +952,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
         }
 
         status("Finding the beat and writing the charts…");
-        if (stems != null) stems.guessSingers = guessSingers;
+        if (stems != null) {
+            stems.guessSingers = guessSingers;
+            stems.rnb = rnb;
+        }
         SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems);
         if (result.singerGuess != null) {
             // Saved with the song and shown back in the app, where the guess can be corrected.
@@ -988,6 +998,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             sb.append(String.format(Locale.US, "Split into instruments in %d min %02d s\n", separationMs / 60000, (separationMs / 1000) % 60));
         }
         sb.append("Guitar chart made from ").append(result.guitarSource).append("\n");
+        if (result.rnbNote != null) sb.append(result.rnbNote).append("\n");
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 result.noteCount(GuitarCharter.EASY), result.noteCount(GuitarCharter.MEDIUM),
                 result.noteCount(GuitarCharter.HARD), result.noteCount(GuitarCharter.EXPERT)));
@@ -1043,8 +1054,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
      * instruments together, the bass and the voice as they come out. Only the measurements are
      * kept; the separated audio itself is not stored.
      */
-    private SongWriter.Stems separate(File pcmFile, long frames) throws Exception {
+    private SongWriter.Stems separate(File pcmFile, long frames, boolean rnb) throws Exception {
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        // R&B mode charts the guitar from the voice, so the vocals are measured like an instrument too
+        final AudioAnalyzer vocals = rnb ? new AudioAnalyzer(StemSplitter.SAMPLE_RATE) : null;
         final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer bass = new AudioAnalyzer(StemSplitter.SAMPLE_RATE, true);
         final VocalAnalyzer voice = new VocalAnalyzer(StemSplitter.SAMPLE_RATE);
@@ -1104,6 +1117,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                     melodic.feed(m, 0, count);
                     bass.feed(b, 0, count);
                     voice.feed(vox, 0, count);
+                    if (vocals != null) vocals.feed(vox, 0, count);
                 }
             };
             StemSplitter.Progress report = new StemSplitter.Progress() {
@@ -1125,6 +1139,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
         out.melodic = melodic.finish();
         out.bass = bass.finish();
         out.voice = voice.finish();
+        if (vocals != null) out.vocals = vocals.finish();
         out.guitarEnergy = energy[0];
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];

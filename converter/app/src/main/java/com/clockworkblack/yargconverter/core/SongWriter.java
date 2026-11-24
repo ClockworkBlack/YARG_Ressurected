@@ -23,6 +23,10 @@ public final class SongWriter {
         public GuitarCharter.Chart bassChart;
         /** What the guitar chart was made from, in words for the user. */
         public String guitarSource = "the full mix";
+        /** R&amp;B mode was asked for and the guitar chart follows the singer. */
+        public boolean rnb;
+        /** Why R&amp;B mode could not follow the singer on this song, in words for the user; null when it did or was not asked. */
+        public String rnbNote;
         public int bassTier = -1;
         /** Lyrics as notes to sing; empty when the song has no lyrics. */
         public VocalCharter.Chart vocals = new VocalCharter.Chart();
@@ -62,6 +66,13 @@ public final class SongWriter {
         public VocalAnalyzer.Voice voice;
         /** For a song with two singers whose lines are not marked: work out who sings what from their voices. */
         public boolean guessSingers;
+        /** The vocals on their own, measured like an instrument; only needed for R&amp;B mode. */
+        public Features vocals;
+        /**
+         * R&amp;B mode: the voice comes first. The guitar chart follows the lead singer's melody
+         * (see {@link MelodyCharter}) and the vocals part follows runs note by note.
+         */
+        public boolean rnb;
         /** Sum of squared samples of each, for comparing how much of the song they make up. */
         public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy;
     }
@@ -93,7 +104,7 @@ public final class SongWriter {
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
-            r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice);
+            r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb);
             r.lyricLines = r.vocals.lines;
             r.lyricsOut = lyrics;
             boolean marked = false;
@@ -152,6 +163,7 @@ public final class SongWriter {
                 break;
             }
         }
+        if (stems.rnb) chartFromVoice(r, stems, options);
         if (stems.bass != null && stems.bassEnergy >= 0.003 * Math.max(1e-12, stems.mixEnergy)) {
             GuitarCharter.Options bassOptions = options == null ? new GuitarCharter.Options() : options.copy();
             bassOptions.chords = false;
@@ -163,6 +175,29 @@ public final class SongWriter {
                 double nps = r.duration > 1 ? notes / r.duration : 0;
                 r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
             }
+        }
+    }
+
+    /**
+     * R&amp;B mode: replaces the guitar chart with one that follows the lead singer. A song with
+     * little singing in it (an instrumental, a long intro and one chorus) keeps the chart made
+     * from the instruments, and the user is told why.
+     */
+    private static void chartFromVoice(Result r, Stems stems, GuitarCharter.Options options) {
+        if (stems.vocals == null || stems.voice == null) {
+            r.rnbNote = "R&B mode needs the song split into instruments, so the guitar chart follows the band instead.";
+            return;
+        }
+        GuitarCharter.Chart chart = MelodyCharter.build(stems.vocals, stems.voice, r.tempo, r.bpm, options);
+        int notes = chart.notes.get(GuitarCharter.EXPERT).size();
+        // A vocal-led chart is sparser than one from the band, so it is judged by how much of the
+        // song is sung, not by how many notes the band chart had
+        if (notes >= 24 && MelodyCharter.singingShare(stems.voice) >= MelodyCharter.MIN_SINGING_SHARE) {
+            r.chart = chart;
+            r.rnb = true;
+            r.guitarSource = "the lead vocal (R&B mode)";
+        } else {
+            r.rnbNote = "R&B mode: there was too little singing to follow, so the guitar chart follows the band instead.";
         }
     }
 

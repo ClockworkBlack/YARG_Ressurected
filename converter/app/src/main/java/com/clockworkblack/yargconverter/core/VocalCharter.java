@@ -21,6 +21,10 @@ public final class VocalCharter {
     public static final int MIN_PITCH = 36, MAX_PITCH = 84;
     /** Note written for spoken words (the game ignores it; it only has to be in range). */
     static final int SPOKEN_PITCH = 60;
+    /** A word held at least this long (seconds) is followed if the voice moves to other notes. */
+    static final double HELD_WORD_SEC = 0.5;
+    /** The same in R&amp;B mode, where shorter runs are followed too. */
+    static final double RUN_WORD_SEC = 0.3;
     /** Lyric lines longer than this are cut into phrases of about equal length. */
     static final int MAX_WORDS = 9;
 
@@ -81,6 +85,15 @@ public final class VocalCharter {
     }
 
     public static Chart build(List<Lrc.Line> lines, TempoMap map, double duration, VocalAnalyzer.Voice voice) {
+        return build(lines, map, duration, voice, false);
+    }
+
+    /**
+     * @param runs R&amp;B mode: follow the voice through runs and riffs. Shorter held words get
+     *             joined-on notes too, and a word may move through more notes, so a melisma is
+     *             sung note by note instead of as one or two long notes.
+     */
+    public static Chart build(List<Lrc.Line> lines, TempoMap map, double duration, VocalAnalyzer.Voice voice, boolean runs) {
         Chart chart = new Chart();
         if (lines == null) return chart;
         float gate = voice != null ? voice.gate() : 0f;
@@ -114,7 +127,7 @@ public final class VocalCharter {
 
             // What is sung on each word, and is this line sung at all?
             List<Note> notes = new ArrayList<>();
-            boolean sung = heard && pitchLine(voice, gate, words, frameStart, frameEnd, wordStart, wordEnd, notes);
+            boolean sung = heard && pitchLine(voice, gate, words, frameStart, frameEnd, wordStart, wordEnd, notes, runs);
             if (!sung) {
                 notes.clear();
                 for (int k = 0; k < n; k++) {
@@ -460,7 +473,7 @@ public final class VocalCharter {
      * @return true and fills {@code out} when the line is sung
      */
     private static boolean pitchLine(VocalAnalyzer.Voice v, float gate, List<String> words, int[] frameStart, int[] frameEnd,
-                                     double[] wordStart, double[] wordEnd, List<Note> out) {
+                                     double[] wordStart, double[] wordEnd, List<Note> out, boolean runs) {
         int n = words.size();
         int from = frameStart[0], to = Math.min(frameEnd[n - 1], v.frames());
         if (heldShare(v, gate, from, to) < HELD_SHARE) return false;
@@ -514,8 +527,8 @@ public final class VocalCharter {
             first.end = wordEnd[k];
             first.pitch = clampPitch(Math.round(note) + shift);
             out.add(first);
-            if (wordEnd[k] - wordStart[k] >= 0.5) {
-                addSlides(v, gate, frameStart[k], Math.min(frameEnd[k], v.frames()), note, shift, first, out);
+            if (wordEnd[k] - wordStart[k] >= (runs ? RUN_WORD_SEC : HELD_WORD_SEC)) {
+                addSlides(v, gate, frameStart[k], Math.min(frameEnd[k], v.frames()), note, shift, first, out, runs);
             }
         }
         return true;
@@ -525,8 +538,13 @@ public final class VocalCharter {
      * A long held word that moves to other notes (a run, an "oh-oh-oh") gets a joined-on note for
      * each place the voice settles on a new note for a moment.
      */
-    private static void addSlides(VocalAnalyzer.Voice v, float gate, int a, int b, float startNote, int shift, Note word, List<Note> out) {
-        final int hold = 7;
+    private static void addSlides(VocalAnalyzer.Voice v, float gate, int a, int b, float startNote, int shift, Note word, List<Note> out,
+                                  boolean runs) {
+        // A run moves quickly: in R&B mode a note counts once the voice has sat on it for 50 ms
+        // (70 ms otherwise), and a word may pass through up to eight of them.
+        final int hold = runs ? 5 : 7;
+        final int most = runs ? 8 : 3;
+        final double gap = runs ? 0.08 : 0.12;
         float current = Float.NaN;
         // The note the word opens on: the middle value of its first voiced frames.
         float[] head = new float[hold];
@@ -544,7 +562,7 @@ public final class VocalCharter {
         int run = 0;
         float[] moved = new float[hold];
         int added = 0;
-        for (; f < b && added < 3; f++) {
+        for (; f < b && added < most; f++) {
             float m = v.midi[f];
             if (Float.isNaN(m) || v.level[f] <= gate) {
                 run = 0;
@@ -562,7 +580,7 @@ public final class VocalCharter {
             int startFrame = f - hold + 1;
             double at = v.timeOf(startFrame);
             // Leave a short lead-in for the voice to travel between the two notes.
-            if (at - last.start < 0.12) {
+            if (at - last.start < gap) {
                 run = 0;
                 continue;
             }

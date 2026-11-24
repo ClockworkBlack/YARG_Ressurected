@@ -41,6 +41,14 @@ the one-time download of the instrument-separation model.
    sings a line are split between the two artists by the sound of their voices. It is a guess:
    the lyrics box shows the result afterwards, so you can correct it with *Choose who sings
    what* and convert again.
+   With **R&B mode** also ticked, the voice comes first. The guitar chart follows the lead
+   singer instead of the band: the notes come where the words and runs are sung, the frets
+   climb and fall with the tune, a held note is a sustain for as long as it is held, and
+   there are no chords (a voice sings one note at a time). The vocals part follows runs and
+   riffs note by note, so a melisma is sung through its notes instead of as one or two long
+   ones. The bass chart still follows the bass. Made for R&B, soul and vocal-led pop. On a
+   song with little singing in it (an instrumental, say) the guitar chart follows the band as
+   usual, and the summary says so.
 5. **Convert and add to YARG**. The first time, Android asks for "All files access" so the app can write into the YARG folder.
    Once it has started you can leave the app, switch to something else or turn the screen off:
    the conversion keeps going, with its progress in a notification, and a second notification

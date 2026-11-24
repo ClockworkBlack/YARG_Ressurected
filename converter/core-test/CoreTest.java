@@ -46,6 +46,7 @@ public final class CoreTest {
         failures += StemTest.run();
         lyrics();
         failures += VocalTest.run();
+        failures += RnbTest.run();
         if (failures > 0) {
             System.out.println("FAILED: " + failures + " check(s)");
             System.exit(1);
