@@ -1,0 +1,102 @@
+diff --git a/Assets/Script/Gameplay/GameManager.Audio.cs b/Assets/Script/Gameplay/GameManager.Audio.cs
+--- a/Assets/Script/Gameplay/GameManager.Audio.cs
++++ b/Assets/Script/Gameplay/GameManager.Audio.cs
+@@ -101,6 +101,14 @@
+             {
+                 _mixer = Song.LoadAudio(GlobalVariables.State.SongSpeed, DEFAULT_VOLUME);
+             }
++            catch (Exception e)
++            {
++                _mixer = null;
++                _loadState = LoadFailureState.Error;
++                _loadFailureMessage = "Failed to load audio: " + e.Message;
++                YargLogger.LogException(e, "Failed to load audio!");
++                return;
++            }
+             finally
+             {
+                 BassStemMixer.KeepSourceCopies = false;
+diff --git a/Assets/Script/Gameplay/GameManager.Loading.cs b/Assets/Script/Gameplay/GameManager.Loading.cs
+--- a/Assets/Script/Gameplay/GameManager.Loading.cs
++++ b/Assets/Script/Gameplay/GameManager.Loading.cs
+@@ -106,6 +106,53 @@
+ 
+         private async void Start()
+         {
++            try
++            {
++                await StartSong();
++            }
++            catch (Exception ex)
++            {
++                // Anything thrown while starting used to be lost here, leaving the scene half
++                // set up: no highway, and a HUD still showing its placeholder text
++                ReportStartFailure(ex);
++            }
++        }
++
++        /// <summary>
++        /// Says on screen why the song could not start, and goes back to the menu.
++        /// </summary>
++        private void ReportStartFailure(Exception ex)
++        {
++            YargLogger.LogException(ex, "Failed to start the song!");
++
++            try
++            {
++                // The first few lines of the stack trace say where it happened
++                string trace = ex.StackTrace ?? string.Empty;
++                int cut = 0;
++                for (int line = 0; line < 4 && cut >= 0 && cut < trace.Length; line++)
++                {
++                    cut = trace.IndexOf('\n', cut + 1);
++                }
++                if (cut > 0)
++                {
++                    trace = trace.Substring(0, cut);
++                }
++
++                DialogManager.Instance.ShowMessage("Could Not Start This Song",
++                    $"{ex.GetType().Name}: {ex.Message}\n\n<size=60%>{trace}</size>");
++            }
++            catch (Exception dialogException)
++            {
++                YargLogger.LogException(dialogException);
++                ToastManager.ToastError("Could not start this song!");
++            }
++
++            GlobalVariables.Instance.LoadScene(SceneIndex.Menu);
++        }
++
++        private async UniTask StartSong()
++        {
+             // Displays the loading screen
+             using var context = new LoadingContext();
+             var global = GlobalVariables.Instance;
+@@ -167,6 +214,13 @@
+             context.Queue(UniTask.RunOnThreadPool(LoadAudio), "Loading audio...");
+             await context.Wait();
+ 
++            // A loader that threw leaves these unset without marking a failure
++            if (_loadState == LoadFailureState.None && (_mixer == null || Chart == null))
++            {
++                _loadState = LoadFailureState.Error;
++                _loadFailureMessage = _mixer == null ? "Failed to load audio!" : "Failed to load chart!";
++            }
++
+             if (_loadState == LoadFailureState.Rescan)
+             {
+                 ToastManager.ToastWarning("Chart requires a rescan!", () =>
+diff --git a/Assets/Script/Gameplay/GameManager.cs b/Assets/Script/Gameplay/GameManager.cs
+--- a/Assets/Script/Gameplay/GameManager.cs
++++ b/Assets/Script/Gameplay/GameManager.cs
+@@ -246,7 +246,8 @@
+             _mixer?.Dispose();
+             _songRunner?.Dispose();
+             BackgroundManager.Dispose();
+-            CrowdEventHandler.Dispose();
++            // Null when the song failed to start
++            CrowdEventHandler?.Dispose();
+ 
+             // Reset the time scale back, as it would be 0 at this point (because of pausing)
+             Time.timeScale = 1f;
