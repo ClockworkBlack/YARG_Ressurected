@@ -169,7 +169,7 @@ namespace YARG.Audio.GuitarVoice
             YargLogger.LogFormatInfo(
                 "Guitar voice: added {0} track(s) in {1} ms (read {2} ms, listen {3} ms); tuning {4} cents, scale root {5}",
                 added.Count, watch.ElapsedMilliseconds, decodeMs, analyzeMs,
-                harmony.Cents.ToString("0.0"), harmony.Key);
+                harmony.Cents, harmony.Key);
             return added;
         }
 
