@@ -123,8 +123,8 @@ public final class GuitarCharter {
 
     /**
      * @param groupByPitch true for an instrument that plays one note at a time (a separated
-     *                     bass): notes are then told apart by their pitch alone, which is more
-     *                     dependable than a fingerprint when a sound has only a few overtones
+     *                     bass): notes are then told apart by their note name alone, which is
+     *                     more dependable than a fingerprint when a sound has few overtones
      */
     public static List<Onset> detectOnsets(Features f, boolean groupByPitch) {
         int n = f.frames();
@@ -193,7 +193,10 @@ public final class GuitarCharter {
             out.add(o);
         }
         if (groupByPitch) {
-            for (Onset o : out) if (o.tonal) o.group = Math.max(0, Math.round(o.height));
+            // By note name (C, C sharp, ...): pitch readings of a bass are often an octave out,
+            // but rarely the wrong note. Clear octave jumps are told apart again when frets
+            // are handed out.
+            for (Onset o : out) if (o.tonal) o.group = Math.floorMod(Math.round(o.height), 12);
         } else {
             groupBySound(out);
         }

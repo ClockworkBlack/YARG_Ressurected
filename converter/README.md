@@ -25,8 +25,8 @@ the one-time download of the instrument-separation model.
 4. **Split into instruments** (optional, recommended). Press *Download the separation model*
    once (136 MB, Wi-Fi recommended; it resumes if interrupted). With the box ticked, the app
    first separates the song into guitar, bass, drums, vocals, piano and "other", makes the
-   guitar chart from the guitar alone, and adds a bass chart. This takes roughly as long as
-   the song itself, so keep the screen open.
+   guitar chart from the guitar alone, and adds a bass chart. Expect it to take a few minutes per
+   song (not yet timed on a phone), so keep the screen open.
 5. **Convert and add to YARG**. The first time, Android asks for "All files access" so the app can write into the YARG folder.
 6. In YARG: **Settings > Songs > Scan**.
 
@@ -102,8 +102,8 @@ For separation, three things are checked on every build:
    the results gives back every sample exactly once, aligned with the original.
 2. **Charting from perfectly separated instruments** (the test song's true guitar and bass
    tracks): the guitar chart then contains guitar notes only (0% stray notes, against 10-11%
-   from the full mix), and the bass chart follows the bass (98-100% of notes charted, frets move
-   the right way 93-96% of the time, 0% the wrong way).
+   from the full mix), and the bass chart follows the bass (every bass note charted, frets
+   move the right way 93-96% of the time, 0% the wrong way).
 3. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their
@@ -113,8 +113,8 @@ For separation, three things are checked on every build:
    - on a real recording ("Sax, Rock, and Roll" by Kevin MacLeod, CC BY-SA 3.0, which the
      composer lists at 128 BPM with kit, bass, electric guitar and horns): tempo found
      128.0 BPM in 4/4; the guitar stem carries 57% of the separated sound, drums 30%, bass 10%;
-     the guitar chart is made from the separated guitar; separation took 0.73 times the song's
-     length on a 4-core build machine. There are no "right answers" for this song, so this shows
+     the guitar chart is made from the separated guitar; separation took between 0.45 and 0.75
+     times the song's length on a 4-core build machine, depending on the run. There are no "right answers" for this song, so this shows
      the whole chain working on real music, not how good the chart feels to play. The resulting
      song folder is attached to each build as the `sample-song` artifact.
 

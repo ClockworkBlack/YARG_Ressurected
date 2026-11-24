@@ -6,7 +6,7 @@ Saved for later, roughly in the order they would help most.
 - [ ] **Drum charts** from the separated drum stem (kick / snare / toms / cymbals) on all four difficulties.
 
 ## Follow-ups to instrument separation
-- [ ] **Time it on the Z Fold 7.** On a 4-core build machine separation takes about 0.7 times the song's length; the phone has not been measured.
+- [ ] **Time it on the Z Fold 7.** On a 4-core build machine separation takes 0.45 to 0.75 times the song's length; the phone has not been measured.
 - [ ] **Save the separated instruments as audio** (guitar / bass / drums / vocals files in the song folder) so YARG can drop the guitar when you miss notes and set per-instrument volume. Needs an on-phone Opus encoder so each song does not grow by hundreds of MB.
 - [ ] Keep converting with the screen off or the app in the background (foreground service with a notification).
 - [ ] Use the separated vocals to time pasted lyrics automatically, word by word.
