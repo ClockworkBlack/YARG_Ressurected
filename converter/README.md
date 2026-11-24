@@ -5,11 +5,15 @@ ready-to-play song folder into `Internal storage/YARG/songs/Converted/<Artist - 
 
 | File | What it is |
 |---|---|
-| `notes.chart` | Tempo map, 5-fret guitar and bass on Easy / Medium / Hard / Expert, Star Power, practice sections, lyrics |
+| `notes.mid` | Tempo map, 5-fret guitar and bass on Easy / Medium / Hard / Expert, Star Power, practice sections, and a **vocals part** made from the lyrics: a note under every word, for one singer or two |
 | `song.ini` | Title, artist, album, year, genre, length, preview point, difficulty rating |
 | `song.mp3` / `.wav` / `.ogg` / `.opus` | The audio. MP3, WAV, OGG and OPUS are copied as they are; FLAC and anything else is saved as WAV |
 | `album.jpg` / `.png` | Cover art, when the audio file has one embedded |
-| `lyrics.lrc` | The timed lyrics that were used (handy if you convert again) |
+| `lyrics.lrc` | The timed lyrics that were used, with who sings each line (handy if you convert again) |
+| `vocal_parts.txt` | Only for a song with two singers: their names, shown in the game where a player picks whose lines to sing |
+
+Older versions of the app wrote `notes.chart`. Converting a song again replaces it with
+`notes.mid`; songs you don't convert again keep working as they are, but have no vocals to sing.
 
 Everything runs on the phone. The only things that go online are the optional lyrics lookup and
 the one-time download of the instrument-separation model.
@@ -22,11 +26,21 @@ the one-time download of the instrument-separation model.
    - **Find online** searches [LRCLIB](https://lrclib.net) for time-synced lyrics by title and artist.
    - **Open .lrc** loads a lyrics file you already have.
    - **Paste** lyrics into the box. If they have no `[mm:ss.xx]` times, press **Tap to sync**: the song plays and you tap once as each line starts.
+   - **Two artists? Choose who sings what** (optional) opens the list of lines. Tap a line to
+     pass it to the other artist, tap again for both; hold a line to give it and everything
+     under it to the same artist. The names come from the Artist box ("A feat. B", "A & B")
+     and can be changed there. Pasted lyrics with headers such as `[Verse 2: Travis Scott]`
+     are filled in for you.
 4. **Split into instruments** (optional, recommended). Press *Download the separation model*
    once (136 MB, Wi-Fi recommended; it resumes if interrupted). With the box ticked, the app
    first separates the song into guitar, bass, drums, vocals, piano and "other", makes the
-   guitar chart from the guitar alone, and adds a bass chart. Expect it to take a few minutes per
+   guitar chart from the guitar alone, adds a bass chart, and listens to the voice on its own
+   to place every word where it is sung and find its note. Expect it to take a few minutes per
    song (not yet timed on a phone).
+   With **Two artists: ... guess it from their voices** also ticked, lyrics that don't say who
+   sings a line are split between the two artists by the sound of their voices. It is a guess:
+   the lyrics box shows the result afterwards, so you can correct it with *Choose who sings
+   what* and convert again.
 5. **Convert and add to YARG**. The first time, Android asks for "All files access" so the app can write into the YARG folder.
    Once it has started you can leave the app, switch to something else or turn the screen off:
    the conversion keeps going, with its progress in a notification, and a second notification
@@ -62,17 +76,20 @@ unzip. YARG just has to scan for it once.
    **Charter** and look under **YARG Converter (auto)**, where all converted songs are grouped.
 5. Pick a profile and difficulty and play. Guitar and bass charts are in the song on
    Easy / Medium / Hard / Expert; vocals only if lyrics were added.
+6. To sing: the profile needs a microphone (**Add Device** on the profile). Pick **Vocals** as
+   the instrument to sing the whole song, or **Harmonies** on a two-artist song to choose one
+   artist's lines. The level you pick sets how exact you have to be (see the game's README).
 
 **Doing it from a computer, or moving songs to another phone**
 
-Copy the whole song folder (the one with `notes.chart`, `song.ini` and the audio in it) into
+Copy the whole song folder (the one with `notes.mid`, `song.ini` and the audio in it) into
 `Internal storage/YARG/songs/` on the phone, keeping the folder together, then scan as above.
 A folder with only some of the files won't show up.
 
 **If the song doesn't show up**
 
 - Scan again after the converter says **Done**; a scan that ran before then won't have it.
-- Check the folder in a file manager: it must contain `notes.chart`, `song.ini` and a `song.*`
+- Check the folder in a file manager: it must contain `notes.mid`, `song.ini` and a `song.*`
   audio file. If it is empty, the conversion was cancelled: convert again.
 - If a scan ends with a **"Some Songs Could Not Be Scanned"** message, it lists the songs it
   couldn't read and why.
@@ -116,6 +133,40 @@ These are machine-made charts. Made from the full mix, expect them to follow the
 and harmony rather than exactly what the guitarist plays; made from the separated guitar they
 follow the guitar itself, as far as the separation got it right.
 
+### How the vocals are made
+
+Lyrics give the words and when each line starts. What turns them into something to sing
+depends on whether the song was split into instruments.
+
+**With the split**, the app listens to the voice on its own a hundred times a second: how loud
+it is and which note it is on.
+
+1. **Where the line really is.** A lyric file's time stamp is close, not exact, so the start of
+   each line slides to where that burst of singing begins, and the line ends at the last sound
+   before a pause.
+2. **Where each word is.** Every point where a new sound starts (the voice comes in after a
+   silence, gets suddenly louder, or jumps to another note) is a likely start of a word, and a
+   word should last about as long as its syllables suggest. The words are placed to fit both as
+   well as possible over the whole line.
+3. **Sung or rapped.** Singing holds notes; rap and speech never settle on one. A line that
+   spends a fair share of its time on held notes is **sung**: each word gets the note it is
+   sung on, and a long word that moves to other notes gets a joined-on note for each. Anything
+   else is **rapped or spoken**: its words become "talkies", where any sound in time with the
+   words counts and the note does not matter.
+4. Lines longer than nine words are shown a few words at a time, and every sixth phrase or so
+   earns Star Power.
+
+**Without the split** there is nothing to listen to, so every line is a talkie, spread from its
+time stamp at a natural speaking pace. Good for rapping along; for real notes, use the split.
+
+**Two singers.** Lines marked for the first artist, the second, or both (see *Choose who sings
+what*) are written as two parts, so in the game each player picks an artist and sings only that
+artist's lines; the whole song is still there as one part for anyone who wants all of it.
+The optional guess from the voices compares the colour of the voice line by line, sorts the
+lines into the two groups that differ most, and smooths the result (singers trade verses more
+often than single lines). It only offers a split when the two groups are clearly apart, and it
+can be fooled by voices that sound alike or by one artist who both sings and raps.
+
 ### The separation model
 
 - **HT-Demucs 6-stem** (Demucs v4 by Meta AI, MIT licence): drums, bass, other, vocals, guitar, piano.
@@ -145,6 +196,26 @@ Typical scores on the 4/4 songs:
 
 "Right" is below 100% mostly because five frets cannot give every pitch its own position;
 neighbouring pitches share a fret rather than going the wrong way.
+
+The vocals have the same kind of check with a made-up singer (`SynthVoice`): lines sung on
+known notes, rapped lines with gliding pitch, long words that change note, words that run into
+each other, two different "voices", time stamps that come early. On those:
+
+| | Result |
+|---|---|
+| Which note a steady voice is on | within 0.05 of a semitone, from D2 to C6 |
+| Sung and rapped lines told apart | every line |
+| Sung words on the right note / starting within 0.08 s | 100% / 100% |
+| Rapped words starting within 0.08 s | 100% |
+| A long word moving to a second note is found, with the right note | 12 of 12 |
+| Two voices trading verses told apart | 51 of 53 lines; one voice alone is left as one |
+
+A made-up singer is far cleaner than a real one, so these numbers show the method works, not
+how well it does on a record: no real singing has been through it yet.
+
+Every song the checks write is also read back from `notes.mid` by a reader that follows the
+game's own rules (how it pairs notes, finds phrases, attaches lyrics, and decides a song has
+vocals at all), and compared note for note with what was meant to be written.
 
 For separation, three things are checked on every build:
 

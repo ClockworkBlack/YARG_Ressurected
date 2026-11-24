@@ -50,6 +50,8 @@ public final class ConversionService extends Service {
     private static volatile boolean succeeded;
     /** True once the result has been shown in the app, so it isn't shown twice. */
     private static volatile boolean resultSeen = true;
+    /** Lyrics the conversion wants shown back in the app (singers it worked out), or null. */
+    private static volatile String markedLyrics;
 
     private static Listener listener;
     private static ConversionService instance;
@@ -77,6 +79,18 @@ public final class ConversionService extends Service {
         return succeeded;
     }
 
+    /** Hands the app lyrics with the singers the conversion worked out, to show when it is next on screen. */
+    public static void setMarkedLyrics(String value) {
+        markedLyrics = value;
+    }
+
+    /** Those lyrics, once. */
+    public static String takeMarkedLyrics() {
+        String value = markedLyrics;
+        markedLyrics = null;
+        return value;
+    }
+
     public static void markResultSeen() {
         resultSeen = true;
         if (appContext != null) {
@@ -100,6 +114,7 @@ public final class ConversionService extends Service {
         progress = -1;
         result = null;
         resultSeen = true;
+        markedLyrics = null;
         running = true;
 
         NotificationManager nm = appContext.getSystemService(NotificationManager.class);

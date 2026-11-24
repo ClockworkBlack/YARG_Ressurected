@@ -9,8 +9,8 @@ public final class TempoMap {
 
     /** Tick where each tempo marker sits. */
     public final long[] tick;
-    /** Tempo of each marker in thousandths of a BPM (the unit .chart files use). */
-    public final long[] milliBpm;
+    /** Length of a beat at each marker in microseconds (the unit MIDI files use). */
+    public final long[] microsPerBeat;
     /** Time in seconds of each marker, as the game will compute it. */
     public final double[] time;
     /** Number of beats before the first full measure. */
@@ -18,9 +18,9 @@ public final class TempoMap {
     /** Beats in a measure: 4, or 3 for waltz-time songs. */
     public final int beatsPerMeasure;
 
-    private TempoMap(long[] tick, long[] milliBpm, double[] time, int pickupBeats, int beatsPerMeasure) {
+    private TempoMap(long[] tick, long[] microsPerBeat, double[] time, int pickupBeats, int beatsPerMeasure) {
         this.tick = tick;
-        this.milliBpm = milliBpm;
+        this.microsPerBeat = microsPerBeat;
         this.time = time;
         this.pickupBeats = pickupBeats;
         this.beatsPerMeasure = beatsPerMeasure;
@@ -46,7 +46,7 @@ public final class TempoMap {
         }
         int segs = bounds.size() - 1;
         long[] tick = new long[segs];
-        long[] milli = new long[segs];
+        long[] micros = new long[segs];
         double[] time = new double[segs];
         double chartTime = 0;
         for (int i = 0; i < segs; i++) {
@@ -55,14 +55,15 @@ public final class TempoMap {
             // Aim at the real time of the segment's last beat from wherever rounding has left us,
             // so small rounding errors never pile up over the song.
             double span = Math.max(0.03 * (b - a), beats[b] - chartTime);
-            long m = Math.round(60000.0 * (b - a) / span);
-            m = Math.max(20000, Math.min(2000000, m));
+            // Whole microseconds per beat, between 2000 and 20 BPM.
+            long m = Math.round(span * 1e6 / (b - a));
+            m = Math.max(30000, Math.min(3000000, m));
             tick[i] = (long) a * RESOLUTION;
-            milli[i] = m;
+            micros[i] = m;
             time[i] = chartTime;
-            chartTime += (b - a) * 60000.0 / m;
+            chartTime += (b - a) * m / 1e6;
         }
-        return new TempoMap(tick, milli, time, Math.floorMod(firstDownbeat, beatsPerMeasure), beatsPerMeasure);
+        return new TempoMap(tick, micros, time, Math.floorMod(firstDownbeat, beatsPerMeasure), beatsPerMeasure);
     }
 
     /**
@@ -118,12 +119,12 @@ public final class TempoMap {
 
     public double tickToTime(long tk) {
         int i = segmentAtTick(tk);
-        return time[i] + (tk - tick[i]) * 60000.0 / (milliBpm[i] * (double) RESOLUTION);
+        return time[i] + (tk - tick[i]) * microsPerBeat[i] / (1e6 * RESOLUTION);
     }
 
     public double timeToTickExact(double t) {
         int i = segmentAtTime(t);
-        return tick[i] + (t - time[i]) * milliBpm[i] * RESOLUTION / 60000.0;
+        return tick[i] + (t - time[i]) * 1e6 * RESOLUTION / microsPerBeat[i];
     }
 
     public long timeToTick(double t) {

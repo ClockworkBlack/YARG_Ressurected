@@ -1,8 +1,12 @@
 import com.clockworkblack.yargconverter.core.Features;
 import com.clockworkblack.yargconverter.core.GuitarCharter;
+import com.clockworkblack.yargconverter.core.Lrc;
+import com.clockworkblack.yargconverter.core.MidiSong;
 import com.clockworkblack.yargconverter.core.SongMeta;
 import com.clockworkblack.yargconverter.core.SongWriter;
 import com.clockworkblack.yargconverter.core.StemSplitter;
+import com.clockworkblack.yargconverter.core.VocalAnalyzer;
+import com.clockworkblack.yargconverter.core.VocalCharter;
 import com.clockworkblack.yargconverter.stems.OrtStemModel;
 
 import java.io.BufferedInputStream;
@@ -108,7 +112,48 @@ public final class RealSongCheck {
         long t1 = System.currentTimeMillis();
         Features mixFeatures = StemTest.analyze(mix, StemSplitter.SAMPLE_RATE);
         SongWriter.Result plain = SongWriter.analyze(mixFeatures, null, null);
-        SongWriter.Result split = SongWriter.analyze(mixFeatures, null, null, stems);
+
+        // The voice, as the app hears it. With a lyrics file as a sixth argument the words are
+        // placed and pitched from it; without one, a made-up line every eight seconds shows what
+        // the vocals stem holds (in an instrumental: next to nothing, so every line is a talkie).
+        long tv = System.currentTimeMillis();
+        stems.voice = VocalTest.listen(mono[StemSplitter.VOCALS], StemSplitter.SAMPLE_RATE);
+        VocalAnalyzer.Voice voice = stems.voice;
+        int sounding = 0, onNote = 0;
+        float gate = voice.gate();
+        for (int i = 0; i < voice.frames(); i++) {
+            if (voice.level[i] <= gate) continue;
+            sounding++;
+            if (!Float.isNaN(voice.midi[i])) onNote++;
+        }
+        System.out.printf(Locale.US, "Voice: listened to in %.1f s; sounding %d%% of the song, on a clear note %d%% of that time%n",
+                (System.currentTimeMillis() - tv) / 1000.0, 100 * sounding / Math.max(1, voice.frames()), 100 * onNote / Math.max(1, sounding));
+        java.util.List<Lrc.Line> lyrics;
+        if (args.length > 5) {
+            lyrics = Lrc.parse(new String(java.nio.file.Files.readAllBytes(new File(args[5]).toPath()), "UTF-8"));
+        } else {
+            StringBuilder made = new StringBuilder();
+            for (double t = 4; t < seconds - 6; t += 8) made.append(Lrc.stamp(t)).append("made up words to sing here\n");
+            lyrics = Lrc.parse(made.toString());
+        }
+        stems.guessSingers = args.length > 5;
+        SongWriter.Result split = SongWriter.analyze(mixFeatures, lyrics, null, stems);
+        VocalCharter.Chart v = split.vocals;
+        System.out.printf(Locale.US, "Vocals: %d lines (%d sung, %d rapped or spoken), %d words, %d phrases, voice %s, tier %d%s%n",
+                v.lines, v.sungLines, v.spokenLines, v.words, v.phrases.size(), v.heard ? "heard" : "not heard at the lyric times", split.vocalTier,
+                split.singerGuess != null ? String.format(Locale.US, ", two singers guessed %d/%d lines", split.singerGuess.firstLines, split.singerGuess.secondLines)
+                        : split.singersGuessTried ? String.format(Locale.US, ", singers not told apart (%.1f)", com.clockworkblack.yargconverter.core.VoiceSplitter.lastSeparation) : "");
+        int shown = 0;
+        for (VocalCharter.Phrase p : v.phrases) {
+            if (shown++ >= 12) break;
+            StringBuilder line = new StringBuilder(String.format(Locale.US, "  %6.2f s %s:", split.tempo.tickToTime(p.tick), p.spoken ? "spoken" : "sung  "));
+            for (VocalCharter.Note n : p.notes) line.append(' ').append(n.slide ? "+" : n.text).append(p.spoken ? "" : "(" + n.pitch + ")");
+            System.out.println(line);
+        }
+        for (String problem : MidiCheck.verify(MidiSong.build(split), split)) {
+            System.out.println("FAILED: notes.mid: " + problem);
+            System.exit(1);
+        }
         System.out.printf(Locale.US, "Listening and charting took %.1f s%n", (System.currentTimeMillis() - t1) / 1000.0);
 
         System.out.printf(Locale.US, "Tempo %.1f BPM, %d beats to the measure, %d tempo marker(s)%n", split.bpm, split.beatsPerMeasure, split.tempo.tick.length);
