@@ -233,7 +233,9 @@ namespace YARG.Audio
                     if (!_warnedOpen)
                     {
                         _warnedOpen = true;
-                        YargLogger.LogFormatWarning("Couldn't open microphone '{0}': {1}", DisplayName, error);
+                        // (Joined by hand: with two strings to fill in, the logger can't tell its
+                        // one-value form with a file name from its two-value form)
+                        YargLogger.LogWarning("Couldn't open microphone '" + DisplayName + "': " + error);
                     }
                     return false;
                 }
