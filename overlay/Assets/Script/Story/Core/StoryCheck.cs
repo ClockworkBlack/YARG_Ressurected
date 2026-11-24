@@ -96,6 +96,29 @@ namespace YARG.Story
             CheckScene(campaign, campaign.Opening, "The opening", problems, required: true);
             CheckScene(campaign, campaign.Ending, "The ending", problems, required: true);
 
+            bool bonusSeen = false;
+            bool storySeen = false;
+            foreach (var chapter in campaign.Chapters)
+            {
+                if (chapter.Bonus)
+                {
+                    bonusSeen = true;
+                }
+                else
+                {
+                    storySeen = true;
+                    if (bonusSeen)
+                    {
+                        problems.Add($"Chapter \"{chapter.Id}\" comes after a bonus chapter; bonus chapters go last");
+                    }
+                }
+            }
+
+            if (campaign.Chapters.Count > 0 && !storySeen)
+            {
+                problems.Add("Every chapter is a bonus chapter, so there is no story to finish");
+            }
+
             var rewarded = new HashSet<string>();
             foreach (var chapter in campaign.Chapters)
             {
@@ -196,6 +219,11 @@ namespace YARG.Story
             foreach (var keepsake in campaign.Keepsakes)
             {
                 if (string.IsNullOrWhiteSpace(keepsake.Name)) problems.Add($"Keepsake \"{keepsake.Id}\" has no name");
+                if (keepsake.Layer.Length > 0)
+                {
+                    CheckOneOf(keepsake.Layer, StoryKeepsake.Layers, $"Keepsake \"{keepsake.Id}\": layer", problems);
+                }
+
                 if (!rewarded.Contains(keepsake.Id)) problems.Add($"Keepsake \"{keepsake.Id}\" is never earned at a gig");
             }
 
@@ -457,6 +485,11 @@ namespace YARG.Story
             if (!engine.IsStoryFinished())
             {
                 problems.Add("The story cannot be finished: winning every open gig does not reach the end");
+            }
+
+            if (engine.NextGig() != null && !engine.NextGig().Optional)
+            {
+                problems.Add($"Gig \"{engine.NextGig().Id}\" is still waiting after every gig before it is won");
             }
 
             foreach (var gig in campaign.AllGigs)

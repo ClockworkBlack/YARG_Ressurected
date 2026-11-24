@@ -148,7 +148,16 @@ namespace StoryTests
             Program.Check(campaign.BandNames.Count >= 8, $"{campaign.BandNames.Count} band names to choose from");
             Program.Check(campaign.Credits.Count > 0 && campaign.About.Length > 0, "there are credits and an About text");
 
-            var last = campaign.AllGigs[gigs - 1];
+            // The finale is the last gig of the story proper, before any bonus chapter
+            StoryGig last = null;
+            foreach (var gig in campaign.AllGigs)
+            {
+                if (!gig.Chapter.Bonus && !gig.Optional)
+                {
+                    last = gig;
+                }
+            }
+
             Program.Check(!last.Optional && last.Songs >= 4, $"the finale \"{last.Title}\" is a set of {last.Songs} songs");
 
             int firstTarget = campaign.AllGigs[0].StarsToPass;

@@ -281,7 +281,8 @@ namespace YARG.Story
 
             foreach (var chapter in Campaign.Chapters)
             {
-                if (!AllNeededGigsWon(chapter))
+                // A bonus chapter comes after the ending
+                if (!chapter.Bonus && !AllNeededGigsWon(chapter))
                 {
                     return false;
                 }

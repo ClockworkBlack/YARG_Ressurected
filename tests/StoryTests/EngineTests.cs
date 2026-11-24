@@ -20,7 +20,7 @@ namespace StoryTests
 
             var campaign = Sample.Load();
             Program.Check(campaign.Id == "sample" && campaign.Version == 3 && campaign.Title == "Sample Story", "reads the campaign's id, version and title");
-            Program.Check(campaign.Chapters.Count == 2 && campaign.AllGigs.Count == 7, "reads two chapters with seven gigs");
+            Program.Check(campaign.Chapters.Count == 3 && campaign.AllGigs.Count == 8, "reads three chapters with eight gigs");
             Program.Check(campaign.Chapters[0].Number == 1 && campaign.Chapters[1].Number == 2, "numbers chapters that give no number");
             Program.Check(campaign.FindGig("g3").Number == 4 && campaign.FindGig("g3").Chapter.Id == "ch2", "numbers gigs through the whole story");
             Program.Check(campaign.LinerNotes.Count == 2 && campaign.FindLinerNote("note-2") != null, "reads liner notes from the campaign file and from their own file");
@@ -28,6 +28,7 @@ namespace StoryTests
             Program.Check(campaign.FindCharacter("mentor").Portrait.Accessory == "glasses", "reads a character's portrait");
             Program.Check(campaign.FindVenue("room-b").Style == "arena" && Math.Abs(campaign.FindVenue("room-b").MapX - 0.7f) < 0.001f, "reads a venue");
             Program.Check(campaign.FindGig("g2").Challenge.Type == StoryChallenge.ALL_FIVE && campaign.FindGig("g1").Challenge == null, "reads a gig's challenge");
+            Program.Check(campaign.FindKeepsake("tape-1").Layer == "drums", "reads a keepsake and the part of the band it stands for");
             Program.Check(campaign.FindGig("nope") == null && campaign.FindVenue(null) == null, "an unknown id finds nothing");
 
             var problems = StoryCheck.Problems(campaign);
@@ -139,18 +140,21 @@ namespace StoryTests
             Program.Check(engine.StateOf(campaign.FindGig("g5")) == StoryGigState.Locked && engine.NextGig().Id == "g4a", "one branch is not enough");
             Play(engine, "g4a", Sample.Song("a", 3));
             Program.Check(engine.StateOf(campaign.FindGig("g5")) == StoryGigState.Open, "both branches open the finale");
-            Program.Check(!engine.IsStoryFinished(), "the story is not finished before the finale");
+            Program.Check(!engine.IsStoryFinished() && engine.StateOf(campaign.Chapters[2]) == StoryChapterState.Locked && engine.StateOf(campaign.FindGig("g6")) == StoryGigState.Locked, "the story is not finished before the finale, and the bonus chapter is locked");
+            Program.Check(campaign.Chapters[2].Bonus && campaign.Chapters[2].Side == "Side D" && campaign.FindGig("g6").Stamp == "87 BPM", "reads a bonus chapter, its side and a gig's stamp");
 
             var finale = Play(engine, "g5", Sample.Song("a", 4), Sample.Song("b", 4), Sample.Song("c", 3), Sample.Song("d", 3));
             Program.Check(finale.Won && finale.StoryFinished && finale.ChapterFinished == campaign.Chapters[1] && engine.IsStoryFinished(), "winning the finale finishes the story");
-            Program.Check(engine.NextGig().Id == "side", "with the story done, the side gig is what is left");
+            Program.Check(engine.NextGig().Id == "g6" && engine.StateOf(campaign.Chapters[2]) == StoryChapterState.Open, "with the story done, the bonus chapter opens");
             var finaleAgain = Play(engine, "g5", Sample.Song("a", 5), Sample.Song("b", 5), Sample.Song("c", 5), Sample.Song("d", 5));
             Program.Check(!finaleAgain.StoryFinished && finaleAgain.ChapterFinished == null, "the story only finishes once");
 
             Program.Check(engine.CurrentRank() != null && engine.RankFor(0).Name == "Opening Act" && engine.RankFor(999).Name == "Opening Act" && engine.RankFor(1000).Name == "Headliners" && engine.RankFor(999999).Name == "Legends", "ranks follow the fans");
             Program.Check(progress.Fans >= 5000 && engine.NextRank() == null, "at the top there is no next rank");
-            Program.Check(engine.GigsWon() == 6 && engine.StarsPossible() == 65 && engine.StarsEarned() == 4 + 10 + 9 + 3 + 3 + 20, "counts gigs won and stars");
+            Program.Check(engine.GigsWon() == 6 && engine.StarsPossible() == 70 && engine.StarsEarned() == 4 + 10 + 9 + 3 + 3 + 20, "counts gigs won and stars");
             Program.Check(engine.ChallengesPossible() == 2 && engine.ChallengesMet() == 1, "counts challenges");
+            var bonus = Play(engine, "g6", Sample.Song("a", 5));
+            Program.Check(bonus.Won && !bonus.StoryFinished && bonus.ChapterFinished == campaign.Chapters[2] && engine.NextGig().Id == "side", "the bonus gig does not finish the story a second time; the side gig is what is left");
             Play(engine, "side", Sample.Song("a", 5));
             Program.Check(engine.NextGig() == null && progress.LinerNotes.Contains("note-2"), "after the side gig nothing is left");
             int percent = engine.PercentComplete();

@@ -42,6 +42,13 @@ namespace StoryTests
         {
             try
             {
+                // A writer's tool: check the script, or one chapter of it, without running the tests.
+                //   dotnet run --project tests/StoryTests -- --check <folder> [chapter file name ...]
+                if (args.Length >= 2 && args[0] == "--check")
+                {
+                    return ScriptCheck.Run(args[1], new List<string>(args).GetRange(2, args.Length - 2));
+                }
+
                 JsonTests.Run();
                 EngineTests.Run();
                 SetlistTests.Run();

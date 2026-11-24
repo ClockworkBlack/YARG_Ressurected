@@ -36,14 +36,14 @@ namespace StoryTests
                 {""id"": ""room-a"", ""name"": ""Room A"", ""city"": ""Testville"", ""style"": ""club"", ""top"": ""#101010"", ""bottom"": ""#000000"", ""accent"": ""#FF0000"", ""accent2"": ""#00FF00"", ""mapX"": 0.2, ""mapY"": 0.4},
                 {""id"": ""room-b"", ""name"": ""Room B"", ""city"": ""Assert City"", ""style"": ""arena"", ""top"": ""#101010"", ""bottom"": ""#000000"", ""accent"": ""#FF0000"", ""accent2"": ""#00FF00"", ""mapX"": 0.7, ""mapY"": 0.6}
               ],
-              ""keepsakes"": [{""id"": ""tape-1"", ""name"": ""Tape One"", ""description"": ""The first tape.""}],
+              ""keepsakes"": [{""id"": ""tape-1"", ""name"": ""Tape One"", ""description"": ""The first tape."", ""layer"": ""drums""}],
               ""ranks"": [{""name"": ""Legends"", ""fans"": 5000}, {""name"": ""Opening Act"", ""fans"": 0}, {""name"": ""Headliners"", ""fans"": 1000}],
               ""linerNotes"": [{""id"": ""note-1"", ""title"": ""A Note"", ""kicker"": ""Somewhere, 1960"", ""body"": ""It happened.""}],
               ""linerNoteFiles"": [""notes""],
               ""opening"": " + Scene("title", "Sample Story") + @",
               ""ending"": " + Scene("narrator", "The end.") + @",
               ""credits"": [""Thanks.""],
-              ""chapters"": [""chapter01"", ""chapter02""]
+              ""chapters"": [""chapter01"", ""chapter02"", ""chapter03""]
             }";
 
             files["notes"] = @"{""linerNotes"": [{""id"": ""note-2"", ""title"": ""Another Note"", ""body"": ""It also happened.""}]}";
@@ -67,6 +67,14 @@ namespace StoryTests
                 " + Gig("g4a", "room-b", 1, 3, ",\"requires\":[\"g3\"]") + @",
                 " + Gig("g4b", "room-a", 1, 3, ",\"requires\":[\"g3\"]") + @",
                 " + Gig("g5", "room-b", 4, 14, ",\"requires\":[\"g4a\",\"g4b\"]") + @"
+              ]
+            }";
+
+            files["chapter03"] = @"{
+              ""id"": ""ch3"", ""title"": ""Hidden Track"", ""subtitle"": ""Later"", ""focus"": ""Yours"", ""side"": ""Side D"", ""bonus"": true,
+              ""intro"": " + Scene("narrator", "Six months later.") + @",
+              ""gigs"": [
+                " + Gig("g6", "room-a", 1, 3, ",\"stamp\":\"87 BPM\"") + @"
               ]
             }";
 

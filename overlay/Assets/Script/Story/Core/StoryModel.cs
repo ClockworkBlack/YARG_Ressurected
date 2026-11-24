@@ -85,16 +85,18 @@ namespace YARG.Story
         public static readonly string[] Names =
         {
             BLACK,
-            "shop",       // the record shop
-            "bus",        // on the road, inside the tour bus
+            "wave",       // the narrator's own space: a waveform on black
+            "tape",       // a turning tape reel: the past, as recorded
+            "van",        // on the road, inside the van
             "road",       // highway at dusk, seen from outside
             "backstage",  // dressing room mirror lights
             "studio",     // mixing desk and a vocal booth
-            "radio",      // the late-night radio booth
+            "radio",      // a late-night radio booth
             "church",     // sanctuary with stained glass
             "street",     // a city block at night
             "rooftop",    // skyline at sunrise
             "office",     // a glass tower office
+            "kitchen",    // a kitchen table under a hanging lamp
             "diner",      // a booth and a neon sign
             "airport",    // departures board and a wide window
             "porch",      // a porch in the evening
@@ -311,6 +313,9 @@ namespace YARG.Story
         /// <summary>One or two sentences on the gig's card.</summary>
         public string Blurb = "";
 
+        /// <summary>A short stamp for the tour map, e.g. "87 BPM x 2 copies". May be empty.</summary>
+        public string Stamp = "";
+
         public StoryVibe Vibe = new StoryVibe();
 
         /// <summary>How many songs are in the set.</summary>
@@ -356,6 +361,7 @@ namespace YARG.Story
             gig.Title = StoryJson.Str(json, "title");
             gig.VenueId = StoryJson.Str(json, "venue");
             gig.Blurb = StoryJson.Str(json, "blurb");
+            gig.Stamp = StoryJson.Str(json, "stamp");
             gig.Vibe = StoryVibe.FromJson(StoryJson.Obj(json, "vibe"));
             gig.Songs = StoryJson.Int(json, "songs", 1);
             gig.StarsToPass = StoryJson.Int(json, "starsToPass", gig.Songs * 3);
@@ -383,6 +389,15 @@ namespace YARG.Story
         /// <summary>The music the chapter honors, e.g. "Gospel roots, doo-wop and the first R&amp;B".</summary>
         public string Focus = "";
 
+        /// <summary>A heading that groups chapters, e.g. "Side A". May be empty.</summary>
+        public string Side = "";
+
+        /// <summary>
+        /// An extra chapter after the ending. It opens once the story is finished, and its gigs
+        /// are not needed to finish the story.
+        /// </summary>
+        public bool Bonus;
+
         /// <summary>Played the first time the chapter is opened.</summary>
         public List<StoryLine> Intro = new List<StoryLine>();
 
@@ -399,6 +414,8 @@ namespace YARG.Story
             chapter.Title = StoryJson.Str(json, "title");
             chapter.Subtitle = StoryJson.Str(json, "subtitle");
             chapter.Focus = StoryJson.Str(json, "focus");
+            chapter.Side = StoryJson.Str(json, "side");
+            chapter.Bonus = StoryJson.Bool(json, "bonus");
             chapter.Intro = StoryLine.ListFromJson(json, "intro");
             chapter.Outro = StoryLine.ListFromJson(json, "outro");
             foreach (var item in StoryJson.Objects(json, "gigs"))
@@ -436,9 +453,18 @@ namespace YARG.Story
     /// <summary>Something collected through the story (what exactly is up to the script).</summary>
     public sealed class StoryKeepsake
     {
+        /// <summary>The parts of a band. A keepsake may stand for one of them.</summary>
+        public static readonly string[] Layers = { "voice", "bass", "guitar", "drums", "keys" };
+
         public string Id = "";
         public string Name = "";
         public string Description = "";
+
+        /// <summary>
+        /// One of <see cref="Layers"/>, or empty. The narrator's waveform gains that part once the
+        /// keepsake is found.
+        /// </summary>
+        public string Layer = "";
 
         public static StoryKeepsake FromJson(Dictionary<string, object> json)
         {
@@ -447,6 +473,7 @@ namespace YARG.Story
                 Id = StoryJson.Str(json, "id"),
                 Name = StoryJson.Str(json, "name"),
                 Description = StoryJson.Str(json, "description"),
+                Layer = StoryJson.Str(json, "layer"),
             };
         }
     }
