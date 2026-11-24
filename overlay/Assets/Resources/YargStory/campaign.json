@@ -1,0 +1,1046 @@
+{
+ "id": "eleven-seconds",
+ "version": 1,
+ "title": "Eleven Seconds",
+ "tagline": "Four bars. Five names. Until midnight on Watch Night to call the roll.",
+ "about": "Eleven Seconds is a story in four sides and a hidden track. On Watch Night 1967, five young musicians cut four bars in eleven seconds that the whole world went on to sample, and their names never made the label. One of them is your grandmother. You have a retired church van, a reel of tape and until midnight on the next Watch Night to find the other four and call the roll, before the song is sold forever.\n\nEvery gig is played with your own songs. Each stop asks for a vibe and suggests songs from your library that fit it, but any song can be played anywhere: the story only ever talks about the room and the people in it, never about what you chose. Win the crowd to move on. Meet a gig's challenge for a badge and, on the last gig of each chapter, a memory of the night it all began.\n\nThis story is dedicated to the uncredited players of American music: the house bands, session players and background singers whose work is inside everything you love, and whose names are still being added to the record.",
+ "keepsakeName": "Evidence",
+ "bandNames": [
+  "Mt. Nebo Youth Choir",
+  "Row Z",
+  "Aisle Three",
+  "The Pocket",
+  "Bar Five",
+  "The Dead Wax",
+  "Two and Four",
+  "The Run-Out Groove",
+  "Eleven Seconds Flat",
+  "Brass Flashlight",
+  "The Roll Call",
+  "Lamppost Power"
+ ],
+ "characters": [
+  {
+   "id": "odessa",
+   "name": "Nana Dess",
+   "role": "Your grandmother. Head usher, aisle three.",
+   "portrait": {
+    "skin": "#6B4226",
+    "hair": "braids",
+    "hairColor": "#D9D4CC",
+    "outfit": "#B3202A",
+    "accent": "#D4A73A",
+    "accessory": "glasses"
+   }
+  },
+  {
+   "id": "cross",
+   "name": "Uncle Cross",
+   "role": "Bronx park-jam DJ. Van driver.",
+   "portrait": {
+    "skin": "#4A2C1D",
+    "hair": "fade",
+    "hairColor": "#5A5550",
+    "outfit": "#2E6E4E",
+    "accent": "#F2C14E",
+    "accessory": "headphones"
+   }
+  },
+  {
+   "id": "tuesday",
+   "name": "Tuesday",
+   "role": "Your cousin. Keeper of the Evidence Box.",
+   "portrait": {
+    "skin": "#A0663F",
+    "hair": "puffs",
+    "hairColor": "#1B1410",
+    "outfit": "#E8B04A",
+    "accent": "#3A6EA5",
+    "accessory": "glasses"
+   }
+  },
+  {
+   "id": "pryce",
+   "name": "The Counselor",
+   "role": "Attorney Ngozi Pryce. Music lawyer, D.C.",
+   "portrait": {
+    "skin": "#3B2416",
+    "hair": "fade",
+    "hairColor": "#141010",
+    "outfit": "#1F2A44",
+    "accent": "#D7263D",
+    "accessory": "glasses"
+   }
+  },
+  {
+   "id": "vivienne",
+   "name": "Vivienne Lark",
+   "role": "CEO of Lantern Legacy.",
+   "portrait": {
+    "skin": "#8A5A3B",
+    "hair": "locs",
+    "hairColor": "#C9C5BE",
+    "outfit": "#EFE6D2",
+    "accent": "#D4AF37",
+    "accessory": "earrings"
+   }
+  },
+  {
+   "id": "kingston",
+   "name": "Kingston Lark",
+   "role": "Frontman of The Birthrights.",
+   "portrait": {
+    "skin": "#7A4B2E",
+    "hair": "waves",
+    "hairColor": "#120D0A",
+    "outfit": "#14213D",
+    "accent": "#C9A227",
+    "accessory": "chain"
+   }
+  },
+  {
+   "id": "ellery",
+   "name": "Graham Ellery",
+   "role": "Chief Forever Officer, Perpetua Audio.",
+   "portrait": {
+    "skin": "#F1C9A5",
+    "hair": "curls",
+    "hairColor": "#8C6A4F",
+    "outfit": "#8D99A6",
+    "accent": "#3FA9F5",
+    "accessory": "none"
+   }
+  },
+  {
+   "id": "ruth",
+   "name": "Saturday Ruth",
+   "role": "Sister Ruth Pettis. The guitar.",
+   "portrait": {
+    "skin": "#5A3825",
+    "hair": "curls",
+    "hairColor": "#E6E1DA",
+    "outfit": "#6A2C70",
+    "accent": "#F28FAD",
+    "accessory": "flower"
+   }
+  },
+  {
+   "id": "deacon",
+   "name": "Deacon Arceneaux",
+   "role": "Wendell Arceneaux. The drums.",
+   "portrait": {
+    "skin": "#3E2718",
+    "hair": "bald",
+    "hairColor": "#CFCAC2",
+    "outfit": "#F5F5F0",
+    "accent": "#C2262E",
+    "accessory": "cap"
+   }
+  },
+  {
+   "id": "finch",
+   "name": "Professor Finch",
+   "role": "Aurelius Finch. The keys.",
+   "portrait": {
+    "skin": "#5C3A21",
+    "hair": "waves",
+    "hairColor": "#BDB8B0",
+    "outfit": "#2A4D69",
+    "accent": "#E9C46A",
+    "accessory": "scarf"
+   }
+  },
+  {
+   "id": "ren",
+   "name": "Ren Castile",
+   "role": "Owner, Pontiac Ballroom. Low's daughter.",
+   "portrait": {
+    "skin": "#7B4A2A",
+    "hair": "wrap",
+    "hairColor": "#B23A48",
+    "outfit": "#4F6D7A",
+    "accent": "#F2B134",
+    "accessory": "chain"
+   }
+  },
+  {
+   "id": "empress",
+   "name": "The Empress",
+   "role": "Miss Delphine St. James. Two shows nightly.",
+   "portrait": {
+    "skin": "#8D5524",
+    "hair": "curls",
+    "hairColor": "#2A1A12",
+    "outfit": "#C2185B",
+    "accent": "#F7D774",
+    "accessory": "earrings"
+   }
+  },
+  {
+   "id": "pennington",
+   "name": "Mr. Pennington",
+   "role": "Retired mastering engineer, North Philly.",
+   "portrait": {
+    "skin": "#2F1C12",
+    "hair": "fade",
+    "hairColor": "#E0DCD5",
+    "outfit": "#8B6F47",
+    "accent": "#C9A227",
+    "accessory": "glasses"
+   }
+  },
+  {
+   "id": "broom",
+   "name": "Mr. Broom",
+   "role": "Stage sweeper. Has seen everybody.",
+   "portrait": {
+    "skin": "#3A2418",
+    "hair": "bald",
+    "hairColor": "#8E8A85",
+    "outfit": "#2B2B2B",
+    "accent": "#B3202A",
+    "accessory": "bowtie"
+   }
+  },
+  {
+   "id": "whitlock",
+   "name": "Bryce Whitlock",
+   "role": "Chief of staff, Lantern Legacy.",
+   "portrait": {
+    "skin": "#8D5524",
+    "hair": "fade",
+    "hairColor": "#1B1410",
+    "outfit": "#2B2B2B",
+    "accent": "#D4AF37",
+    "accessory": "none"
+   }
+  },
+  {
+   "id": "velvet",
+   "name": "Velvet Odom",
+   "role": "Master of ceremonies, Motor City Grand.",
+   "portrait": {
+    "skin": "#5A3420",
+    "hair": "waves",
+    "hairColor": "#2B2B2B",
+    "outfit": "#8C2F39",
+    "accent": "#F0C75E",
+    "accessory": "bowtie"
+   }
+  },
+  {
+   "id": "hollis",
+   "name": "Hollis Gaines",
+   "role": "Leader of the Basement Saints.",
+   "portrait": {
+    "skin": "#3E2718",
+    "hair": "afro",
+    "hairColor": "#A8A29A",
+    "outfit": "#3D1F0B",
+    "accent": "#F0C75E",
+    "accessory": "hat"
+   }
+  },
+  {
+   "id": "tempo",
+   "name": "Miss Tempo",
+   "role": "House DJ since the warehouse days.",
+   "portrait": {
+    "skin": "#6E4330",
+    "hair": "afro",
+    "hairColor": "#9A948C",
+    "outfit": "#2E8B57",
+    "accent": "#E6C229",
+    "accessory": "shades"
+   }
+  },
+  {
+   "id": "lake",
+   "name": "Lake",
+   "role": "Owner of the Star Wall Club. Paints the stars.",
+   "portrait": {
+    "skin": "#4E3020",
+    "hair": "twists",
+    "hairColor": "#1B1410",
+    "outfit": "#1A1A1A",
+    "accent": "#B388EB",
+    "accessory": "beanie"
+   }
+  },
+  {
+   "id": "decibel",
+   "name": "Decibel",
+   "role": "Atlanta producer. Flipped the break forty times.",
+   "portrait": {
+    "skin": "#9C6644",
+    "hair": "braids",
+    "hairColor": "#6C3FA0",
+    "outfit": "#FF4D8D",
+    "accent": "#FDCB58",
+    "accessory": "headphones"
+   }
+  },
+  {
+   "id": "boom",
+   "name": "Tante Boom",
+   "role": "Miami bass selector.",
+   "portrait": {
+    "skin": "#5E3B26",
+    "hair": "wrap",
+    "hairColor": "#1FB5C9",
+    "outfit": "#FFE66D",
+    "accent": "#E63946",
+    "accessory": "earrings"
+   }
+  },
+  {
+   "id": "trunk",
+   "name": "Trunk Ellis",
+   "role": "Never had a hit. Never had a boss.",
+   "portrait": {
+    "skin": "#4B2E1E",
+    "hair": "fade",
+    "hairColor": "#1B1410",
+    "outfit": "#123B3A",
+    "accent": "#F28C28",
+    "accessory": "cap"
+   }
+  },
+  {
+   "id": "whitewall",
+   "name": "Lady Whitewall",
+   "role": "President, Whitewall Ladies Car Club.",
+   "portrait": {
+    "skin": "#A86B45",
+    "hair": "waves",
+    "hairColor": "#3B1F12",
+    "outfit": "#5E2B6E",
+    "accent": "#FFF275",
+    "accessory": "shades"
+   }
+  },
+  {
+   "id": "pressure",
+   "name": "Pressure",
+   "role": "London pirate-radio veteran.",
+   "portrait": {
+    "skin": "#3A2418",
+    "hair": "locs",
+    "hairColor": "#4A4440",
+    "outfit": "#0A1A3A",
+    "accent": "#E63946",
+    "accessory": "headphones"
+   }
+  },
+  {
+   "id": "hayashi",
+   "name": "Mr. Hayashi",
+   "role": "Owner of a twelve-seat soul bar in Tokyo.",
+   "portrait": {
+    "skin": "#E8C4A0",
+    "hair": "waves",
+    "hairColor": "#3A3A3A",
+    "outfit": "#3D2B1F",
+    "accent": "#FCA311",
+    "accessory": "bowtie"
+   }
+  },
+  {
+   "id": "doina",
+   "name": "Doina",
+   "role": "Bucharest promoter. Raised on copied tapes.",
+   "portrait": {
+    "skin": "#EAC7A8",
+    "hair": "bob",
+    "hairColor": "#6B3A1E",
+    "outfit": "#243B6B",
+    "accent": "#FFE8A3",
+    "accessory": "scarf"
+   }
+  },
+  {
+   "id": "zee",
+   "name": "Zee Mokoena",
+   "role": "Johannesburg amapiano producer.",
+   "portrait": {
+    "skin": "#4A2A18",
+    "hair": "hightop",
+    "hairColor": "#1B1410",
+    "outfit": "#F26419",
+    "accent": "#FFF3B0",
+    "accessory": "earrings"
+   }
+  },
+  {
+   "id": "marcus",
+   "name": "Marcus",
+   "role": "Deacon's grandson. Drives the slab.",
+   "portrait": {
+    "skin": "#6B4226",
+    "hair": "braids",
+    "hairColor": "#1B1410",
+    "outfit": "#6A3093",
+    "accent": "#E0457B",
+    "accessory": "chain"
+   }
+  },
+  {
+   "id": "viola",
+   "name": "Mother Viola",
+   "role": "Church mother, Houston.",
+   "portrait": {
+    "skin": "#4A2C1D",
+    "hair": "curls",
+    "hairColor": "#DAD5CE",
+    "outfit": "#FFFFFF",
+    "accent": "#6A3093",
+    "accessory": "hat"
+   }
+  }
+ ],
+ "venues": [
+  {
+   "id": "harlem-theater",
+   "name": "Harlem Amateur Night Theater",
+   "city": "Harlem, New York",
+   "inspiredBy": "the Apollo Theater, Harlem, New York",
+   "style": "theater",
+   "top": "#3A0A12",
+   "bottom": "#140408",
+   "accent": "#E8B84A",
+   "accent2": "#C2262E",
+   "mapX": 0.646,
+   "mapY": 0.624
+  },
+  {
+   "id": "bronx-block-party",
+   "name": "Bronx Park Jam",
+   "city": "The Bronx, New York",
+   "inspiredBy": "the 1970s block parties of the Bronx, where Hip Hop began",
+   "style": "street",
+   "top": "#F2994A",
+   "bottom": "#3B1D5E",
+   "accent": "#FFD166",
+   "accent2": "#2EC4B6",
+   "mapX": 0.671,
+   "mapY": 0.656
+  },
+  {
+   "id": "midtown-garden",
+   "name": "Midtown Arena",
+   "city": "Midtown Manhattan, New York",
+   "inspiredBy": "Madison Square Garden, New York",
+   "style": "arena",
+   "top": "#0B1026",
+   "bottom": "#05060F",
+   "accent": "#3FA9F5",
+   "accent2": "#F25C54",
+   "mapX": 0.62,
+   "mapY": 0.598
+  },
+  {
+   "id": "dc-u-street",
+   "name": "U Street Theater",
+   "city": "U Street, Washington, D.C.",
+   "inspiredBy": "the Howard Theatre and Washington D.C.'s \"Black Broadway\"",
+   "style": "theater",
+   "top": "#10233F",
+   "bottom": "#060D1A",
+   "accent": "#D9B36C",
+   "accent2": "#1F4E8C",
+   "mapX": 0.589,
+   "mapY": 0.538
+  },
+  {
+   "id": "philly-uptown",
+   "name": "North Philly Soul Hall",
+   "city": "North Philadelphia, Pennsylvania",
+   "inspiredBy": "the Uptown Theater, Philadelphia",
+   "style": "club",
+   "top": "#2B1B3D",
+   "bottom": "#0E0816",
+   "accent": "#F28FAD",
+   "accent2": "#8CE0F5",
+   "mapX": 0.601,
+   "mapY": 0.58
+  },
+  {
+   "id": "atlanta-block",
+   "name": "Atlanta Summer Block Party",
+   "city": "Atlanta, Georgia",
+   "inspiredBy": "Atlanta's Freaknik years and the city's car and block culture",
+   "style": "street",
+   "top": "#FF7E5F",
+   "bottom": "#2A1B4A",
+   "accent": "#FDCB58",
+   "accent2": "#FF4D8D",
+   "mapX": 0.512,
+   "mapY": 0.392
+  },
+  {
+   "id": "new-orleans-blues",
+   "name": "Crescent City Blues House",
+   "city": "French Quarter, New Orleans",
+   "inspiredBy": "the House of Blues, New Orleans",
+   "style": "club",
+   "top": "#3B1F12",
+   "bottom": "#120805",
+   "accent": "#F2A541",
+   "accent2": "#4FC3C8",
+   "mapX": 0.432,
+   "mapY": 0.288
+  },
+  {
+   "id": "new-orleans-festival",
+   "name": "Crescent City Festival Night",
+   "city": "New Orleans, Louisiana",
+   "inspiredBy": "the Essence Festival, New Orleans",
+   "style": "arena",
+   "top": "#1A0B2E",
+   "bottom": "#07030F",
+   "accent": "#C792EA",
+   "accent2": "#F2C14E",
+   "mapX": 0.464,
+   "mapY": 0.266
+  },
+  {
+   "id": "houston-slab",
+   "name": "Houston Slab Sunday",
+   "city": "Houston, Texas",
+   "inspiredBy": "Houston's slab line and car show scene",
+   "style": "street",
+   "top": "#6A3093",
+   "bottom": "#12051F",
+   "accent": "#E0457B",
+   "accent2": "#FDE74C",
+   "mapX": 0.382,
+   "mapY": 0.273
+  },
+  {
+   "id": "memphis-beale",
+   "name": "Beale Street Juke",
+   "city": "Beale Street, Memphis",
+   "inspiredBy": "the clubs of Beale Street, Memphis",
+   "style": "club",
+   "top": "#12233B",
+   "bottom": "#060B14",
+   "accent": "#5EC8F2",
+   "accent2": "#F25F5C",
+   "mapX": 0.445,
+   "mapY": 0.434
+  },
+  {
+   "id": "miami-beach",
+   "name": "Miami Beach Stage",
+   "city": "Miami, Florida",
+   "inspiredBy": "Miami bass and the city's open-air shows",
+   "style": "festival",
+   "top": "#1FB5C9",
+   "bottom": "#F2709C",
+   "accent": "#FFE66D",
+   "accent2": "#FFFFFF",
+   "mapX": 0.562,
+   "mapY": 0.154
+  },
+  {
+   "id": "pontiac-ballroom",
+   "name": "Pontiac Ballroom",
+   "city": "Pontiac, Michigan",
+   "inspiredBy": "the Crofoot Ballroom, Pontiac, Michigan",
+   "style": "club",
+   "top": "#1F2A44",
+   "bottom": "#0A0E18",
+   "accent": "#F2B134",
+   "accent2": "#E84855",
+   "mapX": 0.513,
+   "mapY": 0.689
+  },
+  {
+   "id": "detroit-fox",
+   "name": "Motor City Grand Theater",
+   "city": "Detroit, Michigan",
+   "inspiredBy": "the Fox Theatre, Detroit, and the Motown revues",
+   "style": "theater",
+   "top": "#3D1F0B",
+   "bottom": "#140A04",
+   "accent": "#F0C75E",
+   "accent2": "#8C2F39",
+   "mapX": 0.54,
+   "mapY": 0.64
+  },
+  {
+   "id": "chicago-regal",
+   "name": "South Side Regal",
+   "city": "South Side, Chicago",
+   "inspiredBy": "the Regal Theater, Chicago",
+   "style": "theater",
+   "top": "#1B2A1F",
+   "bottom": "#08100A",
+   "accent": "#E6C229",
+   "accent2": "#2E8B57",
+   "mapX": 0.474,
+   "mapY": 0.633
+  },
+  {
+   "id": "minneapolis-club",
+   "name": "Minneapolis Star Wall Club",
+   "city": "Minneapolis, Minnesota",
+   "inspiredBy": "First Avenue, Minneapolis",
+   "style": "club",
+   "top": "#1A1A1A",
+   "bottom": "#050505",
+   "accent": "#B388EB",
+   "accent2": "#F7F7F7",
+   "mapX": 0.406,
+   "mapY": 0.729
+  },
+  {
+   "id": "la-forum",
+   "name": "Inglewood Arena",
+   "city": "Inglewood, California",
+   "inspiredBy": "the Forum, Inglewood, Los Angeles",
+   "style": "arena",
+   "top": "#20104A",
+   "bottom": "#080418",
+   "accent": "#F5B700",
+   "accent2": "#A45EE5",
+   "mapX": 0.097,
+   "mapY": 0.417
+  },
+  {
+   "id": "compton-swap-meet",
+   "name": "Compton Lot Party",
+   "city": "Compton, California",
+   "inspiredBy": "the swap meets and parking-lot shows of Compton and South Los Angeles",
+   "style": "street",
+   "top": "#FFB347",
+   "bottom": "#5E2B6E",
+   "accent": "#7BD389",
+   "accent2": "#FFF275",
+   "mapX": 0.126,
+   "mapY": 0.375
+  },
+  {
+   "id": "oakland-fox",
+   "name": "Oakland Deco Theater",
+   "city": "Oakland, California",
+   "inspiredBy": "the Fox Theater, Oakland",
+   "style": "theater",
+   "top": "#123B3A",
+   "bottom": "#051514",
+   "accent": "#F28C28",
+   "accent2": "#E3D26F",
+   "mapX": 0.062,
+   "mapY": 0.514
+  },
+  {
+   "id": "vegas-residency",
+   "name": "Las Vegas Residency Room",
+   "city": "Las Vegas, Nevada",
+   "inspiredBy": "the Las Vegas showrooms",
+   "style": "upscale",
+   "top": "#2A0E3A",
+   "bottom": "#0C0412",
+   "accent": "#F7D774",
+   "accent2": "#E0457B",
+   "mapX": 0.147,
+   "mapY": 0.465
+  },
+  {
+   "id": "concert-hall",
+   "name": "Uptown Concert Hall",
+   "city": "57th Street, New York",
+   "inspiredBy": "Carnegie Hall, New York",
+   "style": "upscale",
+   "top": "#3B2A1A",
+   "bottom": "#120C06",
+   "accent": "#F2DFA7",
+   "accent2": "#8C1C13",
+   "mapX": 0.675,
+   "mapY": 0.591
+  },
+  {
+   "id": "dc-arts-center",
+   "name": "Capital Arts Center",
+   "city": "Washington, D.C.",
+   "inspiredBy": "the Kennedy Center, Washington D.C.",
+   "style": "upscale",
+   "top": "#5A0F1B",
+   "bottom": "#1A0408",
+   "accent": "#F5E6B8",
+   "accent2": "#C9A227",
+   "mapX": 0.617,
+   "mapY": 0.507
+  },
+  {
+   "id": "london-stadium",
+   "name": "London Stadium Night",
+   "city": "London, England",
+   "inspiredBy": "Michael Jackson's 1988 Wembley Stadium shows",
+   "style": "arena",
+   "top": "#0A1A3A",
+   "bottom": "#030812",
+   "accent": "#FFFFFF",
+   "accent2": "#E63946",
+   "mapX": 0.84,
+   "mapY": 0.84
+  },
+  {
+   "id": "montreux-lakeside",
+   "name": "Lakeside Jazz Festival",
+   "city": "Montreux, Switzerland",
+   "inspiredBy": "the Montreux Jazz Festival, Switzerland",
+   "style": "upscale",
+   "top": "#0F2F4A",
+   "bottom": "#05121C",
+   "accent": "#E9C46A",
+   "accent2": "#2A9D8F",
+   "mapX": 0.9,
+   "mapY": 0.68
+  },
+  {
+   "id": "bucharest-open-air",
+   "name": "Bucharest Open Air",
+   "city": "Bucharest, Romania",
+   "inspiredBy": "Michael Jackson's 1992 Bucharest concert",
+   "style": "festival",
+   "top": "#243B6B",
+   "bottom": "#E0764A",
+   "accent": "#FFE8A3",
+   "accent2": "#FFFFFF",
+   "mapX": 0.95,
+   "mapY": 0.52
+  },
+  {
+   "id": "tokyo-dome",
+   "name": "Tokyo Dome Night",
+   "city": "Tokyo, Japan",
+   "inspiredBy": "the Tokyo Dome dates of the late 80s and 90s world tours",
+   "style": "arena",
+   "top": "#14213D",
+   "bottom": "#05080F",
+   "accent": "#FCA311",
+   "accent2": "#E5E5E5",
+   "mapX": 0.93,
+   "mapY": 0.34
+  },
+  {
+   "id": "johannesburg-festival",
+   "name": "Johannesburg Festival Field",
+   "city": "Johannesburg, South Africa",
+   "inspiredBy": "the big outdoor shows of Johannesburg",
+   "style": "festival",
+   "top": "#F6AE2D",
+   "bottom": "#86283C",
+   "accent": "#F26419",
+   "accent2": "#FFF3B0",
+   "mapX": 0.86,
+   "mapY": 0.16
+  }
+ ],
+ "keepsakes": [
+  {
+   "id": "k-tape-box",
+   "name": "The Watch Night Reel",
+   "layer": "voice",
+   "description": "Seven-inch reel box, grey cloth, found behind a hatbox on the top shelf of O. Fontaine's closet. Labelled in blue ballpoint: WATCH NIGHT - 11 SEC - DO NOT ERASE. Contents: one roll call, one laugh, four bars."
+  },
+  {
+   "id": "k-dead-wax",
+   "name": "Dead-Wax Rubbing",
+   "description": "Pencil rubbing on tracing paper of the run-out groove of Lantern L-1167, side B. Beside the matrix number, five letters scratched by hand: D-L-S-P-D. Every copy ever pressed has them."
+  },
+  {
+   "id": "k-ledger",
+   "name": "Low Castile's Ledger",
+   "layer": "bass",
+   "description": "Black oilcloth pocket ledger, 1962 to 1990, in the hand of Lemuel Castile: every session, every studio, every dollar. Entry for 12/31/67: 'Lantern, back room. Watch Night. $15 + plate.' Under it: 'D. got paper. We got a plate.'"
+  },
+  {
+   "id": "k-strap",
+   "name": "Saturday Ruth's Strap",
+   "layer": "guitar",
+   "description": "Tooled leather guitar strap, worn through at the shoulder. Folded inside the lining for sixty years: page 211 of a Harlem church hymnal, 'Watchman, Hold the Light', with 'sing it C.F.'s way' pencilled in the margin."
+  },
+  {
+   "id": "k-snare-head",
+   "name": "The Watch Night Snare Head",
+   "layer": "drums",
+   "description": "Fourteen-inch calfskin snare head, played to a shine on two and four. Pencilled inside the rim: 'W.A. 12/31/67 - we was here.'"
+  },
+  {
+   "id": "k-chart",
+   "name": "The Professor's Chart",
+   "layer": "keys",
+   "description": "One sheet of manuscript paper, in pencil, dated 12/31/67. Heading: 'WATCH NIGHT - arr. by all of us; tune: Dess's mama's hymn.' The one piece of paper in this case that Augustus Lark did not write."
+  }
+ ],
+ "ranks": [
+  {
+   "name": "Row Z",
+   "fans": 0
+  },
+  {
+   "name": "Amateur Night",
+   "fans": 500
+  },
+  {
+   "name": "Park Jam Regulars",
+   "fans": 2000
+  },
+  {
+   "name": "Opening Act",
+   "fans": 6000
+  },
+  {
+   "name": "House Band",
+   "fans": 15000
+  },
+  {
+   "name": "Headliner",
+   "fans": 40000
+  },
+  {
+   "name": "Name on the Label",
+   "fans": 90000
+  },
+  {
+   "name": "Legend",
+   "fans": 200000
+  }
+ ],
+ "opening": [
+  {
+   "s": "title",
+   "t": "ELEVEN SECONDS",
+   "sub": "A story in four sides and a hidden track",
+   "bg": "black"
+  },
+  {
+   "s": "narrator",
+   "t": "I am eleven seconds long.",
+   "bg": "wave"
+  },
+  {
+   "s": "narrator",
+   "t": "Four bars. Eighty-seven beats a minute. Drums, bass, guitar, organ. And in bar four, somebody hollers five notes like she just heard the year turn over."
+  },
+  {
+   "s": "narrator",
+   "t": "I have been in love songs, diss tracks, a toothpaste commercial and four hundred funerals. I was a ringtone once. I did not consent."
+  },
+  {
+   "s": "narrator",
+   "t": "I know everybody who ever borrowed me. I never did catch the names of the five who made me."
+  },
+  {
+   "s": "narrator",
+   "t": "I was eleven seconds old once. Do you remember being born?"
+  },
+  {
+   "s": "narrator",
+   "t": "Here is what I do know. At midnight on my sixtieth Watch Night, the label that owns me sells me. Forever, they say. They say it like it's a kindness."
+  },
+  {
+   "s": "narrator",
+   "t": "And here is what I know about you. You grew up in row Z of the Harlem Amateur Night Theater. Homework on your knees. Ten thousand shows, for free.",
+   "bg": "harlem-theater"
+  },
+  {
+   "s": "narrator",
+   "t": "Free, because the head usher of aisle three is your grandmother."
+  },
+  {
+   "s": "odessa",
+   "t": "Watch your step. Enjoy the show.",
+   "mood": "warm"
+  },
+  {
+   "s": "narrator",
+   "t": "Odessa Fontaine. Red jacket, brass buttons, brass flashlight. Forty years on that aisle, and not one night on that stage."
+  },
+  {
+   "s": "odessa",
+   "t": "Pocket. Feet off that seat. That is a paying customer's seat, and you are not a paying customer.",
+   "mood": "sly"
+  },
+  {
+   "s": "narrator",
+   "t": "She calls you Pocket. When you were a baby you would only sleep if she patted your back on two and four."
+  },
+  {
+   "s": "odessa",
+   "t": "This one lives in the pocket. Always did.",
+   "mood": "warm"
+  },
+  {
+   "s": "narrator",
+   "t": "This Wednesday you stop watching from row Z. You signed up for Amateur Night. She has not said one word about it. She has ironed your shirt twice."
+  },
+  {
+   "s": "odessa",
+   "t": "The stage don't care who your grandmother is, baby. Neither does the crowd. Go on and earn it.",
+   "mood": "stern"
+  },
+  {
+   "s": "narrator",
+   "t": "Neither of you mentions the closet in her apartment, or the hatbox on the top shelf, or what is behind it. Well. One of you knows."
+  },
+  {
+   "s": "narrator",
+   "t": "Let's go find out who I am.",
+   "bg": "wave"
+  }
+ ],
+ "ending": [
+  {
+   "s": "title",
+   "t": "THE ENCORE",
+   "sub": "Harlem, a little after one in the morning",
+   "bg": "black"
+  },
+  {
+   "s": "narrator",
+   "t": "The house wants more. Your set is done. You played every note of it like it was yours, because it was.",
+   "bg": "harlem-theater"
+  },
+  {
+   "s": "narrator",
+   "t": "This next one isn't."
+  },
+  {
+   "s": "narrator",
+   "t": "They come out of the wings one at a time, and each of them puts something in your hands on the way past."
+  },
+  {
+   "s": "deacon",
+   "t": "Hold these, Pocket. They know the way to two and four. Don't let them rush.",
+   "mood": "warm"
+  },
+  {
+   "s": "ren",
+   "t": "Daddy's strap. He'd want it on somebody who shows up on time.",
+   "mood": "warm"
+  },
+  {
+   "s": "ruth",
+   "t": "Pick from my hatband. I been saving it for the right Saturday.",
+   "mood": "laugh"
+  },
+  {
+   "s": "finch",
+   "t": "One chord, in pencil. Play it wrong if you like. Only mean it.",
+   "mood": "warm"
+  },
+  {
+   "s": "narrator",
+   "t": "Nana Dess stops at the foot of the stage stairs with the brass flashlight in her hand. Forty years she has stood right here and pointed other people up."
+  },
+  {
+   "s": "narrator",
+   "t": "Mr. Broom only ever speaks to people on their way off this stage. Tonight he leans his broom against the wall and offers his arm to somebody on her way up."
+  },
+  {
+   "s": "broom",
+   "t": "Watch your step, Miss Odessa.",
+   "mood": "warm"
+  },
+  {
+   "s": "odessa",
+   "t": "Enjoy the show.",
+   "mood": "proud"
+  },
+  {
+   "s": "narrator",
+   "t": "She puts the flashlight in your hands, and she goes up."
+  },
+  {
+   "s": "narrator",
+   "t": "Deacon. Low's bass, in his daughter's hands. Sister Ruth. The Professor. Dess. Together for the first time since 1967, and the first time anybody asked.",
+   "bg": "wave"
+  },
+  {
+   "s": "narrator",
+   "t": "Bar one. Bar two. Bar three. In bar four she hollers five notes, and the whole house hollers them back."
+  },
+  {
+   "s": "narrator",
+   "t": "And this is where I stop. Every copy. Every loop. Sixty years and ten thousand songs, and I end right here."
+  },
+  {
+   "s": "narrator",
+   "t": "They don't stop."
+  },
+  {
+   "s": "narrator",
+   "t": "Sixty years I ended at bar four. Tonight I found out what bar five sounds like."
+  },
+  {
+   "s": "narrator",
+   "t": "I always wondered what came next. Turns out it was them."
+  },
+  {
+   "s": "title",
+   "t": "LANTERN L-1167, SIDE B",
+   "sub": "WATCH NIGHT (A. Lark). Performed by The Lark Five.",
+   "bg": "black"
+  },
+  {
+   "s": "title",
+   "t": "LANTERN L-1167, SIDE B",
+   "sub": "WATCH NIGHT. Written and performed by Wendell Arceneaux, Lemuel Castile, Ruth Pettis, Aurelius Finch and Odessa Fontaine. House band: {band}."
+  },
+  {
+   "s": "title",
+   "t": "THE PAPERWORK TOOK ANOTHER YEAR",
+   "sub": "The five kept their song in a re-founded Lantern, held in trust, with the players' families on the board and Vivienne Lark as its steward."
+  },
+  {
+   "s": "title",
+   "t": "ALL ELEVEN SCHOOLS STAYED OPEN",
+   "sub": "Perpetua Audio went looking for an easier catalogue."
+  },
+  {
+   "s": "cross",
+   "t": "Dess. Forty-one years of back pay, with interest. I counted it twice.",
+   "mood": "warm",
+   "bg": "porch"
+  },
+  {
+   "s": "odessa",
+   "t": "Baby, I'm forgiving. I'm not foolish.",
+   "mood": "laugh"
+  },
+  {
+   "s": "narrator",
+   "t": "The van kept its paint.",
+   "bg": "van"
+  }
+ ],
+ "credits": [
+  "For the session players, the house bands and the background singers whose names never made the label.",
+  "For the drummers whose breaks became the floor everybody else stood on.",
+  "For the ushers, the sweepers and the stagehands who saw every show and were never in one.",
+  "For the DJs who kept the music warm, and for every one who went back and paid.",
+  "Thank you to every room that ever answered.",
+  "And thank you for bringing your own songs. Nobody else could have played them.",
+  "The liner notes are true. Look the names up. Call the roll.",
+  "All characters, labels and acts in this story are fictional."
+ ],
+ "linerNoteFiles": [
+  "linernotes"
+ ],
+ "chapters": [
+  "chapter01",
+  "chapter02",
+  "chapter03",
+  "chapter04",
+  "chapter05",
+  "chapter06",
+  "chapter07",
+  "chapter08",
+  "chapter09",
+  "chapter10",
+  "chapter11"
+ ]
+}
