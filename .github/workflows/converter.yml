@@ -105,6 +105,29 @@ jobs:
             'Audio from https://commons.wikimedia.org/wiki/File:Josh_Woodward_-_Swansong.ogg' \
             'Charts and vocals made automatically by YARG Converter.' > "sample-song/Josh Woodward - Swansong/CREDITS.txt"
 
+      # Hip hop from the Free Music Archive, as imported to Wikimedia Commons under Creative Commons
+      # licences: the first two minutes of a few songs go through the same separation and vocals
+      # charting as in the app, with a made-up line every eight seconds, and every line's
+      # measurements are printed. Some tracks in the category are instrumentals; those show as
+      # "voice not heard". Nothing from these songs is kept.
+      - name: Measure rapped lines in real hip hop songs
+        continue-on-error: true
+        run: |
+          ua="YARGConverter-CI/0.2 (automated build check; https://github.com/ClockworkBlack/YARG_Ressurected)"
+          curl -sS --fail -A "$ua" -o cat.json \
+            "https://commons.wikimedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:Hip_hop_music_from_Free_Music_Archive&cmtype=file&cmlimit=40&format=json"
+          jq -r '.query.categorymembers[].title' cat.json | grep -viE "instrumental|beat|no vocals" | head -5 > picks.txt
+          cat picks.txt
+          while read -r title; do
+            file="${title#File:}"
+            echo "== hip hop: $file"
+            rm -f hh.in hh.f32
+            curl -sSL --fail --max-time 180 -A "$ua" -o hh.in "https://commons.wikimedia.org/wiki/Special:FilePath/${file// /_}" || { echo "could not download"; continue; }
+            ffmpeg -loglevel error -i hh.in -vn -t 120 -f f32le -ac 2 -ar 44100 hh.f32 || continue
+            java -Xmx5g -cp out:onnxruntime.jar RealSongCheck model/htdemucs_6s.onnx hh.f32 hh-out "$file" "FMA" | grep -E "^Vocals|LINE|Voice:" || true
+            rm -rf hh-out
+          done < picks.txt
+
       - uses: actions/upload-artifact@v4
         if: always()
         continue-on-error: true
@@ -167,39 +190,17 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg jq > /dev/null
           javac -d out $(find converter/app/src/main/java -path '*core*' -name '*.java') converter/model-test/VoiceCheck.java
 
-      # Vocals-only recordings shared under Creative Commons on ccMixter, found by their tags.
-      # Only measurements are printed; the recordings themselves are not kept.
-      - name: Measure rap and sung a cappellas
+      # Rap recorded live, shared under Creative Commons on Wikimedia Commons. Only measurements
+      # are printed; the recordings are not kept.
+      - name: Measure real rap
         run: |
-          ua="YARGConverter-CI/0.2 (automated build check)"
-          check() { # $1 label, $2 url
-            rm -f clip.* clip.f32
-            curl -sSL --fail --max-time 120 -A "$ua" -o clip.in "$2" || { echo "could not download $2"; return; }
-            ffmpeg -loglevel error -i clip.in -t 240 -f f32le -ac 1 -ar 44100 clip.f32 || return
-            java -Xmx2g -cp out VoiceCheck clip.f32 "$1"
-          }
-          for kind in rap singing; do
-            if curl -sS --fail --max-time 60 -A "$ua" -o list.json \
-                "http://ccmixter.org/api/query?f=json&tags=acappella,$kind&sort=rank&limit=12"; then
-              echo "ccMixter $kind: $(jq length list.json 2>/dev/null) uploads"
-              jq -r '.[] | [(.upload_tags // ""), (.upload_name // "?"), (.user_name // "?"), (.license_name // "?"),
-                  ([.files[]? | select((.download_url // "") | test("\\.mp3$"))][0].download_url // "")] | @tsv' list.json > picks.tsv || head -c 600 list.json
-              n=0
-              while IFS=$'\t' read -r tags name user license url; do
-                [ -z "$url" ] && continue
-                # Sung set: leave out anything also tagged as rap, and the other way round
-                if [ "$kind" = singing ] && echo "$tags" | grep -qi "rap"; then continue; fi
-                if [ "$kind" = rap ] && echo "$tags" | grep -qiE "singing|sung"; then continue; fi
-                echo "== $kind: \"$name\" by $user ($license)"
-                check "$kind" "$url"
-                n=$((n+1)); [ $n -ge 6 ] && break
-              done < picks.tsv
-            else
-              echo "ccMixter $kind query failed"
-            fi
+          ua="YARGConverter-CI/0.2 (automated build check; https://github.com/ClockworkBlack/YARG_Ressurected)"
+          for f in "Gully_rap_on_a_train.ogg" "JMoRappinWiki.ogg" "Rap_Agoriadol_-_Rapsgaliwn.ogg"; do
+            echo "== rap: $f (Wikimedia Commons)"
+            rm -f clip.in clip.f32
+            curl -sSL --fail --max-time 120 -A "$ua" -o clip.in "https://commons.wikimedia.org/wiki/Special:FilePath/$f" || { echo "could not download"; continue; }
+            ffmpeg -loglevel error -i clip.in -vn -f f32le -ac 1 -ar 44100 clip.f32 && java -Xmx2g -cp out VoiceCheck clip.f32 "rap $f"
           done
-          echo "== rap: Gully rap on a train (Wikimedia Commons, CC BY-SA 2.0)"
-          check rap "https://commons.wikimedia.org/wiki/Special:FilePath/Gully_rap_on_a_train.ogg"
 
   apk:
     name: Converter APK

@@ -232,6 +232,8 @@ final class VocalTest {
         TempoMap map = steadyMap(60, 120);
         VocalCharter.Chart chart = VocalCharter.build(lines, map, 60, null);
         check(!chart.heard, "no voice, so nothing was heard");
+        VocalCharter.Chart noted = VocalCharter.build(Lrc.parse("[00:02.00]real words here\n[00:05.00][Chorus x 2]\n[00:08.00](Instrumental)"), map, 60, null);
+        check(noted.lines == 1, "notes to the reader like [Chorus x 2] are not sung (" + noted.lines + " lines)");
         check(chart.lines == 4, "four lines charted, the one after the end of the song dropped (" + chart.lines + ")");
         check(chart.spokenLines == 4 && chart.sungLines == 0, "all talkies");
         check(chart.phrases.size() == 5, "the fourteen-word line is cut in two (" + chart.phrases.size() + " phrases)");

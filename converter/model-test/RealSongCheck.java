@@ -139,8 +139,9 @@ public final class RealSongCheck {
         stems.guessSingers = args.length > 5;
         SongWriter.Result split = SongWriter.analyze(mixFeatures, lyrics, null, stems);
         VocalCharter.Chart v = split.vocals;
-        System.out.printf(Locale.US, "Vocals: %d lines (%d sung, %d rapped or spoken), %d words, %d phrases, voice %s, tier %d%s%n",
-                v.lines, v.sungLines, v.spokenLines, v.words, v.phrases.size(), v.heard ? "heard" : "not heard at the lyric times", split.vocalTier,
+        System.out.printf(Locale.US, "Vocals: %d lines (%d sung, %d rapped or spoken), %d words, %d phrases, voice %s, song mostly %s, tier %d%s%n",
+                v.lines, v.sungLines, v.spokenLines, v.words, v.phrases.size(), v.heard ? "heard" : "not heard at the lyric times",
+                v.mostlySung ? "sung" : "rapped", split.vocalTier,
                 split.singerGuess != null ? String.format(Locale.US, ", two singers guessed %d/%d lines", split.singerGuess.firstLines, split.singerGuess.secondLines)
                         : split.singersGuessTried ? String.format(Locale.US, ", singers not told apart (%.1f)", com.clockworkblack.yargconverter.core.VoiceSplitter.lastSeparation) : "");
         // Every line, with what the sung-or-rapped decision was made on

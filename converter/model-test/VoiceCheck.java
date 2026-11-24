@@ -46,20 +46,28 @@ public final class VoiceCheck {
             if (on) {
                 if (start < 0) start = f;
                 quiet = 0;
-            } else if (start >= 0 && ++quiet >= pause) {
-                int end = f - quiet;
-                if ((end - start) / v.fps >= 1.5) stretches.add(new double[] {v.timeOf(start), v.timeOf(end)});
+            } else if (start >= 0 && (++quiet >= pause || f == v.frames())) {
+                int end = f - quiet + 1;
+                // Long runs without a pause are cut into lyric-line-sized pieces of about 4 seconds
+                for (int a = start; (end - a) / v.fps >= 1.5; a += (int) (4 * v.fps)) {
+                    int b = Math.min(end, a + (int) (4 * v.fps));
+                    if ((b - a) / v.fps >= 1.5) stretches.add(new double[] {v.timeOf(a), v.timeOf(b)});
+                }
                 start = -1;
             }
         }
         int sung = 0;
+        int[] bins = new int[10];
         System.out.printf(Locale.US, "VOICE %s: %.0f s, %d stretches%n", args[1], v.duration, stretches.size());
         for (double[] s : stretches) {
             VocalCharter.Delivery d = VocalCharter.measure(v, s[0], s[1]);
             boolean isSung = VocalCharter.judgeSung(d);
             if (isSung) sung++;
+            bins[(int) Math.min(9, Math.floor(d.held * 10))]++;
             System.out.printf(Locale.US, "  %6.1f-%6.1f %s %s%n", s[0], s[1], isSung ? "SUNG " : "rap  ", d);
         }
-        System.out.printf(Locale.US, "VOICE-SUMMARY %s: %d of %d stretches judged sung%n", args[1], sung, stretches.size());
+        StringBuilder h = new StringBuilder();
+        for (int i = 0; i < 10; i++) h.append(String.format(Locale.US, " %.1f:%d", i / 10.0, bins[i]));
+        System.out.printf(Locale.US, "VOICE-SUMMARY %s: %d of %d stretches judged sung; held share%s%n", args[1], sung, stretches.size(), h);
     }
 }
