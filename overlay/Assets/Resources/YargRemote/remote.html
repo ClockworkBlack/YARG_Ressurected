@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>YARG Remote</title>
+<style>
+  :root {
+    --bg: #0b0f1a; --panel: #151b2b; --text: #eef2ff; --muted: #94a3b8; --accent: #ffd84d;
+    --green: #22c55e; --red: #ef4444; --yellow: #facc15; --blue: #3b82f6; --orange: #f97316;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  button { font: inherit; color: inherit; border: 0; border-radius: 12px; background: var(--panel); }
+  .hidden { display: none !important; }
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+  /* Join */
+  #join { align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; overflow: auto; }
+  #join h1 { margin: 0; font-size: 28px; letter-spacing: .5px; }
+  #join h1 b { color: var(--accent); }
+  #join p { margin: 0; color: var(--muted); max-width: 520px; }
+  #name { font: inherit; font-size: 20px; padding: 12px 16px; width: min(320px, 90vw); border-radius: 12px;
+    border: 2px solid #334155; background: #0f172a; color: var(--text); text-align: center; -webkit-user-select: text; user-select: text; }
+  .big { font-size: 20px; font-weight: 700; padding: 14px 28px; background: var(--accent); color: #111; }
+  .note { font-size: 14px; color: var(--muted); }
+  .note a { color: var(--accent); }
+
+  /* App */
+  header { display: flex; align-items: center; gap: 8px; padding: 6px 8px; height: 48px; flex: none; }
+  #status { flex: 1; min-width: 0; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status.ok { color: #86efac; }
+  nav { display: flex; gap: 6px; }
+  .tab { padding: 8px 12px; font-size: 15px; }
+  .tab.active { background: var(--accent); color: #111; font-weight: 700; }
+  .small { padding: 8px 10px; font-size: 13px; }
+  main { flex: 1; min-height: 0; position: relative; }
+  .pane { position: absolute; inset: 0; padding: 0 8px 8px; }
+
+  /* Play: lanes */
+  .lanes { display: grid; grid-template-columns: 72px repeat(5, 1fr) 72px; gap: 6px; height: 100%; touch-action: none; }
+  .side { display: flex; flex-direction: column; gap: 6px; }
+  .side button { flex: 1; font-size: 13px; font-weight: 700; }
+  .side .sp { background: #1e3a8a; }
+  .lane, .fret { border-radius: 14px; opacity: .55; touch-action: none; position: relative;
+    transition: opacity 40ms, transform 40ms; }
+  .lane::after { content: ""; position: absolute; left: 12%; right: 12%; bottom: 10px; height: 10px; border-radius: 6px; background: rgba(255,255,255,.55); }
+  .lane.on, .fret.on { opacity: 1; transform: scale(.97); }
+  .g { background: var(--green); } .r { background: var(--red); } .y { background: var(--yellow); }
+  .b { background: var(--blue); } .o { background: var(--orange); }
+
+  /* Play: frets + strum */
+  .frets { display: grid; grid-template-columns: 5fr 3fr 64px; gap: 8px; height: 100%; }
+  .fretcols { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .strumcol { display: grid; grid-template-rows: 46px 1fr; gap: 6px; }
+  .strumcol .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .strumcol .row button { font-size: 13px; font-weight: 700; }
+  .strumcol .sp { background: #1e3a8a; }
+  #strum { border-radius: 14px; background: repeating-linear-gradient(0deg, #1f2937 0 14px, #273449 14px 28px);
+    display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted);
+    font-weight: 700; touch-action: none; }
+  #strum.on { background: #334155; color: var(--text); }
+  #whammy { border-radius: 14px; background: #1f2937; position: relative; touch-action: none; overflow: hidden; }
+  #whammy .fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: #a855f7; }
+  #whammy span { position: absolute; top: 8px; left: 0; right: 0; text-align: center; font-size: 11px; color: var(--muted); }
+
+  /* Menu */
+  .menu { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 100%; gap: 12px; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 72px); grid-template-rows: repeat(3, 72px); gap: 6px; justify-self: center; }
+  .dpad button { font-size: 26px; }
+  .center { display: flex; flex-direction: column; gap: 10px; }
+  .center button { padding: 12px 18px; }
+  .actions { display: grid; grid-template-columns: repeat(2, 96px); gap: 8px; justify-self: center; }
+  .actions button { height: 64px; font-weight: 700; color: #111; }
+  .actions .wide { grid-column: span 2; }
+  button.on { filter: brightness(1.35); transform: scale(.97); }
+
+  /* Mic */
+  .mic { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; height: 100%; text-align: center; overflow: auto; }
+  .meter { width: min(420px, 80vw); height: 16px; background: #1f2937; border-radius: 8px; overflow: hidden; }
+  #micLevel { height: 100%; width: 0; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red)); }
+  .mic ol { margin: 0; padding-left: 20px; text-align: left; color: var(--muted); font-size: 14px; max-width: 520px; }
+  .mic b { color: var(--text); }
+</style>
+</head>
+<body>
+
+<div id="join" class="screen">
+  <h1><b>YARG</b> Remote</h1>
+  <p>Play along on the host's YARG using this phone as a guitar controller or microphone.</p>
+  <input id="name" maxlength="20" placeholder="Your name" autocomplete="off" autocapitalize="words" spellcheck="false">
+  <button id="joinBtn" class="big">Join</button>
+  <p class="note" id="joinNote"></p>
+</div>
+
+<div id="app" class="screen hidden">
+  <header>
+    <div id="status">Connecting…</div>
+    <nav>
+      <button class="tab active" data-tab="play">🎸 Play</button>
+      <button class="tab" data-tab="menu">🧭 Menu</button>
+      <button class="tab" data-tab="mic">🎤 Mic</button>
+    </nav>
+    <button id="layoutBtn" class="small">Lanes</button>
+    <button id="fsBtn" class="small" title="Full screen">⛶</button>
+  </header>
+
+  <main>
+    <section id="pane-play" class="pane">
+      <div id="lanes" class="lanes">
+        <div class="side">
+          <button class="sp" data-pulse="10">★ SP</button>
+        </div>
+        <div class="lane g" data-fret="0"></div>
+        <div class="lane r" data-fret="1"></div>
+        <div class="lane y" data-fret="2"></div>
+        <div class="lane b" data-fret="3"></div>
+        <div class="lane o" data-fret="4"></div>
+        <div class="side">
+          <button data-pulse="9">❚❚<br>Pause</button>
+        </div>
+      </div>
+
+      <div id="frets" class="frets hidden">
+        <div class="fretcols">
+          <div class="fret g" data-fret="0"></div>
+          <div class="fret r" data-fret="1"></div>
+          <div class="fret y" data-fret="2"></div>
+          <div class="fret b" data-fret="3"></div>
+          <div class="fret o" data-fret="4"></div>
+        </div>
+        <div class="strumcol">
+          <div class="row">
+            <button class="sp" data-pulse="10">★ Star Power</button>
+            <button data-pulse="9">❚❚ Pause</button>
+          </div>
+          <div id="strum">STRUM<br><small>tap, or swipe up / down</small></div>
+        </div>
+        <div id="whammy"><div class="fill"></div><span>WHAMMY</span></div>
+      </div>
+    </section>
+
+    <section id="pane-menu" class="pane hidden">
+      <div class="menu">
+        <div class="dpad">
+          <span></span><button data-hold="5">▲</button><span></span>
+          <button data-hold="7">◀</button><span></span><button data-hold="8">▶</button>
+          <span></span><button data-hold="6">▼</button><span></span>
+        </div>
+        <div class="center">
+          <button data-hold="9">Start</button>
+          <button data-hold="10">Select</button>
+        </div>
+        <div class="actions">
+          <button class="g wide" data-hold="0">OK</button>
+          <button class="r wide" data-hold="1">Back</button>
+          <button class="y" data-hold="2">Yellow</button>
+          <button class="b" data-hold="3">Blue</button>
+          <button class="o wide" data-hold="4">Orange</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="pane-mic" class="pane hidden">
+      <div class="mic">
+        <button id="micBtn" class="big">🎤 Start mic</button>
+        <div class="meter"><div id="micLevel"></div></div>
+        <p id="micStatus" class="note">Sing into this phone and YARG scores your vocals.</p>
+        <ol>
+          <li>Tap <b>Start mic</b> and allow microphone access.</li>
+          <li>On the host phone: <b>Profiles</b> → your vocals profile → <b>Add Device</b> → <b id="micName">Phone mic: …</b></li>
+          <li>Hold this phone close and sing. Headphones on the host help, so the music doesn't leak into your mic.</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // Button bits (must match RemotePlayManager.cs).
+  var BIT = { GREEN: 0, RED: 1, YELLOW: 2, BLUE: 3, ORANGE: 4, UP: 5, DOWN: 6, LEFT: 7, RIGHT: 8, START: 9, SELECT: 10 };
+  var CHORD_WINDOW_MS = 45;  // taps closer than this share one strum (chords)
+  var STRUM_HOLD_MS = 30;    // how long a strum is "held"
+
+  var $ = function (id) { return document.getElementById(id); };
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+  };
+
+  var clientId = store.get('yargRemoteId');
+  if (!clientId) {
+    clientId = (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)).replace(/[^a-z0-9]/g, '');
+    store.set('yargRemoteId', clientId);
+  }
+
+  var playerName = store.get('yargRemoteName') || '';
+  var ws = null, joined = false, connected = false, reconnectTimer = 0;
+  var playerNumber = 0, rtt = -1;
+  var buttons = 0, whammy = 0;
+  var pulseTimers = {};
+  var lastStrum = 0;
+
+  // ---------- Connection ----------
+
+  function connect() {
+    clearTimeout(reconnectTimer);
+    setStatus('Connecting…', false);
+    var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      scheduleReconnect();
+      return;
+    }
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = function () {
+      ws.send('hello\n' + clientId + '\n' + playerName);
+    };
+
+    ws.onmessage = function (ev) {
+      if (typeof ev.data !== 'string') return;
+      var p = ev.data.split('\n');
+      if (p[0] === 'welcome') {
+        connected = true;
+        playerNumber = parseInt(p[1], 10) || 0;
+        if (p[4]) { playerName = p[4]; }
+        buttons = 0;
+        sendState();
+        if (mic.on) { ws.send('mic\n' + mic.rate); }
+        updateStatus();
+        updateMicName();
+      } else if (p[0] === 'pong') {
+        rtt = Date.now() - parseInt(p[1], 10);
+        updateStatus();
+      } else if (p[0] === 'micok') {
+        $('micName').textContent = p[1];
+        $('micStatus').textContent = 'Mic is live. On the host, add "' + p[1] + '" to a vocals profile.';
+      }
+    };
+
+    ws.onclose = function () {
+      connected = false;
+      ws = null;
+      scheduleReconnect();
+    };
+  }
+
+  function scheduleReconnect() {
+    setStatus('Reconnecting…', false);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 1500);
+  }
+
+  function setStatus(text, ok) {
+    var el = $('status');
+    el.textContent = text;
+    el.className = ok ? 'ok' : '';
+  }
+
+  function updateStatus() {
+    if (!connected) return;
+    var text = '● ' + playerName + ' · player ' + playerNumber;
+    if (rtt >= 0) text += ' · ' + rtt + ' ms';
+    setStatus(text, true);
+  }
+
+  setInterval(function () {
+    if (connected && ws && ws.readyState === 1) ws.send('ping\n' + Date.now());
+  }, 2000);
+
+  // ---------- Controller state ----------
+
+  function sendState() {
+    if (!ws || ws.readyState !== 1 || !connected) return;
+    var a = new Uint8Array(6);
+    a[0] = 1;
+    a[1] = buttons & 255;
+    a[2] = (buttons >>> 8) & 255;
+    a[3] = (buttons >>> 16) & 255;
+    a[4] = (buttons >>> 24) & 255;
+    a[5] = whammy;
+    ws.send(a);
+  }
+
+  function setBit(bit, on) {
+    var mask = 1 << bit;
+    var next = on ? (buttons | mask) : (buttons & ~mask);
+    if (next !== buttons) {
+      buttons = next >>> 0;
+      sendState();
+    }
+  }
+
+  // Press a button briefly (strum, star power, pause).
+  function pulse(bit, ms) {
+    if (pulseTimers[bit]) {
+      clearTimeout(pulseTimers[bit]);
+      setBit(bit, false);
+    }
+    setBit(bit, true);
+    pulseTimers[bit] = setTimeout(function () {
+      pulseTimers[bit] = 0;
+      setBit(bit, false);
+    }, ms || STRUM_HOLD_MS);
+  }
+
+  function strum(up) {
+    lastStrum = performance.now();
+    pulse(up ? BIT.UP : BIT.DOWN, STRUM_HOLD_MS);
+  }
+
+  function buzz(ms) {
+    if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) { } }
+  }
+
+  // Calls onDown/onUp once per element even with several fingers on it.
+  function hold(el, onDown, onUp) {
+    var pointers = {};
+    var count = 0;
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch (err) { }
+      if (pointers[e.pointerId]) return;
+      pointers[e.pointerId] = true;
+      count++;
+      if (count === 1) {
+        el.classList.add('on');
+        onDown(e);
+      }
+    });
+    function release(e) {
+      if (!pointers[e.pointerId]) return;
+      delete pointers[e.pointerId];
+      count--;
+      if (count === 0) {
+        el.classList.remove('on');
+        if (onUp) onUp(e);
+      }
+    }
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    el.addEventListener('lostpointercapture', release);
+  }
+
+  // Lanes: tapping a lane holds its fret and strums (chords share one strum).
+  Array.prototype.forEach.call(document.querySelectorAll('.lane'), function (el) {
+    var fret = parseInt(el.getAttribute('data-fret'), 10);
+    hold(el, function () {
+      setBit(fret, true);
+      if (performance.now() - lastStrum > CHORD_WINDOW_MS) strum(false);
+      buzz(8);
+    }, function () {
+      setBit(fret, false);
+    });
+  });
+
+  // Frets + strum: frets only hold, the strum pad strums.
+  Array.prototype.forEach.call(document.querySelectorAll('.fret'), function (el) {
+    var fret = parseInt(el.getAttribute('data-fret'), 10);
+    hold(el, function () { setBit(fret, true); buzz(6); }, function () { setBit(fret, false); });
+  });
+
+  (function () {
+    var pad = $('strum');
+    var origins = {};
+    pad.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      try { pad.setPointerCapture(e.pointerId); } catch (err) { }
+      origins[e.pointerId] = e.clientY;
+      pad.classList.add('on');
+      strum(false);
+      buzz(8);
+    });
+    pad.addEventListener('pointermove', function (e) {
+      if (!(e.pointerId in origins)) return;
+      var dy = e.clientY - origins[e.pointerId];
+      if (Math.abs(dy) > 28) {
+        strum(dy < 0);
+        origins[e.pointerId] = e.clientY;
+        buzz(6);
+      }
+    });
+    function end(e) {
+      delete origins[e.pointerId];
+      if (Object.keys(origins).length === 0) pad.classList.remove('on');
+    }
+    pad.addEventListener('pointerup', end);
+    pad.addEventListener('pointercancel', end);
+  })();
+
+  (function () {
+    var bar = $('whammy');
+    var fill = bar.querySelector('.fill');
+    var active = false;
+    function set(value) {
+      value = Math.max(0, Math.min(255, Math.round(value)));
+      fill.style.height = (value / 2.55) + '%';
+      if (Math.abs(value - whammy) >= 6 || value === 0 || value === 255) {
+        if (value !== whammy) {
+          whammy = value;
+          sendState();
+        }
+      }
+    }
+    function fromEvent(e) {
+      var r = bar.getBoundingClientRect();
+      set((r.bottom - e.clientY) / r.height * 255);
+    }
+    bar.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      try { bar.setPointerCapture(e.pointerId); } catch (err) { }
+      active = true;
+      fromEvent(e);
+    });
+    bar.addEventListener('pointermove', function (e) { if (active) fromEvent(e); });
+    function end() { active = false; set(0); }
+    bar.addEventListener('pointerup', end);
+    bar.addEventListener('pointercancel', end);
+  })();
+
+  // Star Power / Pause buttons.
+  Array.prototype.forEach.call(document.querySelectorAll('[data-pulse]'), function (el) {
+    var bit = parseInt(el.getAttribute('data-pulse'), 10);
+    hold(el, function () { pulse(bit, 90); buzz(15); });
+  });
+
+  // Menu buttons are held for as long as you touch them.
+  Array.prototype.forEach.call(document.querySelectorAll('[data-hold]'), function (el) {
+    var bit = parseInt(el.getAttribute('data-hold'), 10);
+    hold(el, function () { setBit(bit, true); buzz(8); }, function () { setBit(bit, false); });
+  });
+
+  // Let go of everything if the page is hidden mid-press.
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      buttons = 0;
+      whammy = 0;
+      sendState();
+    } else {
+      keepAwake();
+      if (joined && (!ws || ws.readyState > 1)) connect();
+    }
+  });
+
+  // ---------- Tabs & layout ----------
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (tab) {
+    tab.addEventListener('click', function () {
+      var name = tab.getAttribute('data-tab');
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
+        t.classList.toggle('active', t === tab);
+      });
+      ['play', 'menu', 'mic'].forEach(function (n) {
+        $('pane-' + n).classList.toggle('hidden', n !== name);
+      });
+      $('layoutBtn').classList.toggle('hidden', name !== 'play');
+      buttons = 0;
+      sendState();
+    });
+  });
+
+  function applyLayout(layout) {
+    var lanes = layout !== 'frets';
+    $('lanes').classList.toggle('hidden', !lanes);
+    $('frets').classList.toggle('hidden', lanes);
+    $('layoutBtn').textContent = lanes ? 'Layout: Lanes' : 'Layout: Frets';
+    store.set('yargRemoteLayout', lanes ? 'lanes' : 'frets');
+  }
+  applyLayout(store.get('yargRemoteLayout') || 'lanes');
+  $('layoutBtn').addEventListener('click', function () {
+    applyLayout(store.get('yargRemoteLayout') === 'frets' ? 'lanes' : 'frets');
+  });
+
+  var fsBtn = $('fsBtn');
+  var root = document.documentElement;
+  if (!root.requestFullscreen && !root.webkitRequestFullscreen) fsBtn.classList.add('hidden');
+  fsBtn.addEventListener('click', function () { goFullscreen(); });
+
+  function goFullscreen() {
+    var req = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (!req) return;
+    try {
+      var result = req.call(root);
+      var lock = function () {
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(function () { });
+        }
+      };
+      if (result && result.then) result.then(lock).catch(function () { }); else lock();
+    } catch (e) { }
+  }
+
+  var wakeLock = null;
+  function keepAwake() {
+    if (!joined || !navigator.wakeLock || document.hidden) return;
+    navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; }).catch(function () { });
+  }
+
+  // ---------- Microphone ----------
+
+  var mic = { on: false, rate: 0, ctx: null, stream: null, node: null };
+  var WORKLET = [
+    'class YargMic extends AudioWorkletProcessor {',
+    '  constructor(o) { super(); this.size = o.processorOptions.size; this.buf = new Int16Array(this.size); this.n = 0; }',
+    '  process(inputs) {',
+    '    var ch = inputs[0] && inputs[0][0];',
+    '    if (ch) {',
+    '      for (var i = 0; i < ch.length; i++) {',
+    '        var s = ch[i]; s = s < -1 ? -1 : s > 1 ? 1 : s;',
+    '        this.buf[this.n++] = s < 0 ? s * 32768 : s * 32767;',
+    '        if (this.n === this.size) { this.port.postMessage(this.buf, [this.buf.buffer]); this.buf = new Int16Array(this.size); this.n = 0; }',
+    '      }',
+    '    }',
+    '    return true;',
+    '  }',
+    '}',
+    "registerProcessor('yarg-mic', YargMic);"
+  ].join('\n');
+
+  function updateMicName() {
+    if (!mic.on) $('micName').textContent = 'Phone mic: ' + playerName;
+  }
+
+  function micMessage(text) { $('micStatus').textContent = text; }
+
+  function sendAudio(samples) {
+    // Level meter
+    var sum = 0;
+    for (var i = 0; i < samples.length; i += 4) sum += samples[i] * samples[i];
+    var rms = Math.sqrt(sum / Math.max(1, samples.length / 4)) / 32768;
+    $('micLevel').style.width = Math.min(100, rms * 400) + '%';
+
+    if (!ws || ws.readyState !== 1 || !connected) return;
+    if (ws.bufferedAmount > 64 * 1024) return; // Wi-Fi is behind: drop audio rather than lag
+    var out = new Uint8Array(1 + samples.byteLength);
+    out[0] = 2;
+    out.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength), 1);
+    ws.send(out);
+  }
+
+  async function startMic() {
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      micMessage('The mic needs the secure link. Open https://' + location.host +
+        ' and tap "Advanced" → "Proceed" on the warning. (On iPhone, use Safari.)');
+      return;
+    }
+
+    try {
+      mic.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+      });
+    } catch (e) {
+      micMessage('Microphone access was blocked. Allow it in the browser settings and try again.');
+      return;
+    }
+
+    var AC = window.AudioContext || window.webkitAudioContext;
+    mic.ctx = new AC();
+    if (mic.ctx.state === 'suspended') { try { await mic.ctx.resume(); } catch (e) { } }
+    mic.rate = Math.round(mic.ctx.sampleRate);
+
+    var source = mic.ctx.createMediaStreamSource(mic.stream);
+    var silent = mic.ctx.createGain();
+    silent.gain.value = 0;
+    silent.connect(mic.ctx.destination);
+
+    var size = Math.round(mic.rate / 50); // 20 ms per packet
+    mic.node = null;
+    if (mic.ctx.audioWorklet && window.AudioWorkletNode) {
+      try {
+        var url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
+        await mic.ctx.audioWorklet.addModule(url);
+        mic.node = new AudioWorkletNode(mic.ctx, 'yarg-mic', { processorOptions: { size: size } });
+        mic.node.port.onmessage = function (e) { sendAudio(e.data); };
+      } catch (e) {
+        mic.node = null;
+      }
+    }
+    if (!mic.node) {
+      // Older browsers
+      var sp = mic.ctx.createScriptProcessor(1024, 1, 1);
+      sp.onaudioprocess = function (ev) {
+        var f = ev.inputBuffer.getChannelData(0);
+        var out = new Int16Array(f.length);
+        for (var i = 0; i < f.length; i++) {
+          var s = Math.max(-1, Math.min(1, f[i]));
+          out[i] = s < 0 ? s * 32768 : s * 32767;
+        }
+        sendAudio(out);
+      };
+      mic.node = sp;
+    }
+    source.connect(mic.node);
+    mic.node.connect(silent);
+
+    mic.on = true;
+    if (ws && ws.readyState === 1 && connected) ws.send('mic\n' + mic.rate);
+    $('micBtn').textContent = '■ Stop mic';
+    micMessage('Starting… (' + mic.rate + ' Hz)');
+  }
+
+  function stopMic() {
+    mic.on = false;
+    try { if (mic.node) mic.node.disconnect(); } catch (e) { }
+    try { if (mic.stream) mic.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { }
+    try { if (mic.ctx) mic.ctx.close(); } catch (e) { }
+    mic.node = mic.stream = mic.ctx = null;
+    if (ws && ws.readyState === 1) ws.send('micoff');
+    $('micBtn').textContent = '🎤 Start mic';
+    $('micLevel').style.width = '0';
+    micMessage('Mic is off.');
+  }
+
+  $('micBtn').addEventListener('click', function () {
+    if (mic.on) stopMic(); else startMic();
+  });
+
+  // ---------- Join ----------
+
+  $('name').value = playerName;
+  if (!window.isSecureContext) {
+    $('joinNote').innerHTML = 'Controller works on this link. For the <b>mic</b>, open ' +
+      '<a href="https://' + location.host + '">https://' + location.host + '</a> instead ' +
+      '(tap "Advanced" → "Proceed" on the warning).';
+  } else {
+    $('joinNote').textContent = 'Tip: turn the phone sideways.';
+  }
+
+  function join() {
+    var name = $('name').value.trim().slice(0, 20);
+    if (!name) { $('name').focus(); return; }
+    playerName = name;
+    store.set('yargRemoteName', name);
+    joined = true;
+    $('join').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    updateMicName();
+    goFullscreen();
+    keepAwake();
+    connect();
+  }
+
+  $('joinBtn').addEventListener('click', join);
+  $('name').addEventListener('keydown', function (e) { if (e.key === 'Enter') join(); });
+})();
+</script>
+</body>
+</html>

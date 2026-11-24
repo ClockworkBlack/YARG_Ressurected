@@ -228,6 +228,30 @@ namespace YARG.Editor.Android
     }
 
     /// <summary>
+    /// Runs after every other pre-build hook and makes sure the APK is arm64 only
+    /// (64-bit phones like the Snapdragon 8 Elite can't run 32-bit code anyway, and a second
+    /// architecture would double the IL2CPP build time).
+    /// </summary>
+    public class YargAndroidArchitectureGuard : IPreprocessBuildWithReport
+    {
+        public int callbackOrder => 10000;
+
+        public void OnPreprocessBuild(BuildReport report)
+        {
+            if (report.summary.platform != BuildTarget.Android)
+            {
+                return;
+            }
+
+            if (PlayerSettings.Android.targetArchitectures != AndroidArchitecture.ARM64)
+            {
+                Debug.Log($"[YARG Android] Target architectures were {PlayerSettings.Android.targetArchitectures}; forcing ARM64 only.");
+                PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+            }
+        }
+    }
+
+    /// <summary>
     /// Adds the storage permissions YARG needs to read song folders on shared storage.
     /// </summary>
     public class YargAndroidManifestPatcher : IPostGenerateGradleAndroidProject
@@ -251,6 +275,11 @@ namespace YARG.Editor.Android
                 "android.permission.WRITE_EXTERNAL_STORAGE",
                 "android.permission.READ_MEDIA_AUDIO",
                 "android.permission.RECORD_AUDIO",
+                // Phone remote (other phones join over Wi-Fi)
+                "android.permission.INTERNET",
+                "android.permission.ACCESS_NETWORK_STATE",
+                "android.permission.ACCESS_WIFI_STATE",
+                "android.permission.WAKE_LOCK",
             };
 
             foreach (var permission in permissions)
