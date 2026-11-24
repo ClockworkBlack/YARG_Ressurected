@@ -3,45 +3,36 @@
 An Android (arm64) build of [YARG – Yet Another Rhythm Game](https://github.com/YARC-Official/YARG),
 aimed at phones like the Galaxy Z Fold 7. It replaces the archived `YARG-Android` fork.
 
-This repo doesn't copy YARG's code. It holds **patches on top of an exact upstream YARG commit**, so it
-can follow new YARG releases. GitHub Actions does the rest:
+This repo doesn't copy YARG's code. It builds on **[putudarma/YARG-DROID](https://github.com/putudarma/YARG-DROID)**
+(YARG v0.15.0 stable + Android fixes: IL2CPP-safe BASS callbacks, StreamingAssets extraction,
+`/storage/emulated/0/YARG/songs`, draggable touch controls). YARG-DROID only ships 32-bit (ARMv7) builds,
+which can't run on 64-bit-only chips like the Snapdragon 8 Elite. This repo adds:
 
-1. downloads YARG at the pinned commit (`UPSTREAM_REF` in the workflow),
-2. applies `patches/*.patch` and copies `overlay/` on top,
-3. builds the Android native libraries with the NDK (`android/native/`),
-4. builds the APK with Unity (game-ci) and publishes it as a GitHub **Release** you can download on your phone.
+- a **64-bit (arm64) IL2CPP** build for modern phones,
+- arm64 native libraries (BASS, STB2CSharp, sqlite3) built with the NDK,
+- a controller-type prompt on Android (gamepad / CRKD guitar / other guitar),
+- CI that publishes the APK as a GitHub Release.
 
-> Status: **experimental first port.** It hasn't been built yet, so expect the first CI runs to fail
-> and need fixes from the logs.
+GitHub Actions downloads YARG-DROID at a pinned commit (`UPSTREAM_REF`), applies `patches/*.patch`,
+copies `overlay/` on top, builds the native libraries (`android/native/`), then builds the APK with Unity (game-ci).
 
-## What the port changes
+`patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 
-| Area | Change |
-|---|---|
-| Audio | BASS, BASSmix, BASS_FX, BASSOPUS Android libs + YargAudio built for arm64 with the NDK; Android `dlopen` paths |
-| Images / scores DB | `STB2CSharp` and `sqlite3` rebuilt for arm64 |
-| StreamingAssets | Unpacked from the APK on first launch (YARG reads them as regular files) |
-| Songs | Asks for "All files access" and adds `/storage/emulated/0/YARG/Songs` as a song folder |
-| Video backgrounds | Turned off (libVLC isn't bundled) |
-| Desktop-only plugins | Kept out of the APK automatically |
-| Controllers | When you add a controller, Android asks what it is, like Windows does |
-| **New: GH2-style gamepad layout** | Lets you play with a normal gamepad, like Guitar Hero 2 on a controller |
+> Status: **experimental.** Expect the first CI runs to need fixes from the logs.
 
-### Gamepad: Guitar Hero 2 style (shoulder frets)
+## Gamepad (Guitar Hero 2 layout)
+
+YARG's default gamepad layout already matches Guitar Hero 2 on a DualShock:
 
 | Guitar | Gamepad |
 |---|---|
-| Green | L2 / LT |
-| Red | L1 / LB |
-| Yellow | R1 / RB |
-| Blue | R2 / RT |
+| Green / Red / Yellow / Blue | L2 / L1 / R1 / R2 (LT / LB / RB / RT) |
 | Orange | Cross / A |
-| Strum | D-pad Down/Right, or Square / Circle (GH2 had no strum on a pad, but YARG needs one) |
-| Star Power | Select / Back or D-pad Up |
+| Strum | D-pad Up / Down |
+| Star Power | Select / Back |
 | Whammy | Left stick left/right |
 
-YARG's normal "Gamepad as 5-fret guitar" layout (face buttons as frets) is still available. You can remap
-any button in the profile's binding menu.
+When you add a controller to a profile, pick **Gamepad**. You can remap any button in the profile's binding menu.
 
 ## Setup (one time)
 
@@ -71,12 +62,12 @@ download the `.apk` and install it.
 
 ## Using it on the phone
 1. Open the app and allow **All files access** when Android asks.
-2. Put songs (Clone Hero / YARG / Rock Band format folders) in `Internal storage/YARG/Songs`.
+2. Put songs (Clone Hero / YARG / Rock Band format folders) in `Internal storage/YARG/songs`.
 3. In YARG: **Settings → Songs → Scan**.
-4. Add your controller to a profile and pick **Gamepad – Guitar Hero 2 style** (or CRKD Guitar).
+4. Add your controller to a profile and pick **Gamepad** (or CRKD Guitar). Touch buttons: Profiles → Add Device → Virtual.
 
 Only play songs you own (for example, charts ripped from your own Rock Band DLC) or free/official setlists.
 
 ## Licenses
-YARG is LGPL-3.0, and these patches use the same license. BASS is free for non-commercial use only
+YARG is LGPL-3.0, and these patches use the same license. Android groundwork by putudarma (YARG-DROID) and JordanSanchez06. BASS is free for non-commercial use only
 ([un4seen license](https://www.un4seen.com/bass.html#license)), so don't sell builds.

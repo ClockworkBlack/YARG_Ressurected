@@ -42,11 +42,17 @@ for lib in libbass.so libbassmix.so libbass_fx.so libbassopus.so; do
 done
 echo "::endgroup::"
 
-echo "::group::YargAudio"
-cmake -S "$YARG_DIR/Native/YargAudio" -B "$WORK/yarg_audio" "${CMAKE_ANDROID[@]}" -DYARG_AUDIO_BUILD_TESTS=OFF
-cmake --build "$WORK/yarg_audio" --parallel
-cp "$(find "$WORK/yarg_audio" -name libyarg_audio.so | head -n1)" "$OUT_DIR/"
-echo "::endgroup::"
+if [ -d "$YARG_DIR/Native/YargAudio" ]; then
+  echo "::group::YargAudio"
+  # Newer YARG (dev, 2026) has its own native audio library; v0.15.0 doesn't.
+  sed -i 's/if(NOT WIN32 AND NOT APPLE AND NOT (UNIX/if(NOT WIN32 AND NOT APPLE AND NOT ANDROID AND NOT (UNIX/' "$YARG_DIR/Native/YargAudio/CMakeLists.txt"
+  cmake -S "$YARG_DIR/Native/YargAudio" -B "$WORK/yarg_audio" "${CMAKE_ANDROID[@]}" -DYARG_AUDIO_BUILD_TESTS=OFF
+  cmake --build "$WORK/yarg_audio" --parallel
+  cp "$(find "$WORK/yarg_audio" -name libyarg_audio.so | head -n1)" "$OUT_DIR/"
+  echo "::endgroup::"
+else
+  echo "No Native/YargAudio in this YARG version, skipping."
+fi
 
 echo "::group::STB2CSharp"
 cp -r "$HERE/stb2csharp" "$WORK/stb2csharp"
@@ -69,6 +75,7 @@ echo "::endgroup::"
 
 STRIP="$(find "$NDK/toolchains/llvm/prebuilt" -name llvm-strip | head -n1)"
 for so in "$OUT_DIR"/libyarg_audio.so "$OUT_DIR"/libSTB2CSharp.so "$OUT_DIR"/libsqlite3.so; do
+  [ -f "$so" ] || continue
   "$STRIP" --strip-unneeded "$so"
 done
 

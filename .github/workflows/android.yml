@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: "YARC-Official/YARG commit to build (leave as-is unless the patch has been updated for a newer one)"
-        default: "e6e28a76281a8196623e438d5ec5e8865fa2f677"
+        description: "putudarma/YARG-DROID commit to build on (leave as-is unless patches were updated for a newer one)"
+        default: "457d7461a29fbb71929eeb7335ae6961881e6130"
         required: true
   push:
     branches: [main]
@@ -19,8 +19,10 @@ permissions:
   contents: write
 
 env:
-  UPSTREAM_REPO: YARC-Official/YARG
-  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || 'e6e28a76281a8196623e438d5ec5e8865fa2f677' }}
+  # Base: putudarma/YARG-DROID = YARG v0.15.0 (stable) + Android fixes (IL2CPP-safe BASS callbacks,
+  # StreamingAssets extraction, song folder, touch controls). We add an arm64 IL2CPP build on top.
+  UPSTREAM_REPO: putudarma/YARG-DROID
+  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || '457d7461a29fbb71929eeb7335ae6961881e6130' }}
   PROJECT_DIR: project
 
 jobs:

@@ -1,0 +1,63 @@
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index bb70c1e..a9019ec 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -185,6 +185,21 @@ namespace YARG.Menu.ProfileList
+                             player.Bindings.SetDefaultBinds(xinput, mode.Value);
+                         }
+                         else
++#elif UNITY_ANDROID && !UNITY_EDITOR
++                        // YARG Resurrected: on Android every pad and Bluetooth guitar (e.g. CRKD in
++                        // Android mode) is a generic gamepad, so ask what it is, like Windows does.
++                        if (device is Gamepad androidPad)
++                        {
++                            xinputDialogShowing = true;
++                            var mode = await PromptAndroidGamepadMode(androidPad);
++                            if (!mode.HasValue || !androidPad.added)
++                            {
++                                return;
++                            }
++
++                            player.Bindings.SetDefaultBinds(androidPad, mode.Value);
++                        }
++                        else
+ #endif
+                         {
+                             player.Bindings.SetDefaultBinds(device);
+@@ -242,6 +257,36 @@ namespace YARG.Menu.ProfileList
+             return selectedDevice;
+         }
+ 
++#if UNITY_ANDROID && !UNITY_EDITOR
++        private static readonly Dictionary<Gamepad, GamepadBindingMode> _androidGamepads = new();
++
++        private static async UniTask<GamepadBindingMode?> PromptAndroidGamepadMode(Gamepad gamepad)
++        {
++            await DialogManager.Instance.WaitUntilCurrentClosed();
++
++            if (_androidGamepads.TryGetValue(gamepad, out var existing))
++            {
++                return existing;
++            }
++
++            GamepadBindingMode? mode = null;
++
++            var dialog = DialogManager.Instance.ShowList("Which kind of controller is this?");
++            dialog.AddListButton("Gamepad (Guitar Hero 2 layout: L2/L1/R1/R2/A frets)", () => mode = GamepadBindingMode.Gamepad);
++            dialog.AddListButton("CRKD Guitar (Mode 1)", () => mode = GamepadBindingMode.CrkdGuitar_Mode1);
++            dialog.AddListButton("CRKD Guitar (Mode 1, FW3.0+)", () => mode = GamepadBindingMode.CrkdGuitar_Mode1_Fw30);
++            dialog.AddListButton("Other guitar (PS3/360 dongle)", () => mode = GamepadBindingMode.RB4InstrumentMapper_Guitar);
++            await dialog.WaitUntilClosed();
++
++            if (mode.HasValue)
++            {
++                _androidGamepads[gamepad] = mode.Value;
++            }
++
++            return mode;
++        }
++#endif
++
+         private static async UniTask<GamepadBindingMode?> PromptGamepadMode(XInputController xinput)
+         {
+             await DialogManager.Instance.WaitUntilCurrentClosed();
