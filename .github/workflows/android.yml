@@ -5,7 +5,7 @@ on:
     inputs:
       upstream_ref:
         description: "putudarma/YARG-DROID commit to build on (leave as-is unless patches were updated for a newer one)"
-        default: "457d7461a29fbb71929eeb7335ae6961881e6130"
+        default: "9bebad16e63cde7022a1fb7b261b541c1fae5361"
         required: true
   push:
     branches: [main]
@@ -14,19 +14,34 @@ on:
       - "patches-core/**"
       - "overlay/**"
       - "android/**"
+      - "tests/**"
       - ".github/workflows/android.yml"
 
 permissions:
   contents: write
 
 env:
-  # Base: putudarma/YARG-DROID = YARG v0.15.0 (stable) + Android fixes (IL2CPP-safe BASS callbacks,
-  # StreamingAssets extraction, song folder, touch controls). We add an arm64 IL2CPP build on top.
+  # Base: putudarma/YARG-DROID android-touch branch = YARG v0.15.0 (stable) + Android fixes
+  # (IL2CPP-safe BASS callbacks, song folder, touch controls, storage prompt, genre timeout).
+  # We add an arm64 IL2CPP build, working text extraction and phone remote play on top.
   UPSTREAM_REPO: putudarma/YARG-DROID
-  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || '457d7461a29fbb71929eeb7335ae6961881e6130' }}
+  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || '9bebad16e63cde7022a1fb7b261b541c1fae5361' }}
   PROJECT_DIR: project
 
 jobs:
+  remote-tests:
+    name: Phone remote server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Make a test certificate
+        run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
+      - name: Run tests
+        run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes"
+
   native:
     name: Native libraries (arm64-v8a)
     runs-on: ubuntu-latest
@@ -60,7 +75,7 @@ jobs:
 
   apk:
     name: Unity Android build
-    needs: native
+    needs: [native, remote-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -121,6 +136,8 @@ jobs:
           for p in "$GITHUB_WORKSPACE"/patches-core/*.patch; do echo "Applying $p to YARG.Core"; git -C YARG.Core apply --whitespace=nowarn "$p"; done
           cp -r ../overlay/. .
           mkdir -p Assets/Plugins/Android/libs/arm64-v8a
+          # Self-signed certificate for the phone remote's https (phone mics need a secure page)
+          bash ../android/remote/make-cert.sh Assets/Resources/YargRemote/cert.bytes
 
       - uses: actions/download-artifact@v4
         with:

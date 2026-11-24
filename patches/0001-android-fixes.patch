@@ -1,28 +1,176 @@
-diff --git a/Assets/Editor/StreamingAssetsZipper.cs b/Assets/Editor/StreamingAssetsZipper.cs
-index 46ecd32..54d95bc 100644
---- a/Assets/Editor/StreamingAssetsZipper.cs
-+++ b/Assets/Editor/StreamingAssetsZipper.cs
-@@ -69,7 +69,7 @@ public class StreamingAssetsZipper : IPreprocessBuildWithReport, IPostprocessBui
-                     {
-                         continue;
-                     }
--                    zip.CreateEntryFromFile(file, GetRelativePath(streamingAssetsDir, file), CompressionLevel.Optimal);
-+                    zip.CreateEntryFromFile(file, GetRelativePath(streamingAssetsDir, file), System.IO.Compression.CompressionLevel.Optimal);
+diff --git a/Assets/Editor/AndroidArchitectureEnforcer.cs b/Assets/Editor/AndroidArchitectureEnforcer.cs
+deleted file mode 100644
+index 7e7c567..0000000
+--- a/Assets/Editor/AndroidArchitectureEnforcer.cs
++++ /dev/null
+@@ -1,39 +0,0 @@
+-// Forces the Android target architectures at build time.
+-//
+-// UBA build #14 proved that editing ProjectSettings.asset by hand
+-// (AndroidTargetArchitectures: 1 -> 3) does NOT take effect: the APK
+-// still contained only lib/armeabi-v7a and no native BASS libraries,
+-// even though the build used the right commit (the landscape fix IS in
+-// the APK's manifest, screenOrientation=reverseLandscape). Whatever
+-// drops the serialized setting — editor import, build service, or a
+-// stale cache — this callback re-applies it right before the player
+-// is built, so the setting cannot be silently lost again.
+-using UnityEditor;
+-using UnityEditor.Build;
+-using UnityEditor.Build.Reporting;
+-using UnityEngine;
+-
+-public class AndroidArchitectureEnforcer : IPreprocessBuildWithReport
+-{
+-    public int callbackOrder => 0;
+-
+-    public void OnPreprocessBuild(BuildReport report)
+-    {
+-        if (report.summary.platform != BuildTarget.Android)
+-        {
+-            return;
+-        }
+-
+-        var wanted = AndroidArchitecture.ARMv7 | AndroidArchitecture.ARM64;
+-        var current = PlayerSettings.Android.targetArchitectures;
+-        if (current != wanted)
+-        {
+-            Debug.Log($"[AndroidArchitectureEnforcer] Android target architectures were {current}; forcing ARMv7|ARM64.");
+-            PlayerSettings.Android.targetArchitectures = wanted;
+-        }
+-        else
+-        {
+-            Debug.Log("[AndroidArchitectureEnforcer] Android target architectures already ARMv7|ARM64.");
+-        }
+-    }
+-}
+diff --git a/Assets/Script/Audio/Bass/BassAudioManager.cs b/Assets/Script/Audio/Bass/BassAudioManager.cs
+index 8482a8a..233ab02 100644
+--- a/Assets/Script/Audio/Bass/BassAudioManager.cs
++++ b/Assets/Script/Audio/Bass/BassAudioManager.cs
+@@ -241,8 +241,34 @@ namespace YARG.Audio.BASS
+                 normalize: normalize, outputChannel: CreateOutputChannel(SettingsManager.Settings?.OutputChannelDefault.Value ?? 0));
+         }
+ 
++#if UNITY_ANDROID && !UNITY_EDITOR
++        private const string ANDROID_LOCAL_MIC_NAME = "This phone's mic";
++#endif
++
+         protected override MicDevice? GetInputDevice(string name)
+         {
++            // YARG Resurrected: mics streamed from other phones
++            var remoteMic = YARG.Remote.RemoteMics.FindByName(name);
++            if (remoteMic != null)
++            {
++                return remoteMic;
++            }
++
++#if UNITY_ANDROID && !UNITY_EDITOR
++            // YARG Resurrected: Android's built-in mic is BASS's "Default" device
++            if (name == ANDROID_LOCAL_MIC_NAME)
++            {
++                for (int deviceIndex = 0; Bass.RecordGetDeviceInfo(deviceIndex, out var defaultInfo); deviceIndex++)
++                {
++                    if (defaultInfo.IsEnabled && !defaultInfo.IsInitialized && defaultInfo.Name == "Default")
++                    {
++                        return CreateInputDevice(deviceIndex, name);
++                    }
++                }
++                return null;
++            }
++#endif
++
+             for (int deviceIndex = 0; Bass.RecordGetDeviceInfo(deviceIndex, out var info); deviceIndex++)
+             {
+                 // Ignore disabled/claimed devices
+@@ -276,6 +302,15 @@ namespace YARG.Audio.BASS
+         {
+             var mics = new List<(int id, string name)>();
+ 
++#if UNITY_ANDROID && !UNITY_EDITOR
++            // YARG Resurrected: ask for mic access as soon as the mic list is opened, so picking
++            // "This phone's mic" works on the first try.
++            if (!UnityEngine.Android.Permission.HasUserAuthorizedPermission(UnityEngine.Android.Permission.Microphone))
++            {
++                UnityEngine.Android.Permission.RequestUserPermission(UnityEngine.Android.Permission.Microphone);
++            }
++#endif
++
+             // Ignored for now since it causes issues on Linux, BASS must not report device info correctly there
+             // TODO: allow configuring this at runtime?
+             // Also put into a static variable instead of instantiating every time
+@@ -307,12 +342,19 @@ namespace YARG.Audio.BASS
+                 // if (!typeWhitelist.Contains(info.Type) || info.Name == "Default") continue;
+                 if (info.Name == "Default")
+                 {
++#if UNITY_ANDROID && !UNITY_EDITOR
++                    // YARG Resurrected: on Android this is the phone's own mic (usually the only one)
++                    mics.Add((deviceIndex, ANDROID_LOCAL_MIC_NAME));
++#endif
+                     continue;
                  }
+ 
+                 mics.Add((deviceIndex, info.Name));
              }
  
-diff --git a/Assets/Script/Helpers/FileExplorerHelper.cs b/Assets/Script/Helpers/FileExplorerHelper.cs
-index 7839ac3..8d94a17 100644
---- a/Assets/Script/Helpers/FileExplorerHelper.cs
-+++ b/Assets/Script/Helpers/FileExplorerHelper.cs
-@@ -1,6 +1,7 @@
- ﻿using System;
- using SimpleFileBrowser;
- using YARG.Core.Logging;
-+using YARG.Menu.Persistent; // YARG Resurrected: needed for the non-desktop (Android) branch
++            // YARG Resurrected: mics streamed from other phones
++            YARG.Remote.RemoteMics.AppendDevices(mics);
++
+             return mics;
+         }
  
- using System.Diagnostics;
- using System.IO;
+@@ -320,6 +362,20 @@ namespace YARG.Audio.BASS
+         protected override MicDevice? CreateInputDevice(int deviceId, string name)
+ #nullable disable
+         {
++            if (YARG.Remote.RemoteMics.IsRemoteId(deviceId))
++            {
++                return YARG.Remote.RemoteMics.Create(deviceId, name);
++            }
++
++#if UNITY_ANDROID && !UNITY_EDITOR
++            if (!UnityEngine.Android.Permission.HasUserAuthorizedPermission(UnityEngine.Android.Permission.Microphone))
++            {
++                UnityEngine.Android.Permission.RequestUserPermission(UnityEngine.Android.Permission.Microphone);
++                YargLogger.LogWarning("Microphone permission not granted yet; asked Android for it.");
++                return null;
++            }
++#endif
++
+             var device = BassMicDevice.Create(deviceId, name);
+             device?.SetMonitoringLevel(SettingsManager.Settings.VocalMonitoring.Value);
+             return device;
+diff --git a/Assets/Script/Gameplay/Player/BasePlayer.cs b/Assets/Script/Gameplay/Player/BasePlayer.cs
+index 20eafb2..bb249e1 100644
+--- a/Assets/Script/Gameplay/Player/BasePlayer.cs
++++ b/Assets/Script/Gameplay/Player/BasePlayer.cs
+@@ -54,7 +54,13 @@ namespace YARG.Gameplay.Player
+         /// Be aware that this value is negated!
+         /// Positive calibration settings will result in a negative number here.
+         /// </remarks>
+-        public double InputCalibration => -Player.Profile.InputCalibrationSeconds;
++        public double InputCalibration => -(Player.Profile.InputCalibrationSeconds + RemoteInputDelay);
++
++        // YARG Resurrected: extra delay of a phone controller/mic joined over Wi-Fi. Measured before
++        // the song and fixed for the whole song, so the engine's clock never jumps.
++        private double? _remoteInputDelay;
++        private double RemoteInputDelay => _remoteInputDelay ??=
++            Player.IsReplay ? 0.0 : YARG.Remote.RemotePlayManager.GetInputDelaySeconds(Player.Bindings);
+ 
+         public abstract BaseEngine BaseEngine { get; }
+ 
+diff --git a/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs b/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs
+index 3ff33e7..ce7ac11 100644
+--- a/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs
++++ b/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs
+@@ -62,7 +62,7 @@ namespace YARG.Gameplay.Visuals
+ 
+             // Offset via calibration
+             float videoCalibrationOffset = -SettingsManager.Settings.VideoCalibration.Value / 1000f;
+-            float inputCalibrationOffset = (float) -_player.Player.Profile.InputCalibrationSeconds;
++            float inputCalibrationOffset = (float) _player.InputCalibration;
+ 
+             _transformCache.localScale = _transformCache.localScale
+                 .WithY((float) totalWindow * _player.NoteSpeed);
 diff --git a/Assets/Script/Menu/MusicLibrary/SongSorting.cs b/Assets/Script/Menu/MusicLibrary/SongSorting.cs
 index 040c4ac..7ce7797 100644
 --- a/Assets/Script/Menu/MusicLibrary/SongSorting.cs
@@ -45,7 +193,7 @@ index 040c4ac..7ce7797 100644
  
          internal static unsafe void SortEntries(SongCache cache, SortedSongs sorted)
 diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
-index bb70c1e..a9019ec 100644
+index bb70c1e..262baa7 100644
 --- a/Assets/Script/Menu/ProfileList/ProfileView.cs
 +++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
 @@ -185,6 +185,21 @@ namespace YARG.Menu.ProfileList
@@ -70,7 +218,7 @@ index bb70c1e..a9019ec 100644
  #endif
                          {
                              player.Bindings.SetDefaultBinds(device);
-@@ -242,6 +257,36 @@ namespace YARG.Menu.ProfileList
+@@ -242,6 +257,42 @@ namespace YARG.Menu.ProfileList
              return selectedDevice;
          }
  
@@ -79,6 +227,12 @@ index bb70c1e..a9019ec 100644
 +
 +        private static async UniTask<GamepadBindingMode?> PromptAndroidGamepadMode(Gamepad gamepad)
 +        {
++            // Phones joined through YARG Remote always send the guitar-style layout.
++            if (YARG.Remote.RemotePlayManager.IsRemoteDevice(gamepad))
++            {
++                return GamepadBindingMode.RB4InstrumentMapper_Guitar;
++            }
++
 +            await DialogManager.Instance.WaitUntilCurrentClosed();
 +
 +            if (_androidGamepads.TryGetValue(gamepad, out var existing))
@@ -107,15 +261,27 @@ index bb70c1e..a9019ec 100644
          private static async UniTask<GamepadBindingMode?> PromptGamepadMode(XInputController xinput)
          {
              await DialogManager.Instance.WaitUntilCurrentClosed();
-diff --git a/ProjectSettings/ProjectSettings.asset b/ProjectSettings/ProjectSettings.asset
-index 174e9d9..33c282b 100644
---- a/ProjectSettings/ProjectSettings.asset
-+++ b/ProjectSettings/ProjectSettings.asset
-@@ -872,6 +872,7 @@ PlayerSettings:
-   webWasm2023: 0
-   webEnableSubmoduleStrippingCompatibility: 0
-   scriptingDefineSymbols:
-+    Android: ZSTRING_TEXTMESHPRO_SUPPORT
-     Standalone: ZSTRING_TEXTMESHPRO_SUPPORT
-   additionalCompilerArguments: {}
-   platformArchitecture: {}
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index bb9bf9c..2b00cb8 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -753,6 +753,19 @@ namespace YARG.Settings
+ 
+             private static void FpsCapCallback(int value)
+             {
++#if UNITY_ANDROID && !UNITY_EDITOR
++                // YARG Resurrected: Android ignores VSync and would sit at the default cap of 60 even
++                // on 120 Hz screens. Treat the default (60) as "match the screen", which halves
++                // frame delay on phones like the Z Fold 7.
++                if (value == 60)
++                {
++                    int refresh = Mathf.RoundToInt((float) Screen.currentResolution.refreshRateRatio.value);
++                    if (refresh > 60)
++                    {
++                        value = refresh;
++                    }
++                }
++#endif
+                 Application.targetFrameRate = value;
+             }
+ 
