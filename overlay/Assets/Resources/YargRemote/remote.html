@@ -206,6 +206,44 @@
   var playerName = store.get('yargRemoteName') || '';
   var ws = null, joined = false, connected = false, reconnectTimer = 0;
   var playerNumber = 0, rtt = -1;
+
+  // Clock sync: each ping tells us the host's clock. The quickest recent ping gives the best
+  // estimate, and every button press is stamped with the host time at which the finger touched.
+  var syncSamples = [];      // { rtt, offset }
+  var clockOffset = null;    // host clock ms - performance.now()
+  var pingsSent = 0;
+
+  function sendPing() {
+    if (!connected || !ws || ws.readyState !== 1) return;
+    pingsSent++;
+    ws.send('ping\n' + performance.now().toFixed(3) + (rtt >= 0 ? '\n' + rtt.toFixed(2) : ''));
+  }
+
+  function onPong(sentAt, hostMs) {
+    var now = performance.now();
+    var sample = { rtt: now - sentAt, offset: hostMs - (sentAt + now) / 2 };
+    if (!(sample.rtt >= 0) || !isFinite(sample.offset)) return;
+    syncSamples.push(sample);
+    if (syncSamples.length > 20) syncSamples.shift();
+    var best = syncSamples[0];
+    for (var i = 1; i < syncSamples.length; i++) {
+      if (syncSamples[i].rtt < best.rtt) best = syncSamples[i];
+    }
+    clockOffset = best.offset;
+    rtt = best.rtt;
+  }
+
+  // Host-clock time of an input. Pointer events carry the time the screen was touched, which is
+  // earlier (and steadier) than the time our code runs.
+  function hostTime(ev) {
+    if (clockOffset === null) return 0;
+    var now = performance.now();
+    var t = now;
+    if (ev && typeof ev.timeStamp === 'number' && ev.timeStamp > now - 100 && ev.timeStamp <= now) {
+      t = ev.timeStamp;
+    }
+    return t + clockOffset;
+  }
   var buttons = 0, whammy = 0;
   var pulseTimers = {};
   var lastStrum = 0;
@@ -233,6 +271,12 @@
       var p = ev.data.split('\n');
       if (p[0] === 'welcome') {
         connected = true;
+        syncSamples = [];
+        clockOffset = null;
+        rtt = -1;
+        pingsSent = 0;
+        // A quick burst to sync clocks, then once a second.
+        for (var k = 0; k < 6; k++) setTimeout(sendPing, k * 120);
         playerNumber = parseInt(p[1], 10) || 0;
         if (p[4]) { playerName = p[4]; }
         buttons = 0;
@@ -241,7 +285,7 @@
         updateStatus();
         updateMicName();
       } else if (p[0] === 'pong') {
-        rtt = Date.now() - parseInt(p[1], 10);
+        onPong(parseFloat(p[1]), parseFloat(p[2]));
         updateStatus();
       } else if (p[0] === 'micok') {
         $('micName').textContent = p[1];
@@ -271,42 +315,56 @@
   function updateStatus() {
     if (!connected) return;
     var text = '● ' + playerName + ' · player ' + playerNumber;
-    if (rtt >= 0) text += ' · ' + rtt + ' ms';
+    if (rtt >= 0) text += ' · ' + Math.round(rtt / 2) + ' ms';
     setStatus(text, true);
   }
 
-  setInterval(function () {
-    if (connected && ws && ws.readyState === 1) ws.send('ping\n' + Date.now());
-  }, 2000);
+  setInterval(sendPing, 1000);
 
   // ---------- Controller state ----------
 
-  function sendState() {
+  // Packet: [1][buttons u32][whammy u8][touch time f64, host clock ms], little endian.
+  var packet = new ArrayBuffer(14);
+  var packetView = new DataView(packet);
+  var batching = false, batchDirty = false, batchEvent = null;
+
+  function sendState(ev) {
+    if (batching) { batchDirty = true; return; }
     if (!ws || ws.readyState !== 1 || !connected) return;
-    var a = new Uint8Array(6);
-    a[0] = 1;
-    a[1] = buttons & 255;
-    a[2] = (buttons >>> 8) & 255;
-    a[3] = (buttons >>> 16) & 255;
-    a[4] = (buttons >>> 24) & 255;
-    a[5] = whammy;
-    ws.send(a);
+    packetView.setUint8(0, 1);
+    packetView.setUint32(1, buttons >>> 0, true);
+    packetView.setUint8(5, whammy);
+    packetView.setFloat64(6, hostTime(ev), true);
+    ws.send(packet);
   }
 
-  function setBit(bit, on) {
+  // Runs fn and sends everything it changed as one packet (e.g. fret + strum on a lane tap).
+  function batch(ev, fn) {
+    batching = true;
+    batchDirty = false;
+    batchEvent = ev;
+    try { fn(); } finally { batching = false; batchEvent = null; }
+    if (batchDirty) sendState(ev);
+  }
+
+  function setBit(bit, on, ev) {
     var mask = 1 << bit;
     var next = on ? (buttons | mask) : (buttons & ~mask);
     if (next !== buttons) {
       buttons = next >>> 0;
-      sendState();
+      sendState(ev);
     }
   }
 
   // Press a button briefly (strum, star power, pause).
   function pulse(bit, ms) {
     if (pulseTimers[bit]) {
+      // Still held from the last pulse: release it in its own packet so the host sees a new press.
       clearTimeout(pulseTimers[bit]);
+      var wasBatching = batching;
+      batching = false;
       setBit(bit, false);
+      batching = wasBatching;
     }
     setBit(bit, true);
     pulseTimers[bit] = setTimeout(function () {
@@ -356,19 +414,21 @@
   // Lanes: tapping a lane holds its fret and strums (chords share one strum).
   Array.prototype.forEach.call(document.querySelectorAll('.lane'), function (el) {
     var fret = parseInt(el.getAttribute('data-fret'), 10);
-    hold(el, function () {
-      setBit(fret, true);
-      if (performance.now() - lastStrum > CHORD_WINDOW_MS) strum(false);
+    hold(el, function (e) {
+      batch(e, function () {
+        setBit(fret, true);
+        if (performance.now() - lastStrum > CHORD_WINDOW_MS) strum(false);
+      });
       buzz(8);
-    }, function () {
-      setBit(fret, false);
+    }, function (e) {
+      setBit(fret, false, e);
     });
   });
 
   // Frets + strum: frets only hold, the strum pad strums.
   Array.prototype.forEach.call(document.querySelectorAll('.fret'), function (el) {
     var fret = parseInt(el.getAttribute('data-fret'), 10);
-    hold(el, function () { setBit(fret, true); buzz(6); }, function () { setBit(fret, false); });
+    hold(el, function (e) { setBit(fret, true, e); buzz(6); }, function (e) { setBit(fret, false, e); });
   });
 
   (function () {
@@ -379,14 +439,14 @@
       try { pad.setPointerCapture(e.pointerId); } catch (err) { }
       origins[e.pointerId] = e.clientY;
       pad.classList.add('on');
-      strum(false);
+      batch(e, function () { strum(false); });
       buzz(8);
     });
     pad.addEventListener('pointermove', function (e) {
       if (!(e.pointerId in origins)) return;
       var dy = e.clientY - origins[e.pointerId];
       if (Math.abs(dy) > 28) {
-        strum(dy < 0);
+        batch(e, function () { strum(dy < 0); });
         origins[e.pointerId] = e.clientY;
         buzz(6);
       }
@@ -432,13 +492,13 @@
   // Star Power / Pause buttons.
   Array.prototype.forEach.call(document.querySelectorAll('[data-pulse]'), function (el) {
     var bit = parseInt(el.getAttribute('data-pulse'), 10);
-    hold(el, function () { pulse(bit, 90); buzz(15); });
+    hold(el, function (e) { batch(e, function () { pulse(bit, 90); }); buzz(15); });
   });
 
   // Menu buttons are held for as long as you touch them.
   Array.prototype.forEach.call(document.querySelectorAll('[data-hold]'), function (el) {
     var bit = parseInt(el.getAttribute('data-hold'), 10);
-    hold(el, function () { setBit(bit, true); buzz(8); }, function () { setBit(bit, false); });
+    hold(el, function (e) { setBit(bit, true, e); buzz(8); }, function (e) { setBit(bit, false, e); });
   });
 
   // Let go of everything if the page is hidden mid-press.
@@ -542,7 +602,7 @@
     $('micLevel').style.width = Math.min(100, rms * 400) + '%';
 
     if (!ws || ws.readyState !== 1 || !connected) return;
-    if (ws.bufferedAmount > 64 * 1024) return; // Wi-Fi is behind: drop audio rather than lag
+    if (ws.bufferedAmount > 16 * 1024) return; // Wi-Fi is behind: drop audio rather than lag
     var out = new Uint8Array(1 + samples.byteLength);
     out[0] = 2;
     out.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength), 1);
@@ -566,7 +626,7 @@
     }
 
     var AC = window.AudioContext || window.webkitAudioContext;
-    mic.ctx = new AC();
+    try { mic.ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { mic.ctx = new AC(); }
     if (mic.ctx.state === 'suspended') { try { await mic.ctx.resume(); } catch (e) { } }
     mic.rate = Math.round(mic.ctx.sampleRate);
 
@@ -575,7 +635,7 @@
     silent.gain.value = 0;
     silent.connect(mic.ctx.destination);
 
-    var size = Math.round(mic.rate / 50); // 20 ms per packet
+    var size = Math.round(mic.rate / 100); // 10 ms per packet
     mic.node = null;
     if (mic.ctx.audioWorklet && window.AudioWorkletNode) {
       try {
@@ -589,7 +649,7 @@
     }
     if (!mic.node) {
       // Older browsers
-      var sp = mic.ctx.createScriptProcessor(1024, 1, 1);
+      var sp = mic.ctx.createScriptProcessor(512, 1, 1);
       sp.onaudioprocess = function (ev) {
         var f = ev.inputBuffer.getChannelData(0);
         var out = new Int16Array(f.length);

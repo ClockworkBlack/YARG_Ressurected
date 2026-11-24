@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <Compile Include="../../overlay/Assets/Script/Remote/RemoteServer.cs" Link="RemoteServer.cs" />
+    <Compile Include="../../overlay/Assets/Script/Remote/RemoteTiming.cs" Link="RemoteTiming.cs" />
   </ItemGroup>
 
 </Project>

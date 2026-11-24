@@ -154,8 +154,16 @@ namespace RemoteServerTests
             await alice.SendAsync(new ArraySegment<byte>(big), WebSocketMessageType.Binary, true, CancellationToken.None);
             Expect(handler, "binary 1 70000 2");
 
+            double before = RemoteServer.NowMs;
             await SendText(alice, "ping\n123");
-            Check(await ReceiveText(alice) == "pong\n123", "ping/pong");
+            var pong = (await ReceiveText(alice)).Split('\n');
+            Check(pong.Length == 3 && pong[0] == "pong" && pong[1] == "123", "ping/pong");
+            double hostMs = double.Parse(pong[2], System.Globalization.CultureInfo.InvariantCulture);
+            Check(hostMs >= before && hostMs <= RemoteServer.NowMs, "pong carries the host clock");
+
+            await SendText(alice, "ping\n124\n7.5");
+            Check((await ReceiveText(alice)).StartsWith("pong\n124\n"), "ping with round trip");
+            Expect(handler, "text 1 ping|124|7.5");
 
             await SendText(alice, "mic\n48000");
             Expect(handler, "text 1 mic|48000");
@@ -200,6 +208,30 @@ namespace RemoteServerTests
             // Abrupt disconnect
             nameless.Abort();
             Expect(handler, "closed 3");
+
+            // Timing
+            var estimator = new DelayEstimator();
+            Check(estimator.EstimateMs() == DelayEstimator.DEFAULT_MS, "default hold before any samples");
+            for (int i = 0; i < 18; i++) estimator.AddSample(8);
+            estimator.AddSample(12);
+            estimator.AddSample(300); // one Wi-Fi hiccup must not set the hold time
+            Check(estimator.EstimateMs() == 12 + DelayEstimator.MARGIN_MS, "hold = 90th percentile + margin (" + estimator.EstimateMs() + ")");
+            estimator.AddSample(-5);
+            estimator.AddSample(double.NaN);
+            Check(estimator.EstimateMs() == 12 + DelayEstimator.MARGIN_MS, "bad samples ignored");
+            var slow = new DelayEstimator();
+            for (int i = 0; i < 10; i++) slow.AddSample(400);
+            Check(slow.EstimateMs() == DelayEstimator.MAX_MS, "hold is capped");
+            var fast = new DelayEstimator();
+            for (int i = 0; i < 10; i++) fast.AddSample(0.5);
+            Check(fast.EstimateMs() == DelayEstimator.MIN_MS, "hold has a floor");
+
+            Check(RemoteTiming.PlayTimeMs(1000, 1009, 15, out double d1) == 1015 && d1 == 9, "press played at touch + hold");
+            Check(RemoteTiming.PlayTimeMs(1000, 1040, 15, out double d2) == 1015 && d2 == 40, "late press keeps its true time");
+            Check(RemoteTiming.PlayTimeMs(0, 1009, 15, out double d3) == 1009 && d3 == -1, "unsynced phone uses arrival time");
+            Check(RemoteTiming.PlayTimeMs(1100, 1009, 15, out double d4) == 1009 && d4 == -1, "future touch time rejected");
+            Check(RemoteTiming.PlayTimeMs(100, 1009, 15, out double d5) == 1009 && d5 == -1, "stale touch time rejected");
+            Check(RemoteTiming.PlayTimeMs(double.NaN, 1009, 15, out double d6) == 1009 && d6 == -1, "NaN touch time rejected");
 
             Check(RemoteServer.ComputeWebSocketAccept("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
                 "RFC 6455 accept key");

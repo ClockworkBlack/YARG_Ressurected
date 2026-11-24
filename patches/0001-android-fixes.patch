@@ -139,6 +139,38 @@ index 8482a8a..233ab02 100644
              var device = BassMicDevice.Create(deviceId, name);
              device?.SetMonitoringLevel(SettingsManager.Settings.VocalMonitoring.Value);
              return device;
+diff --git a/Assets/Script/Gameplay/Player/BasePlayer.cs b/Assets/Script/Gameplay/Player/BasePlayer.cs
+index 20eafb2..bb249e1 100644
+--- a/Assets/Script/Gameplay/Player/BasePlayer.cs
++++ b/Assets/Script/Gameplay/Player/BasePlayer.cs
+@@ -54,7 +54,13 @@ namespace YARG.Gameplay.Player
+         /// Be aware that this value is negated!
+         /// Positive calibration settings will result in a negative number here.
+         /// </remarks>
+-        public double InputCalibration => -Player.Profile.InputCalibrationSeconds;
++        public double InputCalibration => -(Player.Profile.InputCalibrationSeconds + RemoteInputDelay);
++
++        // YARG Resurrected: extra delay of a phone controller/mic joined over Wi-Fi. Measured before
++        // the song and fixed for the whole song, so the engine's clock never jumps.
++        private double? _remoteInputDelay;
++        private double RemoteInputDelay => _remoteInputDelay ??=
++            Player.IsReplay ? 0.0 : YARG.Remote.RemotePlayManager.GetInputDelaySeconds(Player.Bindings);
+ 
+         public abstract BaseEngine BaseEngine { get; }
+ 
+diff --git a/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs b/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs
+index 3ff33e7..ce7ac11 100644
+--- a/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs
++++ b/Assets/Script/Gameplay/Visuals/HitWindowDisplay.cs
+@@ -62,7 +62,7 @@ namespace YARG.Gameplay.Visuals
+ 
+             // Offset via calibration
+             float videoCalibrationOffset = -SettingsManager.Settings.VideoCalibration.Value / 1000f;
+-            float inputCalibrationOffset = (float) -_player.Player.Profile.InputCalibrationSeconds;
++            float inputCalibrationOffset = (float) _player.InputCalibration;
+ 
+             _transformCache.localScale = _transformCache.localScale
+                 .WithY((float) totalWindow * _player.NoteSpeed);
 diff --git a/Assets/Script/Menu/MusicLibrary/SongSorting.cs b/Assets/Script/Menu/MusicLibrary/SongSorting.cs
 index 040c4ac..7ce7797 100644
 --- a/Assets/Script/Menu/MusicLibrary/SongSorting.cs
@@ -229,3 +261,27 @@ index bb70c1e..262baa7 100644
          private static async UniTask<GamepadBindingMode?> PromptGamepadMode(XInputController xinput)
          {
              await DialogManager.Instance.WaitUntilCurrentClosed();
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index bb9bf9c..2b00cb8 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -753,6 +753,19 @@ namespace YARG.Settings
+ 
+             private static void FpsCapCallback(int value)
+             {
++#if UNITY_ANDROID && !UNITY_EDITOR
++                // YARG Resurrected: Android ignores VSync and would sit at the default cap of 60 even
++                // on 120 Hz screens. Treat the default (60) as "match the screen", which halves
++                // frame delay on phones like the Z Fold 7.
++                if (value == 60)
++                {
++                    int refresh = Mathf.RoundToInt((float) Screen.currentResolution.refreshRateRatio.value);
++                    if (refresh > 60)
++                    {
++                        value = refresh;
++                    }
++                }
++#endif
+                 Application.targetFrameRate = value;
+             }
+ 

@@ -85,7 +85,8 @@ namespace YARG.Remote
 
                 try
                 {
-                    var header = new byte[10];
+                    // Header and payload go out in one write, so they share one TLS record / packet.
+                    var header = new byte[10 + count];
                     int headerLength;
                     header[0] = (byte) (0x80 | (opcode & 0x0F));
                     if (count < 126)
@@ -111,11 +112,11 @@ namespace YARG.Remote
                         headerLength = 10;
                     }
 
-                    _stream.Write(header, 0, headerLength);
                     if (count > 0)
                     {
-                        _stream.Write(payload, 0, count);
+                        Buffer.BlockCopy(payload, 0, header, headerLength, count);
                     }
+                    _stream.Write(header, 0, headerLength + count);
                     _stream.Flush();
                     return true;
                 }
@@ -155,6 +156,13 @@ namespace YARG.Remote
         private const int MAX_MESSAGE_BYTES = 1 << 20;
         private const int MAX_HEADER_BYTES = 16 * 1024;
         private const int IDLE_TIMEOUT_MS = 20000;
+
+        private static readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+
+        /// <summary>
+        /// The host clock phones synchronise to, in milliseconds. Safe to read from any thread.
+        /// </summary>
+        public static double NowMs => _clock.ElapsedTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
         private readonly X509Certificate2 _certificate;
         private readonly byte[] _page;
@@ -333,7 +341,8 @@ namespace YARG.Remote
                 var thread = new Thread(() => HandleConnection(tcp))
                 {
                     IsBackground = true,
-                    Name = "YARG Remote client"
+                    Name = "YARG Remote client",
+                    Priority = ThreadPriority.AboveNormal
                 };
                 thread.Start();
             }
@@ -715,7 +724,14 @@ namespace YARG.Remote
 
             if (parts[0] == "ping")
             {
-                client.SendText("pong\n" + (parts.Length > 1 ? parts[1] : ""));
+                // ping \n <phone time> [\n <last round trip ms>]  ->  pong \n <phone time> \n <host clock ms>
+                // The phone uses the host clock to stamp each button press with when it happened.
+                client.SendText("pong\n" + (parts.Length > 1 ? parts[1] : "") + "\n" +
+                    NowMs.ToString("F3", System.Globalization.CultureInfo.InvariantCulture));
+                if (parts.Length > 2)
+                {
+                    SafeCall(() => _handler.OnClientText(client, text));
+                }
                 return;
             }
 

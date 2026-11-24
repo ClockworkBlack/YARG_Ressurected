@@ -130,6 +130,16 @@ namespace YARG.Remote
             }
         }
 
+        /// <summary>True if <paramref name="device"/> gets its audio from <paramref name="client"/>.</summary>
+        public static bool IsFedBy(RemoteMicDevice device, RemoteClient client)
+        {
+            lock (_lock)
+            {
+                return _byKey.TryGetValue(client.Key, out var entry) && entry.Client == client &&
+                    entry.Devices.Contains(device);
+            }
+        }
+
         internal static void Start(RemoteClient client, int sampleRate)
         {
             lock (_lock)

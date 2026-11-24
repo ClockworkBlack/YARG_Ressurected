@@ -70,14 +70,64 @@ namespace YARG.Remote
 
         private struct PadPacket
         {
-            public RemoteClient Client;
+            public PhoneState Phone;
             public uint Buttons;
             public byte Whammy;
+            public double PlayTimeMs; // host clock (RemoteServer.NowMs)
+        }
+
+        private sealed class PhoneState
+        {
+            public readonly DelayEstimator Delay = new DelayEstimator();
+            public readonly Queue<PadPacket> Held = new Queue<PadPacket>(); // main thread only
+            public Gamepad Pad;                                             // main thread only
+            public double HoldMs = DelayEstimator.DEFAULT_MS;               // fixed while a song plays
+            public double LastEventTime;
         }
 
         private readonly ConcurrentQueue<Action> _mainThread = new ConcurrentQueue<Action>();
         private readonly ConcurrentQueue<PadPacket> _padPackets = new ConcurrentQueue<PadPacket>();
-        private readonly Dictionary<RemoteClient, Gamepad> _pads = new Dictionary<RemoteClient, Gamepad>();
+        private readonly ConcurrentDictionary<RemoteClient, PhoneState> _phones =
+            new ConcurrentDictionary<RemoteClient, PhoneState>();
+        private readonly ConcurrentDictionary<string, double> _holdByKey = new ConcurrentDictionary<string, double>();
+        private int _padCount;
+        private double _lastInputUpdateTime;
+
+        /// <summary>
+        /// Extra input delay (seconds) for a profile that plays through a phone joined over Wi-Fi:
+        /// its controller's hold time, or its mic's network delay. 0 for everything else.
+        /// Gameplay adds this to the profile's input calibration.
+        /// </summary>
+        public static double GetInputDelaySeconds(YARG.Input.ProfileBindings bindings)
+        {
+            var instance = Instance;
+            if (instance == null || bindings == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                foreach (var pair in instance._phones)
+                {
+                    var phone = pair.Value;
+                    if (phone.Pad != null && bindings.InputDevices.Contains(phone.Pad))
+                    {
+                        return phone.HoldMs / 1000.0;
+                    }
+                    if (bindings.Microphone is RemoteMicDevice mic && RemoteMics.IsFedBy(mic, pair.Key))
+                    {
+                        // Mic audio isn't held; add its usual network delay plus one 10 ms packet.
+                        return (phone.HoldMs + 10) / 1000.0;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+            return 0;
+        }
 
         private RemoteServer _server;
         private volatile int _tlsState; // 0 = unknown/testing, 1 = works, -1 = broken or no certificate
@@ -133,11 +183,11 @@ namespace YARG.Remote
             _server?.Dispose();
             _server = null;
 
-            foreach (var pad in _pads.Values)
+            foreach (var phone in _phones.Values)
             {
-                RemovePadDevice(pad);
+                RemovePadDevice(phone.Pad);
             }
-            _pads.Clear();
+            _phones.Clear();
 
             SetWifiLock(false);
             if (Instance == this)
@@ -170,7 +220,17 @@ namespace YARG.Remote
                 RefreshAddresses();
             }
 
-            SetWifiLock(_pads.Count > 0);
+            // Between songs, follow each phone's measured delay. During a song it stays fixed.
+            if (!SceneManager.GetSceneByName("Gameplay").isLoaded)
+            {
+                foreach (var pair in _phones)
+                {
+                    pair.Value.HoldMs = pair.Value.Delay.EstimateMs();
+                    _holdByKey[pair.Key.Key] = pair.Value.HoldMs;
+                }
+            }
+
+            SetWifiLock(_padCount > 0);
             UpdateOverlay();
         }
 
@@ -178,7 +238,14 @@ namespace YARG.Remote
 
         public void OnClientHello(RemoteClient client)
         {
-            _mainThread.Enqueue(() => AddPad(client));
+            var phone = new PhoneState();
+            // A phone that reconnects mid-song keeps the hold time its player was started with.
+            if (_holdByKey.TryGetValue(client.Key, out double remembered))
+            {
+                phone.HoldMs = remembered;
+            }
+            _phones[client] = phone;
+            _mainThread.Enqueue(() => AddPad(client, phone));
         }
 
         public void OnClientText(RemoteClient client, string message)
@@ -186,6 +253,14 @@ namespace YARG.Remote
             var parts = message.Split('\n');
             switch (parts[0])
             {
+                case "ping": // ping \n <phone time> \n <last round trip ms>
+                    if (parts.Length > 2 && _phones.TryGetValue(client, out var pinged) &&
+                        double.TryParse(parts[2], System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double roundTripMs))
+                    {
+                        pinged.Delay.AddSample(roundTripMs / 2);
+                    }
+                    break;
                 case "mic":
                     if (parts.Length > 1 && int.TryParse(parts[1], out int sampleRate) &&
                         sampleRate >= 8000 && sampleRate <= 192000)
@@ -209,14 +284,24 @@ namespace YARG.Remote
 
             switch (data[0])
             {
-                case 1: // controller state: [1][buttons u32 LE][whammy u8]
-                    if (count >= 6)
+                // Controller state: [1][buttons u32 LE][whammy u8][touch time f64 LE, host clock ms]
+                case 1:
+                    if (count >= 6 && _phones.TryGetValue(client, out var phone))
                     {
+                        double arrivalMs = RemoteServer.NowMs;
+                        double touchMs = count >= 14 ? BitConverter.ToDouble(data, 6) : 0;
+                        double playMs = RemoteTiming.PlayTimeMs(touchMs, arrivalMs, phone.HoldMs, out double delayMs);
+                        if (delayMs >= 0)
+                        {
+                            phone.Delay.AddSample(delayMs);
+                        }
+
                         _padPackets.Enqueue(new PadPacket
                         {
-                            Client = client,
+                            Phone = phone,
                             Buttons = (uint) (data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24)),
-                            Whammy = data[5]
+                            Whammy = data[5],
+                            PlayTimeMs = playMs
                         });
                     }
                     break;
@@ -236,9 +321,9 @@ namespace YARG.Remote
 
         #region Virtual gamepads (main thread)
 
-        private void AddPad(RemoteClient client)
+        private void AddPad(RemoteClient client, PhoneState phone)
         {
-            if (client.IsClosed || _pads.ContainsKey(client))
+            if (client.IsClosed || phone.Pad != null)
             {
                 return;
             }
@@ -274,25 +359,32 @@ namespace YARG.Remote
             }
 
             _remoteDevices.Add(pad);
-            _pads[client] = pad;
+            phone.Pad = pad;
+            _padCount++;
             Debug.Log($"[YARG Remote] Phone {client.Number} '{client.Name}' is gamepad '{pad.displayName}'");
         }
 
         private void RemovePad(RemoteClient client)
         {
-            if (_pads.TryGetValue(client, out var pad))
+            if (_phones.TryRemove(client, out var phone) && phone.Pad != null)
             {
-                _pads.Remove(client);
-                RemovePadDevice(pad);
+                _padCount--;
+                RemovePadDevice(phone.Pad);
+                phone.Pad = null;
             }
         }
 
         private static void RemovePadDevice(Gamepad pad)
         {
+            if (pad == null)
+            {
+                return;
+            }
+
             _remoteDevices.Remove(pad);
             try
             {
-                if (pad != null && pad.added)
+                if (pad.added)
                 {
                     InputSystem.RemoveDevice(pad);
                 }
@@ -303,19 +395,50 @@ namespace YARG.Remote
             }
         }
 
-        // Runs right before the Input System processes its event queue, so phone input is
-        // handled in the same frame it arrives, stamped with the current input time.
+        // Runs right before the Input System processes its event queue. Each press is played once
+        // its play time (touch time + hold) has come, stamped with exactly that time, so Wi-Fi
+        // jitter doesn't reach the game.
         private void OnBeforeInputUpdate()
         {
+            if (_phones.IsEmpty)
+            {
+                return;
+            }
+
+            double nowMs = RemoteServer.NowMs;
+            double nowInput = InputState.currentTime;
+            double clockOffset = nowInput - nowMs / 1000.0; // host clock -> Input System clock
+
             while (_padPackets.TryDequeue(out var packet))
             {
-                if (!_pads.TryGetValue(packet.Client, out var pad) || pad == null || !pad.added)
+                packet.Phone.Held.Enqueue(packet);
+            }
+
+            foreach (var pair in _phones)
+            {
+                var phone = pair.Value;
+                var pad = phone.Pad;
+                if (pad == null || !pad.added)
                 {
+                    phone.Held.Clear();
                     continue;
                 }
 
-                InputSystem.QueueStateEvent(pad, BuildState(packet.Buttons, packet.Whammy));
+                while (phone.Held.Count > 0 && phone.Held.Peek().PlayTimeMs <= nowMs)
+                {
+                    var packet = phone.Held.Dequeue();
+
+                    // Never before the previous update or the phone's previous event, never in the future.
+                    double time = packet.PlayTimeMs / 1000.0 + clockOffset;
+                    time = Math.Max(time, Math.Max(phone.LastEventTime, _lastInputUpdateTime));
+                    time = Math.Min(time, nowInput);
+                    phone.LastEventTime = time;
+
+                    InputSystem.QueueStateEvent(pad, BuildState(packet.Buttons, packet.Whammy), time);
+                }
             }
+
+            _lastInputUpdateTime = nowInput;
         }
 
         // Layout matches YARG's "guitar" gamepad bindings (RB4InstrumentMapper/WiitarThing style):
@@ -576,7 +699,7 @@ namespace YARG.Remote
                 return "PHONES: couldn't start the phone server";
             }
 
-            int phones = _pads.Count;
+            int phones = _padCount;
             int mics = RemoteMics.ActiveCount;
             string counts = phones == 0 ? "none connected"
                 : phones + (phones == 1 ? " phone" : " phones") + (mics > 0 ? $", {mics} mic{(mics == 1 ? "" : "s")}" : "");

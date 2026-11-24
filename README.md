@@ -55,6 +55,14 @@ Other phones on the same Wi-Fi (or on your hotspot) can join from their **browse
 
 The host's own mic shows up as **"This phone's mic"**.
 
+How timing is kept tight:
+- Each phone syncs its clock with the host and stamps every press with the moment the screen was touched.
+- The host plays each press a fixed few milliseconds after that moment (a bit more than the connection's usual
+  delay, measured between songs), so Wi-Fi jitter doesn't reach the game, and moves that player's input
+  calibration by the same amount, so presses are judged at the moment of the touch.
+- While phones are connected, Android's Wi-Fi power saving is turned off for the app.
+- The game runs at the screen's refresh rate (120 Hz on a Z Fold 7) when the FPS cap is left at 60.
+
 Notes:
 - The `http://` address works too, but only for the controller. Browsers only allow the mic on `https://`.
 - Each build makes a new self-signed certificate, so guests see the warning again after an update.
