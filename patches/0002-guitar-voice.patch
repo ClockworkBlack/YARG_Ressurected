@@ -1,0 +1,256 @@
+diff --git a/Assets/Script/Audio/Bass/BassStemMixer.cs b/Assets/Script/Audio/Bass/BassStemMixer.cs
+index ce2e36f..895dab1 100644
+--- a/Assets/Script/Audio/Bass/BassStemMixer.cs
++++ b/Assets/Script/Audio/Bass/BassStemMixer.cs
+@@ -55,6 +55,61 @@ namespace YARG.Audio.BASS
+         private readonly List<StemData> _stemDatas = new();
+         private          int            _longestHandle;
+ 
++        /// <summary>
++        /// Set on the loading thread while a song's audio is being loaded to make the mixer keep
++        /// a private copy of each source file. The guitar voice reads these copies to listen to
++        /// the song before it is played (see <c>GuitarVoiceLoader</c>).
++        /// </summary>
++        [ThreadStatic]
++        public static bool KeepSourceCopies;
++
++        private List<(MemoryStream Data, StemInfo[] Stems)> _sourceCopies;
++
++        /// <summary>The copies kept while <see cref="KeepSourceCopies"/> was set (may be null).</summary>
++        public IReadOnlyList<(MemoryStream Data, StemInfo[] Stems)> SourceCopies => _sourceCopies;
++
++        public void DropSourceCopies()
++        {
++            if (_sourceCopies == null)
++            {
++                return;
++            }
++            foreach (var (data, _) in _sourceCopies)
++            {
++                data.Dispose();
++            }
++            _sourceCopies = null;
++        }
++
++        private void KeepSourceCopy(Stream stream, StemInfo[] stemInfos)
++        {
++            try
++            {
++                if (!stream.CanRead || !stream.CanSeek)
++                {
++                    return;
++                }
++                long position = stream.Position;
++                try
++                {
++                    stream.Position = 0;
++                    var copy = new MemoryStream();
++                    stream.CopyTo(copy);
++                    copy.Position = 0;
++                    _sourceCopies ??= new();
++                    _sourceCopies.Add((copy, stemInfos));
++                }
++                finally
++                {
++                    stream.Position = position;
++                }
++            }
++            catch (Exception e)
++            {
++                YargLogger.LogException(e, "Could not keep a copy of a song source");
++            }
++        }
++
+         private readonly BassNormalizer _normalizer = new();
+         private          bool           _shouldNormalize;
+         private          int            _gainDspHandle;
+@@ -415,6 +470,11 @@ namespace YARG.Audio.BASS
+ 
+         protected override bool AddChannels_Internal(Stream stream, params StemInfo[] stemInfos)
+         {
++            if (KeepSourceCopies)
++            {
++                KeepSourceCopy(stream, stemInfos);
++            }
++
+             if (_shouldNormalize)
+             {
+                 if (!_normalizer.AddStream(stream, stemInfos))
+@@ -639,6 +699,7 @@ namespace YARG.Audio.BASS
+ 
+         protected override void DisposeManagedResources()
+         {
++            DropSourceCopies();
+             _whammySyncTimer.Stop();
+             _whammySyncTimer = null;
+             _stemDatas.Clear();
+diff --git a/Assets/Script/Gameplay/GameManager.Audio.cs b/Assets/Script/Gameplay/GameManager.Audio.cs
+index 59bebd4..f9aa711 100644
+--- a/Assets/Script/Gameplay/GameManager.Audio.cs
++++ b/Assets/Script/Gameplay/GameManager.Audio.cs
+@@ -1,10 +1,14 @@
++using System;
+ using System.Collections.Generic;
+ using System.Linq;
+ using DG.Tweening;
+ using DG.Tweening.Core;
+ using DG.Tweening.Plugins.Options;
+ using UnityEngine;
++using YARG.Audio.BASS;
++using YARG.Audio.GuitarVoice;
+ using YARG.Core.Audio;
++using YARG.Core.Logging;
+ using YARG.Playback;
+ using YARG.Settings;
+ 
+@@ -89,7 +93,19 @@ namespace YARG.Gameplay
+         private void LoadAudio()
+         {
+             _stemStates.Clear();
+-            _mixer = Song.LoadAudio(GlobalVariables.State.SongSpeed, DEFAULT_VOLUME);
++
++            // The guitar voice listens to the song before it plays, so have the mixer keep
++            // copies of the source files while they are being loaded (see AddGuitarVoice)
++            BassStemMixer.KeepSourceCopies = GuitarVoiceLoader.Enabled;
++            try
++            {
++                _mixer = Song.LoadAudio(GlobalVariables.State.SongSpeed, DEFAULT_VOLUME);
++            }
++            finally
++            {
++                BassStemMixer.KeepSourceCopies = false;
++            }
++
+             if (_mixer == null)
+             {
+                 _loadState = LoadFailureState.Error;
+@@ -106,6 +122,42 @@ namespace YARG.Gameplay
+             _backgroundStem = _stemStates.Count > 1 ? SongStem.Song : _stemStates.First().Key;
+         }
+ 
++        /// <summary>
++        /// Gives guitar-family players a generated guitar (or bass) track when the song has none
++        /// of its own, so their notes sound and their misses do not. Runs after both the chart
++        /// and the audio have loaded.
++        /// </summary>
++        private void AddGuitarVoice()
++        {
++            try
++            {
++                if (_mixer == null || Chart == null || _loadState != LoadFailureState.None)
++                {
++                    return;
++                }
++
++                var added = GuitarVoiceLoader.AddStems(Song, _mixer, Chart, YargPlayers);
++                foreach (var stem in added)
++                {
++                    _stemStates.TryAdd(stem, new StemState(stem));
++                }
++
++                if (added.Count > 0)
++                {
++                    _backgroundStem = _stemStates.Count > 1 ? SongStem.Song : _stemStates.First().Key;
++                }
++            }
++            catch (Exception e)
++            {
++                // Never let this stop a song from loading
++                YargLogger.LogException(e, "Guitar voice failed");
++            }
++            finally
++            {
++                (_mixer as BassStemMixer)?.DropSourceCopies();
++            }
++        }
++
+         public void ChangeStarPowerStatus(bool active)
+         {
+             if (SettingsManager.Settings.UseCrowdFx.Value == CrowdFxMode.Disabled)
+diff --git a/Assets/Script/Gameplay/GameManager.Loading.cs b/Assets/Script/Gameplay/GameManager.Loading.cs
+index 55c9d0e..4c8042b 100644
+--- a/Assets/Script/Gameplay/GameManager.Loading.cs
++++ b/Assets/Script/Gameplay/GameManager.Loading.cs
+@@ -3,6 +3,7 @@ using System.Collections.Generic;
+ using System.IO;
+ using Cysharp.Threading.Tasks;
+ using UnityEngine;
++using YARG.Audio.GuitarVoice;
+ using YARG.Core;
+ using YARG.Core.Audio;
+ using YARG.Core.Chart;
+@@ -188,6 +189,12 @@ namespace YARG.Gameplay
+                 return;
+             }
+ 
++            if (GuitarVoiceLoader.Enabled)
++            {
++                context.Queue(UniTask.RunOnThreadPool(AddGuitarVoice), "Plugging in the guitar...");
++                await context.Wait();
++            }
++
+             FinalizeChart();
+ 
+             // Initialize song runner
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 2b00cb8..3a53415 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -3,6 +3,7 @@ using System.Net;
+ using System.Threading.Tasks;
+ using UnityEngine;
+ using UnityEngine.InputSystem;
++using YARG.Audio.GuitarVoice;
+ using YARG.Core.Audio;
+ using YARG.Core.Engine;
+ using YARG.Core.Logging;
+@@ -295,6 +296,16 @@ namespace YARG.Settings
+                 CrowdFxMode.Enabled
+             };
+ 
++            // Plays the player's notes on a generated guitar or bass, in tune with the song,
++            // for songs that have no separate guitar / bass audio of their own
++            public DropdownSetting<GuitarVoiceMode> GuitarVoice { get; } = new(GuitarVoiceMode.Rock)
++            {
++                GuitarVoiceMode.Off,
++                GuitarVoiceMode.Clean,
++                GuitarVoiceMode.Rock,
++                GuitarVoiceMode.Heavy
++            };
++
+             public ToggleSetting OverstrumAndOverhitSoundEffects { get; } = new(true);
+ 
+             public ToggleSetting AlwaysOnDrumSFX { get; } = new(false);
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 76c648e..2ba4f71 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -115,6 +115,7 @@ namespace YARG.Settings
+                 nameof(Settings.MicrophoneSensitivity),
+ 
+                 new HeaderMetadata("Gameplay"),
++                nameof(Settings.GuitarVoice),
+                 nameof(Settings.MuteOnMiss),
+                 nameof(Settings.UseStarpowerFx),
+                 nameof(Settings.UseCrowdFx),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 704b699..6b5ee91 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1278,6 +1278,16 @@
+                 "Name": "Music Player Volume",
+                 "Description": "Adjusts the volume of the music that plays in the main menu. Set to \"0\" to disable."
+             },
++            "GuitarVoice": {
++                "Name": "Guitar Sound On Notes",
++                "Description": "For songs with no separate guitar or bass audio: plays your notes on a generated electric guitar (or bass), in tune and in key with the song. It sounds as the notes go by, drops out when you miss, and bends with the whammy bar. Uses the Guitar and Bass volume sliders. Adds a few seconds to loading.",
++                "Dropdown": {
++                    "Off": "Off",
++                    "Clean": "Clean",
++                    "Rock": "Rock (overdrive)",
++                    "Heavy": "Heavy (distortion)"
++                }
++            },
+             "MuteOnMiss": {
+                 "Name": "Mute On Miss",
+                 "Description": "Mutes a specific stem when you miss on that instrument. Only does something if the song is multi-track.",

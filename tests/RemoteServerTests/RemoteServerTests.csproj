@@ -14,6 +14,8 @@
     <Compile Include="../../overlay/Assets/Script/Remote/RemoteServer.cs" Link="RemoteServer.cs" />
     <Compile Include="../../overlay/Assets/Script/Remote/RemoteTiming.cs" Link="RemoteTiming.cs" />
     <Compile Include="../../overlay/Assets/Script/Remote/RemoteQr.cs" Link="RemoteQr.cs" />
+    <Compile Include="../../overlay/Assets/Script/Audio/GuitarVoice/GuitarVoiceAnalysis.cs" Link="GuitarVoiceAnalysis.cs" />
+    <Compile Include="../../overlay/Assets/Script/Audio/GuitarVoice/GuitarVoiceSynth.cs" Link="GuitarVoiceSynth.cs" />
   </ItemGroup>
 
 </Project>

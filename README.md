@@ -74,6 +74,37 @@ Notes:
 - Anyone on the same Wi-Fi can open the page, so use it on networks you trust.
 - Wi-Fi adds a little delay. Run YARG's calibration with a phone if timing feels off.
 
+## Guitar sound on your notes
+
+Guitar Hero songs come with the guitar on its own audio track: it plays while you hit notes and
+cuts out when you miss. Songs you add yourself (and everything from the converter) are one
+recording, so there is nothing to cut. With **Settings > Sound > Guitar Sound On Notes** on
+(the default), the game makes that track while the song loads:
+
+1. **It listens to the song.** It works out the recording's tuning (many songs are not at
+   exactly A = 440 Hz), its scale, and which note the music is on at each moment, separately
+   for the guitar and the bass register.
+2. **It gives every note of your chart a pitch**: the note the song is on, in an octave chosen so
+   the line goes up when the frets go up and repeats when they repeat. Two- and three-fret notes
+   become power chords on the harmony's root.
+3. **It plays the chart on a modelled electric guitar** (or bass, for a bass player): plucked
+   strings through an amplifier and speaker cabinet, with hammer-ons softer than picked notes,
+   vibrato on long notes and strummed chords. Three sounds: Clean, Rock, Heavy.
+
+The result is added to the song as its guitar (or bass) track, so the game treats it like the
+real thing: it sounds exactly on the notes whatever your audio delay (including Bluetooth),
+drops out when you miss and comes back on the next hit, bends with the whammy bar on sustains,
+gets the Star Power reverb, follows the Guitar / Bass volume sliders, and works in practice mode
+at any speed. A wrong strum still makes the game's own "clunk".
+
+- Only for five-fret guitar, bass and rhythm, and only when the song has no separate audio for
+  that instrument. Songs with a real guitar track are left alone.
+- With several guitarists on one instrument, the hardest difficulty in play is the one you hear.
+- "Mute On Miss" must not be Off for the drop-out on misses (it is on by default).
+- Loading takes a few seconds longer. Songs over 20 minutes are skipped.
+- Every build's release includes `guitar-sound-demo.wav`: the three guitar sounds and the bass,
+  recorded by the automated tests.
+
 ## Setup (one time)
 
 ### 1. Unity license (needs a computer once, e.g. a Chromebook's Linux)

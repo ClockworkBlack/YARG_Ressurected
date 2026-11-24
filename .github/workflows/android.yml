@@ -30,7 +30,7 @@ env:
 
 jobs:
   remote-tests:
-    name: Phone remote server tests
+    name: Automated tests (phone remote, guitar sound)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +40,13 @@ jobs:
       - name: Make a test certificate
         run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
       - name: Run tests
-        run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes"
+        run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes" "$RUNNER_TEMP/demo"
+      # A short recording of the generated guitar and bass, to listen to without installing anything
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guitar-sound-demo
+          path: ${{ runner.temp }}/demo/guitar-sound-demo.wav
+          if-no-files-found: error
 
   native:
     name: Native libraries (arm64-v8a)
@@ -204,13 +210,20 @@ jobs:
           name: YARG-Resurrected-apk
           path: ${{ steps.apk.outputs.file }}
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: guitar-sound-demo
+          path: demo
+
       - name: Publish as a GitHub release (easy download on your phone)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: YARG Resurrected build ${{ github.run_number }}
           prerelease: true
-          files: ${{ steps.apk.outputs.file }}
+          files: |
+            ${{ steps.apk.outputs.file }}
+            demo/guitar-sound-demo.wav
           body: |
             Android build of YARG (upstream `${{ env.UPSTREAM_REF }}`) for arm64 phones.
             Download the .apk on your phone and open it to install.
