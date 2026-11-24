@@ -1,0 +1,43 @@
+diff --git a/Assets/Script/Audio/Bass/BassAudioManager.cs b/Assets/Script/Audio/Bass/BassAudioManager.cs
+index 0121ba4..d57b69c 100644
+--- a/Assets/Script/Audio/Bass/BassAudioManager.cs
++++ b/Assets/Script/Audio/Bass/BassAudioManager.cs
+@@ -247,6 +247,14 @@ namespace YARG.Audio.BASS
+ 
+         protected override MicDevice? GetInputDevice(string name)
+         {
++            // YARG Resurrected: microphones opened through Android itself, each pinned to one input
++            // ("Built-in mic", "USB mic: ...", "Headset mic (plug)"), so two can be used at once
++            var androidMic = YARG.Audio.AndroidMics.FindByName(name);
++            if (androidMic != null)
++            {
++                return androidMic;
++            }
++
+             // YARG Resurrected: mics streamed from other phones
+             var remoteMic = YARG.Remote.RemoteMics.FindByName(name);
+             if (remoteMic != null)
+@@ -352,6 +360,10 @@ namespace YARG.Audio.BASS
+                 mics.Add((deviceIndex, info.Name));
+             }
+ 
++            // YARG Resurrected: the phone's own mic, a USB mic and a wired headset as separate
++            // choices, so one singer can be on each
++            YARG.Audio.AndroidMics.AppendDevices(mics);
++
+             // YARG Resurrected: mics streamed from other phones
+             YARG.Remote.RemoteMics.AppendDevices(mics);
+ 
+@@ -362,6 +374,12 @@ namespace YARG.Audio.BASS
+         protected override MicDevice? CreateInputDevice(int deviceId, string name)
+ #nullable disable
+         {
++            // (Checked first: these ids are above the phone-remote mics' ids)
++            if (YARG.Audio.AndroidMics.IsAndroidId(deviceId))
++            {
++                return YARG.Audio.AndroidMics.FindByName(name);
++            }
++
+             if (YARG.Remote.RemoteMics.IsRemoteId(deviceId))
+             {
+                 return YARG.Remote.RemoteMics.Create(deviceId, name);

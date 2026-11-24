@@ -1,0 +1,112 @@
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index bae9bbf..2fbd228 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -640,6 +640,9 @@ namespace YARG.Menu.DifficultySelect
+                 profile.HarmonyIndex = 0;
+             }
+ 
++            // Gamepads set up with an older build's default layout get the current one
++            YARG.Input.ControllerLayout.ApplyPendingGuitarLayout();
++
+             // Gamepad players: no strumming (Settings > General > No Strumming On Gamepads)
+             YARG.Input.ControllerLayout.EnsureNoStrum(CurrentPlayer);
+ 
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 2bdf3ef..2033658 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -308,8 +308,8 @@ namespace YARG.Menu.ProfileList
+             GamepadBindingMode? mode = null;
+ 
+             var dialog = DialogManager.Instance.ShowList("Which kind of controller is this?");
+-            dialog.AddListButton("Gamepad, frets on the face buttons (Cross Circle Triangle Square L1, strum D-pad)", () => mode = GamepadBindingMode.Gamepad_FaceButtons);
+-            dialog.AddListButton("Gamepad, frets on the shoulder buttons (L2 L1 R1 R2 Cross: Guitar Hero 2 style)", () => mode = GamepadBindingMode.Gamepad);
++            dialog.AddListButton("Gamepad, Guitar Hero 2 layout (frets L2 L1 R1 R2 Cross)", () => mode = GamepadBindingMode.Gamepad);
++            dialog.AddListButton("Gamepad, frets on the face buttons (Cross Circle Triangle Square L1)", () => mode = GamepadBindingMode.Gamepad_FaceButtons);
+             dialog.AddListButton("CRKD Guitar (Mode 1)", () => mode = GamepadBindingMode.CrkdGuitar_Mode1);
+             dialog.AddListButton("CRKD Guitar (Mode 1, FW3.0+)", () => mode = GamepadBindingMode.CrkdGuitar_Mode1_Fw30);
+             dialog.AddListButton("Other guitar (PS3/360 dongle)", () => mode = GamepadBindingMode.RB4InstrumentMapper_Guitar);
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index d15918d..5510cdb 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -72,6 +72,13 @@ namespace YARG.Settings
+             // Set once profiles that were still on the built-in Beginner default have been moved to Easy
+             public bool BeginnerDefaultMoved = false;
+ 
++            // Which changes of default have been applied to this install's saved settings.
++            // 1: guitar sound on notes off, gamepad guitar layout back to shoulder buttons.
++            public int DefaultsVersion = 0;
++
++            // The gamepads in profiles still need their guitar buttons re-done for the layout above
++            public bool GuitarLayoutRebindPending = false;
++
+             // Profiles (ids) that "No Strumming On Gamepads" has switched to tap notes
+             public List<string> NoStrumProfiles = new();
+             public bool ShowEngineInconsistencyDialog = true;
+@@ -163,10 +170,10 @@ namespace YARG.Settings
+ 
+             // Where the frets are when guitar is played on an ordinary gamepad
+             public DropdownSetting<YARG.Input.GamepadGuitarLayout> GamepadGuitarLayout { get; }
+-                = new(YARG.Input.GamepadGuitarLayout.FaceButtons, YARG.Input.ControllerLayout.OnGuitarLayoutChanged)
++                = new(YARG.Input.GamepadGuitarLayout.ShoulderButtons, YARG.Input.ControllerLayout.OnGuitarLayoutChanged)
+                 {
+-                    YARG.Input.GamepadGuitarLayout.FaceButtons,
+-                    YARG.Input.GamepadGuitarLayout.ShoulderButtons
++                    YARG.Input.GamepadGuitarLayout.ShoulderButtons,
++                    YARG.Input.GamepadGuitarLayout.FaceButtons
+                 };
+ 
+             // Gamepad guitar players hit notes by pressing the fret, without strumming
+@@ -347,7 +354,7 @@ namespace YARG.Settings
+ 
+             // Plays the player's notes on a generated guitar or bass, in tune with the song,
+             // for songs that have no separate guitar / bass audio of their own
+-            public DropdownSetting<GuitarVoiceMode> GuitarVoice { get; } = new(GuitarVoiceMode.Rock)
++            public DropdownSetting<GuitarVoiceMode> GuitarVoice { get; } = new(GuitarVoiceMode.Off)
+             {
+                 GuitarVoiceMode.Off,
+                 GuitarVoiceMode.Clean,
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 0ce759f..2430aa4 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -289,6 +289,19 @@ namespace YARG.Settings
+ 
+             // If null, recreate
+             Settings ??= new SettingContainer();
++
++            // Defaults that changed after builds had already saved the old ones: move this install over
++            // once. Both can be changed back in Settings afterwards and will then stay as chosen.
++            if (Settings.DefaultsVersion < 1)
++            {
++                // Guitar Sound On Notes is off unless turned on
++                Settings.GuitarVoice.SetValueWithoutNotify(YARG.Audio.GuitarVoice.GuitarVoiceMode.Off);
++                // Gamepad guitar layout: Guitar Hero 2 shoulder buttons
++                Settings.GamepadGuitarLayout.SetValueWithoutNotify(YARG.Input.GamepadGuitarLayout.ShoulderButtons);
++                Settings.GuitarLayoutRebindPending = true;
++                Settings.DefaultsVersion = 1;
++            }
++
+             SettingContainer.IsInitialized = true;
+ 
+             // Now that we're done loading, call all of the callbacks
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index f2cbc14..7417c09 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1676,10 +1676,10 @@
+             },
+             "GamepadGuitarLayout": {
+                 "Name": "Gamepad Guitar Layout",
+-                "Description": "Where the frets are when you play guitar or bass on an ordinary gamepad. Face buttons: the frets are the same buttons as the menu colors (on a PlayStation controller Cross green, Circle red, Triangle yellow, Square blue, L1 orange), strum with D-pad up or down, R1 is Star Power and R2 the whammy bar. Shoulder buttons: the Guitar Hero 2 controller layout, L2 green, L1 red, R1 yellow, R2 blue, Cross orange, strum with the D-pad. Changing this re-does the guitar buttons of PlayStation and Xbox controllers already in a profile.",
++                "Description": "Where the frets are when you play guitar or bass on an ordinary gamepad. Guitar Hero 2 (the default): L2 green, L1 red, R1 yellow, R2 blue, Cross orange, like playing Guitar Hero 2 on a PlayStation controller; Create is Star Power and the left stick the whammy bar. Face buttons: Cross green, Circle red, Triangle yellow, Square blue, L1 orange; R1 is Star Power and R2 the whammy bar. Changing this re-does the guitar buttons of PlayStation and Xbox controllers already in a profile.",
+                 "Dropdown": {
+-                    "FaceButtons": "Face buttons (Cross, Circle, Triangle, Square, L1)",
+-                    "ShoulderButtons": "Shoulder buttons (L2, L1, R1, R2, Cross)"
++                    "ShoulderButtons": "Guitar Hero 2 (L2, L1, R1, R2, Cross)",
++                    "FaceButtons": "Face buttons (Cross, Circle, Triangle, Square, L1)"
+                 }
+             },
+             "GamepadNoStrum": {

@@ -1,0 +1,94 @@
+diff --git a/Assets/Script/Input/InputManager.cs b/Assets/Script/Input/InputManager.cs
+index b94122e..ba89bbc 100644
+--- a/Assets/Script/Input/InputManager.cs
++++ b/Assets/Script/Input/InputManager.cs
+@@ -96,6 +96,7 @@ namespace YARG.Input
+                     ControllerLayout.IsStandardGamepad(gamepad) && DialogManager.Instance is { IsDialogShowing: false })
+                 {
+                     player.Bindings.SetDefaultBinds(gamepad, ControllerLayout.GuitarBindingMode);
++                    ControllerLayout.EnsureNoStrum(player);
+                     ToastManager.ToastInformation($"{gamepad.displayName} set up as a gamepad for {player.Profile.Name}");
+                     return false;
+                 }
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index 6926403..bae9bbf 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -640,6 +640,9 @@ namespace YARG.Menu.DifficultySelect
+                 profile.HarmonyIndex = 0;
+             }
+ 
++            // Gamepad players: no strumming (Settings > General > No Strumming On Gamepads)
++            YARG.Input.ControllerLayout.EnsureNoStrum(CurrentPlayer);
++
+             UpdatePossibleModifiers();
+ 
+             // Don't sit out by default
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index e07d179..2bdf3ef 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -221,6 +221,12 @@ namespace YARG.Menu.ProfileList
+                             }
+ 
+                             player.Bindings.SetDefaultBinds(androidPad, mode.Value);
++                            if (mode.Value is GamepadBindingMode.Gamepad or GamepadBindingMode.Gamepad_FaceButtons)
++                            {
++                                // An ordinary gamepad: press the fret to play the note, no strumming
++                                YARG.Input.ControllerLayout.MarkAsPlainGamepad(androidPad);
++                                YARG.Input.ControllerLayout.EnsureNoStrum(player);
++                            }
+                             ToastManager.ToastSuccess($"{androidPad.displayName} added to {player.Profile.Name}");
+                         }
+                         else
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 6b57862..d15918d 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -71,6 +71,9 @@ namespace YARG.Settings
+ 
+             // Set once profiles that were still on the built-in Beginner default have been moved to Easy
+             public bool BeginnerDefaultMoved = false;
++
++            // Profiles (ids) that "No Strumming On Gamepads" has switched to tap notes
++            public List<string> NoStrumProfiles = new();
+             public bool ShowEngineInconsistencyDialog = true;
+             public bool ShowExperimentalWarningDialog = true;
+ 
+@@ -166,6 +169,9 @@ namespace YARG.Settings
+                     YARG.Input.GamepadGuitarLayout.ShoulderButtons
+                 };
+ 
++            // Gamepad guitar players hit notes by pressing the fret, without strumming
++            public ToggleSetting GamepadNoStrum { get; } = new(true, YARG.Input.ControllerLayout.OnNoStrumChanged);
++
+             // The on-screen fret / strum buttons during a song (Android)
+             public DropdownSetting<YARG.Input.Touch.TouchControlsMode> TouchControls { get; }
+                 = new(YARG.Input.Touch.TouchControlsMode.Auto)
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 45e7e59..0ce759f 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -63,6 +63,7 @@ namespace YARG.Settings
+                 new HeaderMetadata("Controller"),
+                 nameof(Settings.ControllerLayout),
+                 nameof(Settings.GamepadGuitarLayout),
++                nameof(Settings.GamepadNoStrum),
+                 nameof(Settings.ShowControllerButtonNames),
+                 nameof(Settings.TouchControls),
+ 
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 6fc4ea3..f2cbc14 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1682,6 +1682,10 @@
+                     "ShoulderButtons": "Shoulder buttons (L2, L1, R1, R2, Cross)"
+                 }
+             },
++            "GamepadNoStrum": {
++                "Name": "No Strumming On Gamepads",
++                "Description": "On: when you play guitar or bass on a gamepad, pressing the fret button plays the note, with no strumming. Hold the buttons of a chord together; press again for a repeated note. It works by giving the profile the \"All Taps\" modifier and the Casual engine preset, which you can see and change on the screen before a song and in the profile. Off: notes need a strum (D-pad up or down) like on a guitar controller. Takes effect the next time you choose a song."
++            },
+             "TouchControls": {
+                 "Name": "Touch Buttons",
+                 "Description": "The colored fret buttons and strum bar on the screen during a song. Automatic shows them only when the guitar player has no controller, so they stay out of the way when you play with a gamepad or guitar.",

@@ -1,0 +1,235 @@
+diff --git a/Assets/Script/Input/InputManager.cs b/Assets/Script/Input/InputManager.cs
+index b7b0049..4a7a65f 100644
+--- a/Assets/Script/Input/InputManager.cs
++++ b/Assets/Script/Input/InputManager.cs
+@@ -71,10 +71,40 @@ namespace YARG.Input
+                 .OfType<Keyboard>()
+                 .Any();
+ 
+-        private static bool IsDeviceInActiveProfile(InputDevice device) =>
+-            PlayerContainer.Players
+-                .Where(p => p.InputsEnabled)
+-                .Any(p => p.Bindings.InputDevices.Contains(device));
++        // Whether a profile handles this device's menu buttons itself, so the built-in gamepad menu
++        // buttons should stay quiet for it. A gamepad that is in a profile but has no menu buttons there
++        // (just added and not set up yet, or its set-up was cancelled) keeps the built-in ones, so the
++        // controller can always move around the menus.
++        private static bool IsDeviceInActiveProfile(InputDevice device)
++        {
++            foreach (var player in PlayerContainer.Players)
++            {
++                if (player.Bindings == null || !player.Bindings.ContainsDevice(device))
++                {
++                    continue;
++                }
++
++                // Inputs are switched off while its buttons are being re-bound: don't navigate then
++                if (!player.InputsEnabled)
++                {
++                    return true;
++                }
++
++                // A PlayStation / Xbox pad left in a profile with no buttons at all (older builds could
++                // do that when the "which kind of controller" question was closed): set it up now
++                if (device is Gamepad gamepad && !player.Bindings.ContainsBindingsForDevice(gamepad) &&
++                    ControllerLayout.IsStandardGamepad(gamepad) && DialogManager.Instance is { IsDialogShowing: false })
++                {
++                    player.Bindings.SetDefaultBinds(gamepad, GamepadBindingMode.Gamepad);
++                    ToastManager.ToastInformation($"{gamepad.displayName} set up as a gamepad for {player.Profile.Name}");
++                    return false;
++                }
++
++                return player.Bindings.MenuBindings.ContainsBindingsForDevice(device);
++            }
++
++            return false;
++        }
+ 
+         public static void Initialize()
+         {
+diff --git a/Assets/Script/Input/Touch/TouchControlsManager.cs b/Assets/Script/Input/Touch/TouchControlsManager.cs
+index c995f9d..68767ae 100644
+--- a/Assets/Script/Input/Touch/TouchControlsManager.cs
++++ b/Assets/Script/Input/Touch/TouchControlsManager.cs
+@@ -117,7 +117,9 @@ namespace YARG.Input.Touch
+             if (_canvas != null)
+             {
+                 var gm = GameManager;
+-                _canvas.enabled = gm == null || !gm.Paused;
++                // Settings > General > Touch Buttons: by default they are only shown when the guitar
++                // player has no controller of their own
++                _canvas.enabled = (gm == null || !gm.Paused) && TouchControlsVisibility.ShouldShow();
+             }
+         }
+ 
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index a61e9ff..6926403 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -678,6 +678,22 @@ namespace YARG.Menu.DifficultySelect
+ 
+             // TODO: Handle difficulty fallback better in play a show mode
+ 
++            // One time: profiles made by older builds started on Beginner ("strum on anything" rainbow
++            // bars) without anyone choosing it. Move those to Easy; Beginner can still be picked.
++            if (!YARG.Settings.SettingsManager.Settings.BeginnerDefaultMoved)
++            {
++                foreach (var existing in PlayerContainer.Profiles)
++                {
++                    if (existing.DifficultyFallback == Difficulty.Beginner)
++                    {
++                        existing.DifficultyFallback = Difficulty.Easy;
++                    }
++                }
++
++                YARG.Settings.SettingsManager.Settings.BeginnerDefaultMoved = true;
++                YARG.Settings.SettingsManager.SaveSettings();
++            }
++
+             var diff = (int) profile.DifficultyFallback;
+             while (diff >= (int) Difficulty.Beginner && !_possibleDifficulties.Contains((Difficulty) diff))
+             {
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index 4bb2a3f..e157e94 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -140,6 +140,10 @@ namespace YARG.Menu.ProfileList
+                 Name = GetUniqueProfileName("New Profile"),
+                 NoteSpeed = 5,
+                 HighwayLength = 1,
++                // Easy has colored notes on three frets; the built-in default, Beginner, is
++                // "strum on anything" rainbow bars
++                CurrentDifficulty = Difficulty.Easy,
++                DifficultyFallback = Difficulty.Easy,
+                 GameMode = GameMode.FiveFretGuitar
+             });
+ 
+@@ -153,6 +157,10 @@ namespace YARG.Menu.ProfileList
+                 Name = GetUniqueProfileName("Bot"),
+                 NoteSpeed = 5,
+                 HighwayLength = 1,
++                // Easy has colored notes on three frets; the built-in default, Beginner, is
++                // "strum on anything" rainbow bars
++                CurrentDifficulty = Difficulty.Easy,
++                DifficultyFallback = Difficulty.Easy,
+                 GameMode = GameMode.FiveFretGuitar,
+                 IsBot = true
+             });
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 0a7279b..d2736cb 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -195,14 +195,33 @@ namespace YARG.Menu.ProfileList
+                         // Android mode) is a generic gamepad, so ask what it is, like Windows does.
+                         if (device is Gamepad androidPad)
+                         {
+-                            xinputDialogShowing = true;
+-                            var mode = await PromptAndroidGamepadMode(androidPad);
+-                            if (!mode.HasValue || !androidPad.added)
++                            GamepadBindingMode? mode;
++                            if (YARG.Input.ControllerLayout.IsStandardGamepad(androidPad))
++                            {
++                                // A PlayStation or Xbox pad: no need to ask
++                                mode = GamepadBindingMode.Gamepad;
++                            }
++                            else
++                            {
++                                xinputDialogShowing = true;
++                                mode = await PromptAndroidGamepadMode(androidPad);
++                            }
++
++                            if (!androidPad.added)
++                            {
++                                return;
++                            }
++
++                            if (!mode.HasValue)
+                             {
++                                // The question was closed without an answer: take the controller back
++                                // out, rather than leaving it in the profile with no buttons set
++                                player.Bindings.RemoveDevice(androidPad);
+                                 return;
+                             }
+ 
+                             player.Bindings.SetDefaultBinds(androidPad, mode.Value);
++                            ToastManager.ToastSuccess($"{androidPad.displayName} added to {player.Profile.Name}");
+                         }
+                         else
+ #endif
+diff --git a/Assets/Script/Player/PlayerContainer.cs b/Assets/Script/Player/PlayerContainer.cs
+index 6b458c4..ffa787f 100644
+--- a/Assets/Script/Player/PlayerContainer.cs
++++ b/Assets/Script/Player/PlayerContainer.cs
+@@ -625,6 +625,10 @@ namespace YARG.Player
+                 Name = ProfileListMenu.GetUniqueProfileName(profileName),
+                 NoteSpeed = 5,
+                 HighwayLength = 1,
++                // Easy has colored notes on three frets; the built-in default, Beginner, is
++                // "strum on anything" rainbow bars
++                CurrentDifficulty = Difficulty.Easy,
++                DifficultyFallback = Difficulty.Easy,
+                 GameMode = gameMode
+             };
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 5f5caf2..d6dd27c 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -68,6 +68,9 @@ namespace YARG.Settings
+ 
+             // Set once "No Pole" by Don Toliver has been put in the Startup Songs playlist, so removing it sticks
+             public bool StartupSongsSeeded = false;
++
++            // Set once profiles that were still on the built-in Beginner default have been moved to Easy
++            public bool BeginnerDefaultMoved = false;
+             public bool ShowEngineInconsistencyDialog = true;
+             public bool ShowExperimentalWarningDialog = true;
+ 
+@@ -155,6 +158,15 @@ namespace YARG.Settings
+                 };
+             public ToggleSetting ShowControllerButtonNames { get; } = new(true);
+ 
++            // The on-screen fret / strum buttons during a song (Android)
++            public DropdownSetting<YARG.Input.Touch.TouchControlsMode> TouchControls { get; }
++                = new(YARG.Input.Touch.TouchControlsMode.Auto)
++                {
++                    YARG.Input.Touch.TouchControlsMode.Auto,
++                    YARG.Input.Touch.TouchControlsMode.Show,
++                    YARG.Input.Touch.TouchControlsMode.Hide
++                };
++
+             public ToggleSetting ReduceNoteSpeedByDifficulty { get; } = new(true);
+ 
+             public ToggleSetting LearningGuides { get; } = new(false);
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 68596ef..cf24edd 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -63,6 +63,7 @@ namespace YARG.Settings
+                 new HeaderMetadata("Controller"),
+                 nameof(Settings.ControllerLayout),
+                 nameof(Settings.ShowControllerButtonNames),
++                nameof(Settings.TouchControls),
+ 
+                 new HeaderMetadata("Other"),
+                 nameof(Settings.ReconnectProfiles),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index b133d42..be11976 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1674,6 +1674,15 @@
+                     "PlayStationJapan": "PlayStation, Japan style (Circle = OK)"
+                 }
+             },
++            "TouchControls": {
++                "Name": "Touch Buttons",
++                "Description": "The colored fret buttons and strum bar on the screen during a song. Automatic shows them only when the guitar player has no controller, so they stay out of the way when you play with a gamepad or guitar.",
++                "Dropdown": {
++                    "Auto": "Automatic (only without a controller)",
++                    "Show": "Always show",
++                    "Hide": "Never show"
++                }
++            },
+             "ShowControllerButtonNames": {
+                 "Name": "Show Controller Buttons",
+                 "Description": "While a gamepad is connected, button prompts show the controller's own buttons instead of plain colored pills: Cross, Circle, Triangle, Square and L1 on a PlayStation controller (A, B, X, Y on others, following Controller Layout). The color is still the action's color."
