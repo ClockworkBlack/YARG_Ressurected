@@ -204,7 +204,7 @@ each other, two different "voices", time stamps that come early. On those:
 | | Result |
 |---|---|
 | Which note a steady voice is on | within 0.05 of a semitone, from D2 to C6 |
-| Sung and rapped lines told apart | every line (and every line of one real sung song, no line of five real rap songs judged sung by mistake) |
+| Sung and rapped lines told apart | every line (on real recordings: every line of one sung song; see below for rap) |
 | Sung words on the right note / starting within 0.08 s | 100% / 100% |
 | Rapped words starting within 0.08 s | 100% |
 | A long word moving to a second note is found, with the right note | 12 of 12 |
@@ -226,7 +226,9 @@ and up for nearly all sung lines and 0.00 for the made-up rapper). So the decisi
 in three bands. Under 0.15 a line is rapped and over 0.30 it is sung, whatever else happens.
 In between, the line follows the same words elsewhere in the song (a chorus that comes round
 again), or else what most of the song clearly is, and a song only counts as a sung one with a
-clear majority, so the rapped verse of a song with a sung hook stays rapped.
+clear majority, so the rapped verse of a song with a sung hook stays rapped. In those five
+songs a handful of lines scored 0.38 to 0.64 and count as sung; they are probably sung hooks,
+but nobody has listened to check.
 
 Every song the checks write is also read back from `notes.mid` by a reader that follows the
 game's own rules (how it pairs notes, finds phrases, attaches lyrics, and decides a song has
