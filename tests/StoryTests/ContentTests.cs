@@ -122,7 +122,8 @@ namespace StoryTests
             {
                 words += Words(chapter.Intro) + Words(chapter.Outro);
                 lines += chapter.Intro.Count + chapter.Outro.Count;
-                Program.Check(chapter.Gigs.Count >= 2 && chapter.Intro.Count >= 6,
+                // A bonus chapter after the ending may be a single gig
+                Program.Check(chapter.Gigs.Count >= (chapter.Bonus ? 1 : 2) && chapter.Intro.Count >= 6,
                     $"chapter {chapter.Number} \"{chapter.Title}\": {chapter.Gigs.Count} gigs, an intro of {chapter.Intro.Count} lines");
                 foreach (var gig in chapter.Gigs)
                 {

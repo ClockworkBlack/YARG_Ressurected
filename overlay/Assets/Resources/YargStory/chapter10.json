@@ -116,7 +116,7 @@
         {"s": "narrator", "t": "Midnight. The window shuts. The pen is still lying where Vivienne Lark put it down."},
         {"s": "ellery", "t": "There's no asset here.", "mood": "neutral"},
         {"s": "narrator", "t": "He tucks the tablet under his arm and walks off the side of the stage. Nobody stops him. Nobody watches him go. The sale is dead."},
-        {"s": "tuesday", "t": "Final entry in the asset tally. Zero.", "mood": "proud"},
+        {"s": "tuesday", "t": "Asset tally: three. Final entry: zero. I'm underlining it.", "mood": "proud"},
         {"s": "vivienne", "t": "Mrs. Fontaine.", "mood": "neutral"},
         {"s": "odessa", "t": "Miss Lark.", "mood": "neutral"},
         {"s": "narrator", "t": "Then the arena empties onto the avenue and, without anybody saying so, turns north. Twenty thousand people in paper hats, walking uptown in the cold. Some take the train. Some take a church van.", "bg": "street"},

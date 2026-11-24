@@ -786,27 +786,27 @@
   },
   {
    "name": "Park Jam Regulars",
-   "fans": 2000
+   "fans": 5000
   },
   {
    "name": "Opening Act",
-   "fans": 6000
+   "fans": 20000
   },
   {
    "name": "House Band",
-   "fans": 15000
+   "fans": 60000
   },
   {
    "name": "Headliner",
-   "fans": 40000
+   "fans": 130000
   },
   {
    "name": "Name on the Label",
-   "fans": 90000
+   "fans": 250000
   },
   {
    "name": "Legend",
-   "fans": 200000
+   "fans": 400000
   }
  ],
  "opening": [
