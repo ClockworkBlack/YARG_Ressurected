@@ -54,8 +54,34 @@ jobs:
           javac -cp onnxruntime.jar -d out \
             $(find converter/app/src/main/java -path '*core*' -name '*.java') \
             converter/app/src/main/java/com/clockworkblack/yargconverter/stems/OrtStemModel.java \
-            converter/core-test/*.java converter/model-test/StemCheck.java
+            converter/core-test/*.java converter/model-test/*.java
           java -Xmx3g -cp out:onnxruntime.jar StemCheck model/htdemucs_6s.onnx
+
+      # A real recording, to see what the whole conversion does on actual music:
+      # "Sax, Rock, and Roll" by Kevin MacLeod (kit, bass, electric guitar, horns; 128 BPM),
+      # Creative Commons BY-SA 3.0, from Wikimedia Commons.
+      - name: Convert a real (Creative Commons) rock song
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
+          curl -L --fail --retry 3 -A "YARGConverter-CI/0.2 (https://github.com/ClockworkBlack/YARG_Ressurected)" \
+            -o sample.ogg "https://upload.wikimedia.org/wikipedia/commons/0/0c/Kevin_MacLeod_-_Sax%2C_Rock%2C_and_Roll.ogg"
+          ffmpeg -loglevel error -i sample.ogg -f f32le -ac 2 -ar 44100 sample.f32
+          java -Xmx5g -cp out:onnxruntime.jar RealSongCheck model/htdemucs_6s.onnx sample.f32 \
+            "sample-song/Kevin MacLeod - Sax, Rock, and Roll" "Sax, Rock, and Roll" "Kevin MacLeod"
+          cp sample.ogg "sample-song/Kevin MacLeod - Sax, Rock, and Roll/song.ogg"
+          printf '%s\n' '"Sax, Rock, and Roll" by Kevin MacLeod (incompetech.com).' \
+            'Licensed under Creative Commons BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/' \
+            'Audio from https://commons.wikimedia.org/wiki/File:Kevin_MacLeod_-_Sax,_Rock,_and_Roll.ogg' \
+            'Charts made automatically by YARG Converter.' > "sample-song/Kevin MacLeod - Sax, Rock, and Roll/CREDITS.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: sample-song
+          path: sample-song
+          if-no-files-found: ignore
 
   apk:
     name: Converter APK
