@@ -3,6 +3,7 @@ package com.clockworkblack.yargconverter;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -55,16 +56,19 @@ import java.util.List;
 import java.util.Locale;
 
 /** Pick a song, sort out its lyrics, and write a ready-to-play folder into YARG's songs folder. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends Activity implements ConversionService.Listener {
     private static final int REQ_AUDIO = 1;
     private static final int REQ_LRC = 2;
     private static final int REQ_TAP = 3;
     private static final int REQ_PERMISSION = 4;
+    private static final int REQ_NOTIFICATIONS = 5;
 
     /** Folder inside Internal storage/YARG/songs that converted songs go into. */
     private static final String SUBFOLDER = "Converted";
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    /** The app, not this screen: the conversion keeps using it after the screen is closed. */
+    private Context app;
 
     private Uri audioUri;
     private String audioName = "";
@@ -85,8 +89,51 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        app = getApplicationContext();
         buildUi();
         handleIncoming(getIntent());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ConversionService.setListener(this);
+        onConversionChanged();
+    }
+
+    @Override
+    protected void onPause() {
+        ConversionService.setListener(null);
+        super.onPause();
+    }
+
+    /** Shows a conversion that runs (or finished) in the background, including one started before
+     * this screen was last closed. */
+    @Override
+    public void onConversionChanged() {
+        if (log == null) return;
+        if (ConversionService.isRunning()) {
+            if (!busy) setBusy(true);
+            progress.setVisibility(View.VISIBLE);
+            int p = ConversionService.progress();
+            if (p < 0) {
+                progress.setIndeterminate(true);
+            } else {
+                progress.setIndeterminate(false);
+                progress.setProgress(p);
+            }
+            log.setText(ConversionService.text());
+            return;
+        }
+
+        String result = ConversionService.unseenResult();
+        if (result != null) {
+            ConversionService.markResultSeen();
+            setBusy(false);
+            progress.setVisibility(View.GONE);
+            log.setText(result);
+            if (!ConversionService.succeeded()) message("Conversion failed", result);
+        }
     }
 
     @Override
@@ -686,6 +733,11 @@ public final class MainActivity extends Activity {
         progress.setVisibility(View.VISIBLE);
         log.setText("Listening to the song…");
 
+        // Keeps going with the app in the background or the screen off, with a notification
+        askForNotifications();
+        ConversionService.begin(this, meta.titleOrDefault());
+        ConversionService.setTextAndProgress("Listening to the song… You can leave the app; it keeps going.", 0);
+
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -699,28 +751,21 @@ public final class MainActivity extends Activity {
                 } catch (RuntimeException | OutOfMemoryError e) {
                     summary = "Conversion failed unexpectedly: " + e;
                 }
-                final String text = summary;
-                final boolean success = ok;
-                main.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        setBusy(false);
-                        progress.setVisibility(View.GONE);
-                        log.setText(text);
-                        if (!success) message("Conversion failed", text);
-                    }
-                });
+                // Shown here if the app is open, otherwise as a notification and when it's next opened
+                ConversionService.finish(ok, summary);
             }
         }, "convert").start();
     }
 
+    private void askForNotifications() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        }
+    }
+
     private void status(final String text) {
-        main.post(new Runnable() {
-            @Override
-            public void run() {
-                log.setText(text);
-            }
-        });
+        ConversionService.setText(text);
     }
 
     private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options, boolean useStems) throws IOException {
@@ -743,7 +788,7 @@ public final class MainActivity extends Activity {
 
         // When splitting into instruments, the decoded audio is also parked in a temporary
         // file as 44.1 kHz stereo, which is what the separation model reads.
-        final File pcmFile = new File(getCacheDir(), "mix44k.pcm");
+        final File pcmFile = new File(app.getCacheDir(), "mix44k.pcm");
         final long[] pcmFrames = {0};
         OutputStream pcmOut = null;
         AudioDecoder.StereoSink stereo = null;
@@ -779,20 +824,10 @@ public final class MainActivity extends Activity {
         long separationMs = 0;
         try {
             try {
-                features = AudioDecoder.decode(this, uri, copyAsIs ? null : new File(dir, audioFile), stereo, new AudioDecoder.Progress() {
+                features = AudioDecoder.decode(app, uri, copyAsIs ? null : new File(dir, audioFile), stereo, new AudioDecoder.Progress() {
                     @Override
                     public void onProgress(final float fraction) {
-                        main.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (fraction < 0) {
-                                    progress.setIndeterminate(true);
-                                } else {
-                                    progress.setIndeterminate(false);
-                                    progress.setProgress(Math.round(fraction * 1000));
-                                }
-                            }
-                        });
+                        ConversionService.setProgress(fraction < 0 ? -1 : Math.round(fraction * 1000));
                     }
                 });
             } finally {
@@ -825,7 +860,7 @@ public final class MainActivity extends Activity {
 
         if (copyAsIs) {
             status("Copying the audio…");
-            try (InputStream in = getContentResolver().openInputStream(uri);
+            try (InputStream in = app.getContentResolver().openInputStream(uri);
                  OutputStream out = new FileOutputStream(new File(dir, audioFile))) {
                 if (in == null) throw new IOException("The audio file could not be opened.");
                 byte[] buf = new byte[1 << 16];
@@ -892,16 +927,9 @@ public final class MainActivity extends Activity {
         int cores = Runtime.getRuntime().availableProcessors();
         int threads = Math.max(2, Math.min(6, cores - 2));
         final long started = System.currentTimeMillis();
-        status("Loading the separation model…");
-        main.post(new Runnable() {
-            @Override
-            public void run() {
-                progress.setIndeterminate(false);
-                progress.setProgress(0);
-            }
-        });
+        ConversionService.setTextAndProgress("Loading the separation model…", 0);
 
-        try (OrtStemModel model = new OrtStemModel(ModelStore.file(this).getAbsolutePath(), threads);
+        try (OrtStemModel model = new OrtStemModel(ModelStore.file(app).getAbsolutePath(), threads);
              InputStream in = new BufferedInputStream(new FileInputStream(pcmFile), 1 << 16)) {
             final byte[] bytes = new byte[1 << 16];
             StemSplitter.Source source = new StemSplitter.Source() {
@@ -951,19 +979,13 @@ public final class MainActivity extends Activity {
                 public boolean onSegment(final int done, final int total) {
                     long elapsed = System.currentTimeMillis() - started;
                     long left = done > 0 ? elapsed * (total - done) / done : 0;
-                    final String text = String.format(Locale.US, "Splitting into instruments: part %d of %d%s. Keep this screen open.",
+                    final String text = String.format(Locale.US, "Splitting into instruments: part %d of %d%s. You can leave the app; it keeps going.",
                             done, total, done < total ? String.format(Locale.US, " (about %d min %02d s left)", left / 60000, (left / 1000) % 60) : "");
-                    main.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            progress.setProgress(done * 1000 / total);
-                            log.setText(text);
-                        }
-                    });
+                    ConversionService.setTextAndProgress(text, done * 1000 / total);
                     return true;
                 }
             };
-            status("Splitting into instruments… Keep this screen open.");
+            status("Splitting into instruments… You can leave the app; it keeps going.");
             StemSplitter.split(source, frames, model, sink, report);
         }
         SongWriter.Stems out = new SongWriter.Stems();
@@ -981,7 +1003,7 @@ public final class MainActivity extends Activity {
     private void saveAlbumArt(Uri uri, File dir) {
         MediaMetadataRetriever r = new MediaMetadataRetriever();
         try {
-            r.setDataSource(this, uri);
+            r.setDataSource(app, uri);
             byte[] art = r.getEmbeddedPicture();
             if (art == null || art.length < 16) return;
             boolean png = (art[0] & 0xFF) == 0x89 && art[1] == 'P';

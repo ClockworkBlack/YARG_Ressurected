@@ -8,7 +8,6 @@ Saved for later, roughly in the order they would help most.
 ## Follow-ups to instrument separation
 - [ ] **Time it on the Z Fold 7.** On a 4-core build machine separation takes 0.45 to 0.75 times the song's length; the phone has not been measured.
 - [ ] **Save the separated instruments as audio** (guitar / bass / drums / vocals files in the song folder) so YARG can drop the guitar when you miss notes and set per-instrument volume. Needs an on-phone Opus encoder so each song does not grow by hundreds of MB.
-- [ ] Keep converting with the screen off or the app in the background (foreground service with a notification).
 - [ ] Use the separated vocals to time pasted lyrics automatically, word by word.
 - [ ] Keys chart from the piano stem.
 - [ ] A faster, lighter model as a "quick" option (Spleeter 4-stem, about 79 MB).
@@ -29,6 +28,7 @@ Saved for later, roughly in the order they would help most.
 - [ ] A setting for the output folder, and a "trigger YARG scan" shortcut if the game can support one.
 
 ## Done
+- [x] Keeps converting with the screen off or the app in the background (foreground service with a progress notification and a "ready" notification).
 - [x] Charts follow pitch: same sound same fret, higher sounds higher frets, chords vs single notes.
 - [x] Repeated measures and sections get the same chart.
 - [x] Tempo drift, 3/4 time, beats aligned to note starts.

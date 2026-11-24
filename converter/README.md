@@ -26,8 +26,12 @@ the one-time download of the instrument-separation model.
    once (136 MB, Wi-Fi recommended; it resumes if interrupted). With the box ticked, the app
    first separates the song into guitar, bass, drums, vocals, piano and "other", makes the
    guitar chart from the guitar alone, and adds a bass chart. Expect it to take a few minutes per
-   song (not yet timed on a phone), so keep the screen open.
+   song (not yet timed on a phone).
 5. **Convert and add to YARG**. The first time, Android asks for "All files access" so the app can write into the YARG folder.
+   Once it has started you can leave the app, switch to something else or turn the screen off:
+   the conversion keeps going, with its progress in a notification, and a second notification
+   tells you when the song is ready. (Allow notifications when Android asks, to see them.)
+   Open the app again at any time to see where it is.
 6. Add the song to the game (next section).
 
 ## Adding a converted song to YARG
