@@ -144,6 +144,13 @@ namespace YARG.Story
             Entry("latin", LATIN),
             Entry("reggaeton", LATIN, HIPHOP),
             Entry("salsa", LATIN),
+            // Genre codes from Rock Band song packs
+            Entry("rbsoulfunk", RNB, SOUL, FUNK),
+            Entry("hiphoprap", HIPHOP),
+            Entry("popdanceelectronic", POP, DANCE),
+            Entry("poprock", POP, ROCK),
+            Entry("reggaeska", REGGAE),
+            Entry("inspirational", GOSPEL),
             Entry("rock", ROCK),
             Entry("metal", ROCK),
             Entry("punk", ROCK),
