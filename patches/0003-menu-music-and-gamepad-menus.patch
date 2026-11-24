@@ -1,0 +1,223 @@
+diff --git a/Assets/Script/Input/InputManager.cs b/Assets/Script/Input/InputManager.cs
+index 7987ce3..b7b0049 100644
+--- a/Assets/Script/Input/InputManager.cs
++++ b/Assets/Script/Input/InputManager.cs
+@@ -55,6 +55,7 @@ namespace YARG.Input
+         private static HashSet<InputDevice> _registeredDevices = new();
+ 
+         private static DefaultKeyboardMenuBindings _defaultKeyboardMenuBindings;
++        private static DefaultGamepadMenuBindings _defaultGamepadMenuBindings;
+ 
+         // We do this song and dance of tracking focus changes manually rather than setting
+         // InputSettings.backgroundBehavior to IgnoreFocus, so that input is still (largely) disabled when unfocused
+@@ -70,6 +71,11 @@ namespace YARG.Input
+                 .OfType<Keyboard>()
+                 .Any();
+ 
++        private static bool IsDeviceInActiveProfile(InputDevice device) =>
++            PlayerContainer.Players
++                .Where(p => p.InputsEnabled)
++                .Any(p => p.Bindings.InputDevices.Contains(device));
++
+         public static void Initialize()
+         {
+             InputSystem.pollingFrequency = SettingsManager.Settings.InputPollingFrequency.Value;
+@@ -84,6 +90,8 @@ namespace YARG.Input
+             InputSystem.onDeviceChange += OnDeviceChange;
+ 
+             _defaultKeyboardMenuBindings = new DefaultKeyboardMenuBindings();
++            // Gamepads that aren't in a profile yet can still move around the menus
++            _defaultGamepadMenuBindings = new DefaultGamepadMenuBindings(IsDeviceInActiveProfile);
+ 
+             // Notify of all current devices
+             ToastManager.ToastInformation("Devices found: " + (Microphone.devices.Length + InputSystem.devices.Count));
+@@ -113,6 +121,8 @@ namespace YARG.Input
+         {
+             _defaultKeyboardMenuBindings?.Dispose();
+             _defaultKeyboardMenuBindings = null;
++            _defaultGamepadMenuBindings?.Dispose();
++            _defaultGamepadMenuBindings = null;
+ 
+             InputSystem.onEvent -= OnEvent;
+ 
+diff --git a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+index 01b6c7d..07b485a 100644
+--- a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+@@ -301,6 +301,56 @@ namespace YARG.Menu.MusicLibrary
+                 });
+             }
+ 
++            // Menu background music: a song to play first on startup
++            if (viewType is SongViewType startupSongView)
++            {
++                var song = startupSongView.SongEntry;
++                if (!MenuMusic.IsStartupSong(song))
++                {
++                    CreateItem("PlayOnStartup", () =>
++                    {
++                        MenuMusic.SetStartupSong(song);
++                        ToastManager.ToastSuccess($"{song.Name} will play when the game starts");
++                        gameObject.SetActive(false);
++                    });
++                }
++                else
++                {
++                    CreateItem("DontPlayOnStartup", () =>
++                    {
++                        MenuMusic.SetStartupSong(null);
++                        ToastManager.ToastSuccess("No startup song");
++                        gameObject.SetActive(false);
++                    });
++                }
++            }
++
++            // Menu background music: play from this playlist (or Favorites)
++            var musicPlaylist = viewType is PlaylistViewType musicPlaylistView
++                ? musicPlaylistView.Playlist
++                : _musicLibrary.MenuState == MenuState.Playlist ? _musicLibrary.SelectedPlaylist : null;
++            if (musicPlaylist != null && !musicPlaylist.Ephemeral)
++            {
++                if (!MenuMusic.IsMenuMusicSource(musicPlaylist))
++                {
++                    CreateItem("UseAsMenuMusic", () =>
++                    {
++                        MenuMusic.UseAsMenuMusic(musicPlaylist);
++                        ToastManager.ToastSuccess($"Menu music: {musicPlaylist.Name}");
++                        gameObject.SetActive(false);
++                    });
++                }
++                else
++                {
++                    CreateItem("StopMenuMusic", () =>
++                    {
++                        MenuMusic.UseAsMenuMusic(null);
++                        ToastManager.ToastSuccess("Menu music: whole library");
++                        gameObject.SetActive(false);
++                    });
++                }
++            }
++
+             // Only show these options if we are selecting a song
+             if (viewType is SongViewType songViewType &&
+                 SettingsManager.Settings.ShowAdvancedMusicLibraryOptions.Value)
+diff --git a/Assets/Script/Menu/Persistent/MusicPlayer.cs b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+index f18e071..63e5ca2 100644
+--- a/Assets/Script/Menu/Persistent/MusicPlayer.cs
++++ b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+@@ -66,8 +66,13 @@ namespace YARG.Menu.Persistent
+             const int MAX_TRIES = 20;
+             for (int tries = 0; tries < MAX_TRIES; tries++)
+             {
+-                var entry = SongContainer.GetRandomSong();
+-                if (entry == _nowPlaying)
++                // Startup song first, then the chosen playlist / favorites / whole library
++                var entry = MenuMusic.PickNext(_nowPlaying, out int poolSize);
++                if (entry == null)
++                {
++                    break;
++                }
++                if (entry == _nowPlaying && poolSize > 1)
+                 {
+                     continue;
+                 }
+diff --git a/Assets/Script/Playlists/PlaylistContainer.cs b/Assets/Script/Playlists/PlaylistContainer.cs
+index 03f45ac..0fc801f 100644
+--- a/Assets/Script/Playlists/PlaylistContainer.cs
++++ b/Assets/Script/Playlists/PlaylistContainer.cs
+@@ -168,6 +168,7 @@ namespace YARG.Playlists
+             SavePlaylist(playlist);
+             _playlists.Add(playlist);
+             SortPlaylistsByName();
++            RefreshMenuMusicChoices();
+             return playlist;
+         }
+ 
+@@ -175,6 +176,7 @@ namespace YARG.Playlists
+         {
+             _playlists.Remove(playlist);
+             DeletePlaylistFile(playlist);
++            RefreshMenuMusicChoices();
+         }
+ 
+         public static void RenamePlaylist(Playlist playlist, string newName)
+@@ -188,6 +190,13 @@ namespace YARG.Playlists
+             // Save with new name
+             SavePlaylist(playlist);
+             SortPlaylistsByName();
++            RefreshMenuMusicChoices();
++        }
++
++        // Keeps Settings > Sound > Menu Music's list of playlists up to date
++        private static void RefreshMenuMusicChoices()
++        {
++            YARG.Settings.SettingsManager.Settings?.MenuMusicSource.UpdateValues();
+         }
+ 
+         private static void SortPlaylistsByName()
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 3a53415..1f6ba86 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -267,6 +267,11 @@ namespace YARG.Settings
+ 
+             public VolumeSetting PreviewVolume { get; } = new(0.25f);
+             public VolumeSetting MusicPlayerVolume { get; } = new(0.15f, MusicPlayerVolumeCallback);
++
++            // Menu background music: what plays, and an optional song first on every startup
++            public MenuMusicSourceSetting MenuMusicSource { get; } = new(MenuMusic.SOURCE_ALL, _ => MenuMusic.OnSettingChanged());
++            public ToggleSetting MenuMusicShuffle { get; } = new(true, _ => MenuMusic.OnSettingChanged());
++            public StartupSongSetting MenuMusicStartupSong { get; } = new(string.Empty);
+             public VolumeSetting VocalMonitoring { get; } = new(0.7f, VocalMonitoringCallback);
+ 
+             public IntSetting PlaybackBufferLength { get; }
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 2ba4f71..89928cd 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -105,6 +105,9 @@ namespace YARG.Settings
+                 new FieldMetadata(nameof(Settings.DrumSfxVolume), isAdvanced: true),
+                 new FieldMetadata(nameof(Settings.PreviewVolume), isAdvanced: true),
+                 nameof(Settings.MusicPlayerVolume),
++                nameof(Settings.MenuMusicSource),
++                nameof(Settings.MenuMusicShuffle),
++                nameof(Settings.MenuMusicStartupSong),
+                 new FieldMetadata(nameof(Settings.VocalMonitoring)),
+                 new FieldMetadata(nameof(Settings.MetronomeVolume), isAdvanced: true),
+ 
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 6b5ee91..36f50a8 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -342,7 +342,11 @@
+                     "ViewSongFolder": "View Song Folder",
+                     "CopySongChecksum": "Copy Song Checksum",
+                     "CollapseAll": "Collapse All",
+-                    "ExpandAll": "Expand All"
++                    "ExpandAll": "Expand All",
++                    "PlayOnStartup": "Play On Startup",
++                    "DontPlayOnStartup": "Don't Play On Startup",
++                    "UseAsMenuMusic": "Use As Menu Music",
++                    "StopMenuMusic": "Stop Using As Menu Music"
+                 }
+             },
+             "Back": "BACK",
+@@ -1278,6 +1282,18 @@
+                 "Name": "Music Player Volume",
+                 "Description": "Adjusts the volume of the music that plays in the main menu. Set to \"0\" to disable."
+             },
++            "MenuMusicSource": {
++                "Name": "Menu Music",
++                "Description": "Where the music in the menus comes from: your whole library, your Favorites, or one of your playlists. You can also pick a playlist in the music library: highlight it, open More Options and choose \"Use As Menu Music\"."
++            },
++            "MenuMusicShuffle": {
++                "Name": "Shuffle Menu Music",
++                "Description": "On: plays the menu music songs in random order. Off: plays a playlist in its own order."
++            },
++            "MenuMusicStartupSong": {
++                "Name": "Startup Song",
++                "Description": "A song that plays first every time the game starts, before the menu music. To pick one, highlight a song in the music library, open More Options and choose \"Play On Startup\". Set to None to turn it off."
++            },
+             "GuitarVoice": {
+                 "Name": "Guitar Sound On Notes",
+                 "Description": "For songs with no separate guitar or bass audio: plays your notes on a generated electric guitar (or bass), in tune and in key with the song. It sounds as the notes go by, drops out when you miss, and bends with the whammy bar. Uses the Guitar and Bass volume sliders. Adds a few seconds to loading.",

@@ -38,6 +38,45 @@ YARG's default gamepad layout already matches Guitar Hero 2 on a DualShock:
 
 When you add a controller to a profile, pick **Gamepad**. You can remap any button in the profile's binding menu.
 
+### Moving around the menus with a gamepad
+
+Any gamepad (Bluetooth or USB, Xbox / PlayStation / generic Android pads) drives the menus as soon
+as it's connected, before it's in a profile, so you can set everything up from the couch:
+
+| Menu action | Gamepad |
+|---|---|
+| Move | D-pad or left stick (hold to scroll) |
+| Select / Confirm (green) | A / Cross |
+| Back (red) | B / Circle |
+| Yellow action (e.g. Play Show / Start Setlist) | Y / Triangle |
+| Blue action (e.g. Filters) | X / Square |
+| More Options (orange) | LB or RB / L1 or R1 |
+| Start (pause in a song) | Start / Options |
+| Select (e.g. "go to the song that's playing" on the main menu) | Back / View / Share |
+
+The help bar at the bottom shows each action's color, and the buttons above match those colors.
+Once the gamepad is in a profile, that profile's own menu bindings take over (same layout unless
+you change it), so nothing fires twice.
+
+## Menu music: pick a startup song and a playlist
+
+The menus play songs from your library in the background. You choose what plays:
+
+- **A song on startup.** In the music library, highlight a song, open **More Options**
+  (orange / LB) and choose **Play On Startup**. It plays first every time the game starts, then
+  the menu music carries on as below. Choose **Don't Play On Startup** on the same song, or set
+  **Settings > Sound > Startup Song** to **None**, to turn it off.
+- **Which songs play after it.** **Settings > Sound > Menu Music**: *Whole library*, *Favorites*,
+  or any of your playlists. Or in the music library's **Playlists** view, highlight a playlist
+  (or Favorites), open **More Options** and choose **Use As Menu Music** (and **Stop Using As
+  Menu Music** to go back to the whole library). The music switches right away.
+- **Order.** **Settings > Sound > Shuffle Menu Music**: on plays them in random order, off plays
+  the playlist in its own order (and loops).
+- **Volume** stays **Settings > Sound > Music Player Volume** (0 turns menu music off).
+
+If the playlist is empty, deleted, or none of its songs are in the library, the whole library
+plays instead.
+
 ## Phone remote: friends' phones as guitars and mics
 
 Other phones on the same Wi-Fi (or on your hotspot) can join from their **browser**, without installing anything.
@@ -134,7 +173,8 @@ download the `.apk` and install it.
 ## Using it on the phone
 1. Open the app and allow **All files access** when Android asks.
 2. Put songs (Clone Hero / YARG / Rock Band format folders) in `Internal storage/YARG/songs`.
-3. In YARG: **Settings → Songs → Scan**.
+   Songs from the [YARG Converter](converter/README.md#adding-a-converted-song-to-yarg) are put there for you.
+3. In YARG: **Settings → Songs → Scan Songs** (or in the music library: **More Options → Scan Songs**).
 4. Add your controller to a profile and pick **Gamepad** (or CRKD Guitar). Touch buttons: Profiles → Add Device → Virtual.
 
 Only play songs you own (for example, charts ripped from your own Rock Band DLC) or free/official setlists.
