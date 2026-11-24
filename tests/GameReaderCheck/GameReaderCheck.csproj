@@ -2,7 +2,8 @@
 
   <!-- Runs a song folder written by the converter through YARG.Core's own song scanner and
        chart loader (the same code the game uses) and checks everything arrived.
-       dotnet run -p:YargCore=/path/to/YARG.Core/checkout -- /path/to/song-folder -->
+       Run it with the YargCore property set to a YARG.Core checkout and the song folder as the
+       only argument; see the game-reader job in .github/workflows/converter.yml. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
