@@ -3,13 +3,20 @@
 Saved for later, roughly in the order they would help most.
 
 ## Asked for, deferred
-- [ ] **Bass charts** (follow the low frequencies) on all four difficulties.
-- [ ] **Drum charts** (kick / snare / cymbals from the percussive hits) on all four difficulties.
+- [ ] **Drum charts** from the separated drum stem (kick / snare / toms / cymbals) on all four difficulties.
+
+## Follow-ups to instrument separation
+- [ ] **Time it on the Z Fold 7.** On a 4-core build machine separation takes about 0.7 times the song's length; the phone has not been measured.
+- [ ] **Save the separated instruments as audio** (guitar / bass / drums / vocals files in the song folder) so YARG can drop the guitar when you miss notes and set per-instrument volume. Needs an on-phone Opus encoder so each song does not grow by hundreds of MB.
+- [ ] Keep converting with the screen off or the app in the background (foreground service with a notification).
+- [ ] Use the separated vocals to time pasted lyrics automatically, word by word.
+- [ ] Keys chart from the piano stem.
+- [ ] A faster, lighter model as a "quick" option (Spleeter 4-stem, about 79 MB).
+- [ ] Let the user pick which instrument the "guitar" chart follows when a song has no guitar.
 
 ## Would improve what is there
-- [ ] **Play-test on real songs** in YARG on the Z Fold 7. The engine is now scored against synthetic band recordings with known answers, but no real record has been through it yet. Things to listen for: are there too many or too few notes (try the Fewer / More setting), do frets change where the music changes, do drum hits pull the chart away from the guitar.
+- [ ] **Play-test on real songs** in YARG on the Z Fold 7. The engine is now scored against synthetic band recordings with known answers, but only one real record has been through it (in the automated build, with nobody listening). Things to listen for: are there too many or too few notes (try the Fewer / More setting), do frets change where the music changes, do drum hits pull the chart away from the guitar.
 - [ ] Confirm in-game that YARG's lyric bar shows `.chart` lyrics the way this app writes them; if not, switch lyrics to a `notes.mid` vocals track.
-- [ ] Split the song into stems (guitar / bass / drums / vocals) so each instrument is charted from its own part instead of the full mix. This is the single biggest remaining step for chart quality. Needs a separation model on the phone, or a helper on the Chromebook.
 - [ ] Forced strums / hammer-ons and tap sections; open notes.
 - [ ] Solo sections and smarter Star Power placement (on the catchiest phrases rather than every ten measures).
 - [ ] Named practice sections (Intro, Verse, Chorus) from the repeat structure instead of "Part 1, 2, 3".
@@ -26,3 +33,5 @@ Saved for later, roughly in the order they would help most.
 - [x] Tempo drift, 3/4 time, beats aligned to note starts.
 - [x] Sustains; Hard / Medium / Easy derived from Expert.
 - [x] Note-density setting (Fewer / Standard / More).
+- [x] Instrument separation on the phone (HT-Demucs 6-stem); guitar charted from the guitar stem.
+- [x] Bass charts on all four difficulties, from the bass stem.

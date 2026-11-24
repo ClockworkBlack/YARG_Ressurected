@@ -118,6 +118,15 @@ public final class GuitarCharter {
 
     /** Finds the moments where a new sound starts, and describes each one. */
     public static List<Onset> detectOnsets(Features f) {
+        return detectOnsets(f, false);
+    }
+
+    /**
+     * @param groupByPitch true for an instrument that plays one note at a time (a separated
+     *                     bass): notes are then told apart by their pitch alone, which is more
+     *                     dependable than a fingerprint when a sound has only a few overtones
+     */
+    public static List<Onset> detectOnsets(Features f, boolean groupByPitch) {
         int n = f.frames();
         double tMean = mean(f.tonal), pMean = mean(f.perc);
         if (tMean < 1e-9) tMean = 1;
@@ -183,7 +192,11 @@ public final class GuitarCharter {
             o.strength = o.strength / ref;
             out.add(o);
         }
-        groupBySound(out);
+        if (groupByPitch) {
+            for (Onset o : out) if (o.tonal) o.group = Math.max(0, Math.round(o.height));
+        } else {
+            groupBySound(out);
+        }
         return out;
     }
 
@@ -359,9 +372,11 @@ public final class GuitarCharter {
     private static void summariseGroups(Context cx, List<Onset> onsets) {
         List<Float> heights = new ArrayList<>();
         List<Float> confs = new ArrayList<>();
+        java.util.Set<Integer> distinct = new java.util.HashSet<>();
         for (Onset o : onsets) {
             if (!o.tonal || o.group < 0) continue;
-            cx.groups = Math.max(cx.groups, o.group + 1);
+            distinct.add(o.group);
+            cx.groups = distinct.size();
             heights.add(o.height);
             confs.add(o.conf);
         }

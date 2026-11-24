@@ -121,7 +121,7 @@ public final class SongWriter {
         if (stems.bass != null && stems.bassEnergy >= 0.003 * Math.max(1e-12, stems.mixEnergy)) {
             GuitarCharter.Options bassOptions = options == null ? new GuitarCharter.Options() : options.copy();
             bassOptions.chords = false;
-            List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(stems.bass);
+            List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(stems.bass, true);
             GuitarCharter.Chart chart = GuitarCharter.build(stems.bass, onsets, r.tempo, r.bpm, bassOptions);
             int notes = chart.notes.get(GuitarCharter.EXPERT).size();
             if (notes >= 16) {
