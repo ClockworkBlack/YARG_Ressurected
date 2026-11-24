@@ -86,8 +86,10 @@ public final class VocalCharter {
         Chart chart = new Chart();
         if (lines == null) return chart;
         float gate = voice != null ? voice.gate() : 0f;
-        boolean leanSung = voice != null && mostlySung(lines, duration, voice, gate);
-        chart.mostlySung = leanSung;
+        // A first look at every line, so borderline lines can follow the rest of the song
+        int[] verdict = voice != null ? clearVerdicts(lines, duration, voice, gate) : new int[lines.size()];
+        boolean songLean = mostlySung(verdict);
+        chart.mostlySung = songLean;
         long floor = 0;
         double previousEnd = 0;
         boolean anyHeard = false;
@@ -120,6 +122,7 @@ public final class VocalCharter {
 
             // What is sung on each word, and is this line sung at all?
             List<Note> notes = new ArrayList<>();
+            boolean leanSung = twinVerdict(lines, verdict, i, songLean);
             boolean sung = heard && pitchLine(voice, gate, words, frameStart, frameEnd, wordStart, wordEnd, notes, leanSung);
             if (!sung) {
                 notes.clear();
@@ -354,9 +357,14 @@ public final class VocalCharter {
     /** Below this share of held notes a line is rapped or spoken, whatever the rest of the song does. */
     static final double BORDER_SHARE = 0.15;
 
-    /** Whether most of the clear-cut lines of the song are sung, measured from each time stamp to the next. */
-    static boolean mostlySung(List<Lrc.Line> lines, double duration, VocalAnalyzer.Voice v, float gate) {
-        int sung = 0, rapped = 0;
+    static final int UNCLEAR = 0, CLEARLY_SUNG = 1, CLEARLY_RAPPED = 2;
+
+    /**
+     * For every lyric line: clearly sung, clearly rapped, or in between, measured from its time
+     * stamp to the next one (at most six seconds).
+     */
+    static int[] clearVerdicts(List<Lrc.Line> lines, double duration, VocalAnalyzer.Voice v, float gate) {
+        int[] out = new int[lines.size()];
         for (int i = 0; i < lines.size(); i++) {
             Lrc.Line l = lines.get(i);
             if (l.text.trim().isEmpty() || isAnnotation(l.text) || l.time >= duration) continue;
@@ -364,10 +372,42 @@ public final class VocalCharter {
             if (end <= l.time + 0.5) continue;
             Delivery d = measure(v, gate, v.frameAt(l.time), Math.min(v.frames(), v.frameAt(end) + 1));
             if (d.seconds < 0.5) continue;
-            if (d.held >= HELD_SHARE) sung++;
-            else if (d.held < BORDER_SHARE) rapped++;
+            out[i] = d.held >= HELD_SHARE ? CLEARLY_SUNG : d.held < BORDER_SHARE ? CLEARLY_RAPPED : UNCLEAR;
         }
-        return sung > rapped;
+        return out;
+    }
+
+    /**
+     * Whether the song is a sung one. It takes a clear majority: rap, once separated from the
+     * beat, often holds a few notes, so a song with sung hooks and rapped verses must not tip a
+     * rapped verse over into singing.
+     */
+    static boolean mostlySung(int[] verdict) {
+        int sung = 0, rapped = 0;
+        for (int v : verdict) {
+            if (v == CLEARLY_SUNG) sung++;
+            else if (v == CLEARLY_RAPPED) rapped++;
+        }
+        return sung >= 3 && sung >= 2 * rapped;
+    }
+
+    /**
+     * Which way a borderline line leans: the same words elsewhere in the song (a chorus comes
+     * round again) decided clearly, or else the song as a whole.
+     */
+    static boolean twinVerdict(List<Lrc.Line> lines, int[] verdict, int index, boolean songLean) {
+        String text = normalised(lines.get(index).text);
+        if (text.length() >= 4) {
+            for (int j = 0; j < lines.size(); j++) {
+                if (j == index || verdict[j] == UNCLEAR || !normalised(lines.get(j).text).equals(text)) continue;
+                return verdict[j] == CLEARLY_SUNG;
+            }
+        }
+        return songLean;
+    }
+
+    private static String normalised(String text) {
+        return text == null ? "" : text.toLowerCase(java.util.Locale.US).replaceAll("[^a-z0-9]+", " ").trim();
     }
 
     /** A lyric line that is only a note to the reader: "[Chorus x 2]", "(Instrumental)". */

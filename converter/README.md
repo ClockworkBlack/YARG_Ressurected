@@ -204,7 +204,7 @@ each other, two different "voices", time stamps that come early. On those:
 | | Result |
 |---|---|
 | Which note a steady voice is on | within 0.05 of a semitone, from D2 to C6 |
-| Sung and rapped lines told apart | every line |
+| Sung and rapped lines told apart | every line (and every line of one real sung song, no line of five real rap songs judged sung by mistake) |
 | Sung words on the right note / starting within 0.08 s | 100% / 100% |
 | Rapped words starting within 0.08 s | 100% |
 | A long word moving to a second note is found, with the right note | 12 of 12 |
@@ -213,10 +213,20 @@ each other, two different "voices", time stamps that come early. On those:
 A made-up singer is far cleaner than a real one, so these numbers show the method works, not
 how well it does on a record. One real recording goes through the whole chain on every build
 (below): "Swansong" by Josh Woodward, one man singing over a guitar, with the time-synced
-lyrics the app itself finds on LRCLIB. On it, 27 of the 29 lines come out as sung, the voice
-is on a clear note 90% of the time it sounds, the notes found stay in one key and move by steps
-the way a tune does, and the one singer is not split into two. Nobody has checked the result by
-ear or played it yet, and no rap record has been through it.
+lyrics the app itself finds on LRCLIB. On it, all 28 sung lines come out as sung (the lyrics
+file's 29th line is the note "[Chorus x 2]", which is now skipped), the voice is on a clear note
+90% of the time it sounds, the notes stay in one key and move by steps the way a tune does, and
+the one singer is not split into two. Nobody has checked the result by ear or played it yet.
+
+Rap is measured on every build too, on real recordings from Wikimedia Commons: three short
+rap clips, and five hip hop songs from the Free Music Archive put through the same instrument
+split as in the app. That showed something the made-up singer did not: rap separated from its
+beat often holds a few notes (scores of 0.16 to 0.29 on the "held notes" measure, against 0.38
+and up for nearly all sung lines and 0.00 for the made-up rapper). So the decision now works
+in three bands. Under 0.15 a line is rapped and over 0.30 it is sung, whatever else happens.
+In between, the line follows the same words elsewhere in the song (a chorus that comes round
+again), or else what most of the song clearly is, and a song only counts as a sung one with a
+clear majority, so the rapped verse of a song with a sung hook stays rapped.
 
 Every song the checks write is also read back from `notes.mid` by a reader that follows the
 game's own rules (how it pairs notes, finds phrases, attaches lyrics, and decides a song has
