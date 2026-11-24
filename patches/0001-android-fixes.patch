@@ -1,3 +1,15 @@
+diff --git a/Assets/Script/Helpers/FileExplorerHelper.cs b/Assets/Script/Helpers/FileExplorerHelper.cs
+index 7839ac3..8d94a17 100644
+--- a/Assets/Script/Helpers/FileExplorerHelper.cs
++++ b/Assets/Script/Helpers/FileExplorerHelper.cs
+@@ -1,6 +1,7 @@
+ ﻿using System;
+ using SimpleFileBrowser;
+ using YARG.Core.Logging;
++using YARG.Menu.Persistent; // YARG Resurrected: needed for the non-desktop (Android) branch
+ 
+ using System.Diagnostics;
+ using System.IO;
 diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
 index bb70c1e..a9019ec 100644
 --- a/Assets/Script/Menu/ProfileList/ProfileView.cs
@@ -61,3 +73,15 @@ index bb70c1e..a9019ec 100644
          private static async UniTask<GamepadBindingMode?> PromptGamepadMode(XInputController xinput)
          {
              await DialogManager.Instance.WaitUntilCurrentClosed();
+diff --git a/ProjectSettings/ProjectSettings.asset b/ProjectSettings/ProjectSettings.asset
+index 174e9d9..33c282b 100644
+--- a/ProjectSettings/ProjectSettings.asset
++++ b/ProjectSettings/ProjectSettings.asset
+@@ -872,6 +872,7 @@ PlayerSettings:
+   webWasm2023: 0
+   webEnableSubmoduleStrippingCompatibility: 0
+   scriptingDefineSymbols:
++    Android: ZSTRING_TEXTMESHPRO_SUPPORT
+     Standalone: ZSTRING_TEXTMESHPRO_SUPPORT
+   additionalCompilerArguments: {}
+   platformArchitecture: {}
