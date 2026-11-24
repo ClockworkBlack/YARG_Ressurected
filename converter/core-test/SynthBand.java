@@ -27,6 +27,11 @@ final class SynthBand {
     final int beatsPerMeasure;
     float[] audio;
     final List<GuitarNote> guitar = new ArrayList<>();
+    /** Every bass note, for scoring bass charts. */
+    final List<GuitarNote> bassNotes = new ArrayList<>();
+    /** The instruments on their own, as a perfect separation would return them. */
+    float[] drumsTrack, bassTrack, guitarTrack, keysTrack;
+    private int currentBar;
     final List<Double> beats = new ArrayList<>();
     /** Start time of each measure, plus one extra entry for the end. */
     final List<Double> measures = new ArrayList<>();
@@ -80,15 +85,20 @@ final class SynthBand {
                 prev = c;
             }
             sectionOf.add(c);
+            currentBar = b;
             if (beatsPerMeasure == 4) bar44(b, sectionBar, c);
             else bar34(b, sectionBar, c);
             sectionBar++;
         }
         // Guitar goes through an amp: soft clipping adds the gritty overtones of distortion.
         for (int i = 0; i < n; i++) {
-            float g = (float) Math.tanh(gtr[i] * 2.2) * 0.33f;
-            audio[i] = drums[i] + bass[i] + g + pad[i] + (float) ((rnd.nextDouble() * 2 - 1) * 0.0015);
+            gtr[i] = (float) Math.tanh(gtr[i] * 2.2) * 0.33f;
+            audio[i] = drums[i] + bass[i] + gtr[i] + pad[i] + (float) ((rnd.nextDouble() * 2 - 1) * 0.0015);
         }
+        drumsTrack = drums;
+        bassTrack = bass;
+        guitarTrack = gtr;
+        keysTrack = pad;
         drums = bass = gtr = pad = null;
     }
 
@@ -247,6 +257,7 @@ final class SynthBand {
     }
 
     private void bassNote(double t, int midi, double len) {
+        bassNotes.add(new GuitarNote(t, midi, false, currentBar));
         int start = (int) Math.round(t * sampleRate);
         int count = (int) (len * sampleRate);
         double f = hz(midi);

@@ -20,7 +20,13 @@ public final class SongWriter {
     /** Everything the analysis produced for one song. */
     public static final class Result {
         public TempoMap tempo;
+        /** Guitar charts. */
         public GuitarCharter.Chart chart;
+        /** Bass charts, or null when there is no separate bass to chart. */
+        public GuitarCharter.Chart bassChart;
+        /** What the guitar chart was made from, in words for the user. */
+        public String guitarSource = "the full mix";
+        public int bassTier = -1;
         public List<LyricsCharter.Event> lyrics = new ArrayList<>();
         public double bpm;
         public double duration;
@@ -39,7 +45,27 @@ public final class SongWriter {
         return analyze(f, lyrics, null);
     }
 
+    /** Measurements of the separated instruments, when the song has been split into stems. */
+    public static final class Stems {
+        /** The guitar on its own. */
+        public Features guitar;
+        /** Guitar, keys and other pitched instruments together (no drums, bass or vocals). */
+        public Features melodic;
+        /** The bass on its own. */
+        public Features bass;
+        /** Sum of squared samples of each, for comparing how much of the song they make up. */
+        public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy;
+    }
+
     public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options) {
+        return analyze(f, lyrics, options, null);
+    }
+
+    /**
+     * @param f the full mix; always used for tempo, beats and measures
+     * @param stems separated instruments, or null to chart everything from the full mix
+     */
+    public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems) {
         Result r = new Result();
         BeatTracker.Result beats = BeatTracker.track(f);
         r.bpm = beats.bpm;
@@ -55,6 +81,7 @@ public final class SongWriter {
         double[] aligned = BeatTracker.alignToOnsets(beats.beats, times, strengths);
         r.tempo = TempoMap.fromBeats(aligned, beats.firstDownbeat, beats.beatsPerMeasure);
         r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm, options);
+        if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             r.lyrics = LyricsCharter.build(lyrics, r.tempo, f.duration);
             for (LyricsCharter.Event e : r.lyrics) if (e.text.equals("phrase_start")) r.lyricLines++;
@@ -63,6 +90,46 @@ public final class SongWriter {
         r.guitarTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
         r.previewMs = previewStart(f);
         return r;
+    }
+
+    /**
+     * Replaces the full-mix guitar chart with one made from the separated guitar, and adds a
+     * bass chart. If a stem turns out to be nearly empty (a song with no guitar, say), the next
+     * best source is used instead, down to the full-mix chart already in {@code r}.
+     */
+    private static void chartFromStems(Result r, Stems stems, GuitarCharter.Options options) {
+        int mixNotes = r.noteCount(GuitarCharter.EXPERT);
+        // The guitar stem is used when guitar is a real part of the song's pitched instruments;
+        // in a piano- or synth-led song the pitched instruments together stand in for it.
+        boolean guitarLed = stems.guitar != null && stems.guitarEnergy >= 0.30 * Math.max(1e-12, stems.melodicEnergy);
+        Features[] sources = guitarLed ? new Features[] {stems.guitar, stems.melodic} : new Features[] {stems.melodic, stems.guitar};
+        String[] names = guitarLed
+                ? new String[] {"the separated guitar", "the separated guitar and keys"}
+                : new String[] {"the separated guitar and keys", "the separated guitar"};
+        for (int i = 0; i < sources.length; i++) {
+            if (sources[i] == null) continue;
+            List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(sources[i]);
+            GuitarCharter.Chart chart = GuitarCharter.build(sources[i], onsets, r.tempo, r.bpm, options);
+            int notes = chart.notes.get(GuitarCharter.EXPERT).size();
+            // A stem with almost nothing in it is not worth charting from.
+            if (notes >= 24 && notes >= 0.2 * mixNotes) {
+                r.chart = chart;
+                r.guitarSource = names[i];
+                break;
+            }
+        }
+        if (stems.bass != null && stems.bassEnergy >= 0.003 * Math.max(1e-12, stems.mixEnergy)) {
+            GuitarCharter.Options bassOptions = options == null ? new GuitarCharter.Options() : options.copy();
+            bassOptions.chords = false;
+            List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(stems.bass);
+            GuitarCharter.Chart chart = GuitarCharter.build(stems.bass, onsets, r.tempo, r.bpm, bassOptions);
+            int notes = chart.notes.get(GuitarCharter.EXPERT).size();
+            if (notes >= 16) {
+                r.bassChart = chart;
+                double nps = r.duration > 1 ? notes / r.duration : 0;
+                r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
+            }
+        }
     }
 
     /** Start of the loudest 30 seconds, used as the song preview in the menu. */
@@ -162,12 +229,19 @@ public final class SongWriter {
         for (Object[] e : events) w.write("  " + e[0] + " = E \"" + e[2] + "\"\n");
         w.write("}\n");
 
+        writeInstrument(w, r.chart, GuitarCharter.SECTION_NAMES);
+        if (r.bassChart != null) writeInstrument(w, r.bassChart, BASS_SECTION_NAMES);
+    }
+
+    private static final String[] BASS_SECTION_NAMES = {"EasyDoubleBass", "MediumDoubleBass", "HardDoubleBass", "ExpertDoubleBass"};
+
+    private static void writeInstrument(Writer w, GuitarCharter.Chart chart, String[] sectionNames) throws IOException {
         for (int d = GuitarCharter.EXPERT; d >= GuitarCharter.EASY; d--) {
-            List<GuitarCharter.Note> notes = r.chart.notes.get(d);
+            List<GuitarCharter.Note> notes = chart.notes.get(d);
             if (notes.isEmpty()) continue;
-            w.write("[" + GuitarCharter.SECTION_NAMES[d] + "]\n{\n");
+            w.write("[" + sectionNames[d] + "]\n{\n");
             int sp = 0;
-            List<long[]> phrases = r.chart.starPower;
+            List<long[]> phrases = chart.starPower;
             for (GuitarCharter.Note n : notes) {
                 while (sp < phrases.size() && phrases.get(sp)[0] <= n.tick) {
                     long[] p = phrases.get(sp++);
@@ -200,7 +274,7 @@ public final class SongWriter {
         w.write("song_length = " + Math.round(r.duration * 1000) + "\n");
         w.write("preview_start_time = " + r.previewMs + "\n");
         w.write("diff_guitar = " + r.guitarTier + "\n");
-        w.write("diff_bass = -1\n");
+        w.write("diff_bass = " + r.bassTier + "\n");
         w.write("diff_rhythm = -1\n");
         w.write("diff_drums = -1\n");
         w.write("diff_keys = -1\n");

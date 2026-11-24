@@ -29,6 +29,15 @@ public final class GuitarCharter {
     public static final class Options {
         /** 1 = standard. Above 1 keeps only stronger notes (sparser charts); below 1 keeps more. */
         public double threshold = 1.0;
+        /** False for instruments that play one note at a time (bass). */
+        public boolean chords = true;
+
+        public Options copy() {
+            Options o = new Options();
+            o.threshold = threshold;
+            o.chords = chords;
+            return o;
+        }
     }
 
     // Per difficulty (Easy..Expert): the shortest regular note spacing in seconds, how short the
@@ -309,6 +318,7 @@ public final class GuitarCharter {
         float chordLine;
         float songLow, songHigh;
         double threshold;
+        boolean chords = true;
     }
 
     public static Chart build(Features f, List<Onset> onsets, TempoMap map, double bpm, Options options) {
@@ -321,6 +331,7 @@ public final class GuitarCharter {
         cx.origin = map.origin();
         cx.measureTicks = map.measureTicks();
         cx.threshold = options == null ? 1.0 : Math.max(0.3, Math.min(3.0, options.threshold));
+        cx.chords = options == null || options.chords;
         summariseGroups(cx, onsets);
         chart.soundGroups = cx.groups;
 
@@ -778,7 +789,7 @@ public final class GuitarCharter {
             float h = pitchOf(bySound.get(g));
             // Chords live in the lower register; an unclear reading up high is a melody note
             // sounding together with something else, not a chord.
-            boolean c = isChord(cx, bySound.get(g)) && h < CHORD_CEILING;
+            boolean c = cx.chords && isChord(cx, bySound.get(g)) && h < CHORD_CEILING;
             // An unclear sound that is the same note as a more common one in another octave
             // (typically the bass playing the chord's root on its own between strums) takes
             // the fret of the sound it doubles. A clearly read note keeps its own octave.

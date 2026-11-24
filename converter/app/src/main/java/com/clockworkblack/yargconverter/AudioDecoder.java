@@ -8,6 +8,8 @@ import android.net.Uri;
 
 import com.clockworkblack.yargconverter.core.AudioAnalyzer;
 import com.clockworkblack.yargconverter.core.Features;
+import com.clockworkblack.yargconverter.core.Resampler;
+import com.clockworkblack.yargconverter.core.StemSplitter;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -30,10 +32,15 @@ final class AudioDecoder {
         void onProgress(float fraction);
     }
 
+    /** Receives the decoded audio as stereo at 44.1 kHz, the format the separation model wants. */
+    interface StereoSink {
+        void write(float[] left, float[] right, int count) throws IOException;
+    }
+
     // android.media.AudioFormat encodings (written out so they work on every Android version).
     private static final int PCM_16 = 2, PCM_8 = 3, PCM_FLOAT = 4, PCM_24_PACKED = 21, PCM_32 = 22;
 
-    static Features decode(Context context, Uri uri, File wavOut, Progress progress) throws IOException {
+    static Features decode(Context context, Uri uri, File wavOut, StereoSink stereo, Progress progress) throws IOException {
         MediaExtractor extractor = new MediaExtractor();
         MediaCodec codec = null;
         WavWriter wav = null;
@@ -62,6 +69,11 @@ final class AudioDecoder {
             codec.start();
 
             AudioAnalyzer analyzer = null;
+            Resampler resampler = null;
+            float[] left = new float[8192];
+            float[] right = new float[8192];
+            float[] outLeft = null;
+            float[] outRight = null;
             float[] mono = new float[8192];
             short[] pcm = new short[8192];
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
@@ -99,6 +111,11 @@ final class AudioDecoder {
                         if (analyzer == null) {
                             analyzer = new AudioAnalyzer(sampleRate);
                             if (wavOut != null) wav = new WavWriter(wavOut, sampleRate, channels);
+                            if (stereo != null) {
+                                resampler = new Resampler(sampleRate, StemSplitter.SAMPLE_RATE);
+                                outLeft = new float[resampler.capacityFor(left.length)];
+                                outRight = new float[resampler.capacityFor(left.length)];
+                            }
                         }
                         buf.position(info.offset);
                         buf.limit(info.offset + info.size);
@@ -113,6 +130,12 @@ final class AudioDecoder {
                                 for (int c = 0; c < channels; c++) {
                                     float s = readSample(buf, encoding);
                                     sum += s;
+                                    if (c == 0) {
+                                        left[i] = s;
+                                        right[i] = s;
+                                    } else if (c == 1) {
+                                        right[i] = s;
+                                    }
                                     if (wav != null) {
                                         int v = Math.round(s * 32767f);
                                         pcm[i * channels + c] = (short) Math.max(-32768, Math.min(32767, v));
@@ -121,6 +144,10 @@ final class AudioDecoder {
                                 mono[i] = sum / channels;
                             }
                             analyzer.feed(mono, 0, n);
+                            if (resampler != null) {
+                                int made = resampler.process(left, right, n, outLeft, outRight);
+                                if (made > 0) stereo.write(outLeft, outRight, made);
+                            }
                             if (wav != null) wav.write(pcm, n * channels);
                             done += n;
                         }

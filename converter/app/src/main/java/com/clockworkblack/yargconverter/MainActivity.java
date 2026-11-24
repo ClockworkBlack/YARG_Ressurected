@@ -22,6 +22,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -30,14 +31,20 @@ import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.clockworkblack.yargconverter.core.AudioAnalyzer;
 import com.clockworkblack.yargconverter.core.Features;
 import com.clockworkblack.yargconverter.core.GuitarCharter;
 import com.clockworkblack.yargconverter.core.Lrc;
 import com.clockworkblack.yargconverter.core.SongMeta;
 import com.clockworkblack.yargconverter.core.SongWriter;
+import com.clockworkblack.yargconverter.core.StemSplitter;
+import com.clockworkblack.yargconverter.stems.OrtStemModel;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -70,6 +77,9 @@ public final class MainActivity extends Activity {
     private Button pickButton, findButton, lrcButton, tapButton, convertButton;
     private ProgressBar progress;
     private RadioGroup densityGroup;
+    private CheckBox stemsCheck;
+    private TextView modelStatus;
+    private Button modelButton;
     private static final int DENSITY_FEWER = 1, DENSITY_STANDARD = 2, DENSITY_MORE = 3;
 
     @Override
@@ -189,7 +199,23 @@ public final class MainActivity extends Activity {
         root.addView(lyricsStatus);
 
         root.addView(section("3. Convert"));
+        stemsCheck = new CheckBox(this);
+        stemsCheck.setText("Split the song into instruments first. The guitar chart is then made from the guitar alone, and a bass chart is added. Takes a few minutes per song.");
+        root.addView(stemsCheck);
+        modelStatus = new TextView(this);
+        modelStatus.setPadding(dp(32), 0, 0, dp(4));
+        root.addView(modelStatus);
+        modelButton = button("Download the separation model (136 MB)", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                downloadModel();
+            }
+        });
+        root.addView(modelButton);
+        refreshModelUi(true);
+
         TextView densityLabel = new TextView(this);
+        densityLabel.setPadding(0, dp(10), 0, 0);
         densityLabel.setText("How many notes");
         root.addView(densityLabel);
         densityGroup = new RadioGroup(this);
@@ -266,11 +292,75 @@ public final class MainActivity extends Activity {
         lrcButton.setEnabled(!value);
         tapButton.setEnabled(!value);
         convertButton.setEnabled(!value);
+        modelButton.setEnabled(!value);
+        stemsCheck.setEnabled(!value && ModelStore.installed(this));
         if (value) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
+    }
+
+    /** Shows whether the separation model is on the phone, and offers the download if not. */
+    private void refreshModelUi(boolean tickIfInstalled) {
+        boolean installed = ModelStore.installed(this);
+        stemsCheck.setEnabled(installed && !busy);
+        if (!installed) stemsCheck.setChecked(false);
+        else if (tickIfInstalled) stemsCheck.setChecked(true);
+        modelButton.setVisibility(installed ? View.GONE : View.VISIBLE);
+        modelStatus.setText(installed
+                ? "Separation model installed (HT-Demucs, 6 instruments)."
+                : "Needs a one-time 136 MB download from Hugging Face (HT-Demucs). Wi-Fi recommended.");
+    }
+
+    private void downloadModel() {
+        if (busy) return;
+        setBusy(true);
+        progress.setIndeterminate(false);
+        progress.setProgress(0);
+        progress.setVisibility(View.VISIBLE);
+        modelStatus.setText("Starting download…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String error = null;
+                try {
+                    final long[] last = {0};
+                    ModelStore.download(MainActivity.this, new ModelStore.Progress() {
+                        @Override
+                        public boolean onProgress(final long done, final long total) {
+                            long now = System.currentTimeMillis();
+                            if (now - last[0] < 400 && done < total) return true;
+                            last[0] = now;
+                            main.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    progress.setProgress((int) (done * 1000 / total));
+                                    modelStatus.setText(String.format(Locale.US, "Downloading: %d of %d MB", done >> 20, total >> 20));
+                                }
+                            });
+                            return true;
+                        }
+                    });
+                } catch (IOException e) {
+                    error = e.getMessage() == null ? "No connection." : e.getMessage();
+                } catch (RuntimeException e) {
+                    error = String.valueOf(e);
+                }
+                final String err = error;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        setBusy(false);
+                        progress.setVisibility(View.GONE);
+                        refreshModelUi(true);
+                        if (err != null) {
+                            modelStatus.setText("Download did not finish: " + err);
+                        }
+                    }
+                });
+            }
+        }, "model-download").start();
     }
 
     private void message(String title, String text) {
@@ -588,6 +678,7 @@ public final class MainActivity extends Activity {
         int choice = densityGroup.getCheckedRadioButtonId();
         // "Fewer" keeps only the stronger sounds; "More" lets weaker ones through.
         options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
+        final boolean useStems = stemsCheck.isChecked() && ModelStore.installed(this);
 
         setBusy(true);
         progress.setIndeterminate(false);
@@ -601,7 +692,7 @@ public final class MainActivity extends Activity {
                 String summary;
                 boolean ok = false;
                 try {
-                    summary = runConversion(uri, name, meta, lyrics, lrcText, options);
+                    summary = runConversion(uri, name, meta, lyrics, lrcText, options, useStems);
                     ok = true;
                 } catch (IOException e) {
                     summary = "Conversion failed: " + e.getMessage();
@@ -632,7 +723,7 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options) throws IOException {
+    private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options, boolean useStems) throws IOException {
         File songs = new File(new File(Environment.getExternalStorageDirectory(), "YARG"), "songs");
         File dir = new File(new File(songs, SUBFOLDER), meta.folderName());
         if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -650,25 +741,83 @@ public final class MainActivity extends Activity {
             if (f.exists() && !f.delete()) throw new IOException("Could not replace " + f);
         }
 
-        Features features = AudioDecoder.decode(this, uri, copyAsIs ? null : new File(dir, audioFile), new AudioDecoder.Progress() {
-            @Override
-            public void onProgress(final float fraction) {
-                main.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (fraction < 0) {
-                            progress.setIndeterminate(true);
-                        } else {
-                            progress.setProgress(Math.round(fraction * 900));
+        // When splitting into instruments, the decoded audio is also parked in a temporary
+        // file as 44.1 kHz stereo, which is what the separation model reads.
+        final File pcmFile = new File(getCacheDir(), "mix44k.pcm");
+        final long[] pcmFrames = {0};
+        OutputStream pcmOut = null;
+        AudioDecoder.StereoSink stereo = null;
+        if (useStems) {
+            final OutputStream out = new BufferedOutputStream(new FileOutputStream(pcmFile), 1 << 16);
+            pcmOut = out;
+            final byte[] bytes = new byte[8192 * 4];
+            stereo = new AudioDecoder.StereoSink() {
+                @Override
+                public void write(float[] left, float[] right, int count) throws IOException {
+                    int at = 0;
+                    for (int i = 0; i < count; i++) {
+                        int l = Math.max(-32768, Math.min(32767, Math.round(left[i] * 32767f)));
+                        int r = Math.max(-32768, Math.min(32767, Math.round(right[i] * 32767f)));
+                        bytes[at++] = (byte) l;
+                        bytes[at++] = (byte) (l >> 8);
+                        bytes[at++] = (byte) r;
+                        bytes[at++] = (byte) (r >> 8);
+                        if (at == bytes.length) {
+                            out.write(bytes, 0, at);
+                            at = 0;
                         }
                     }
+                    if (at > 0) out.write(bytes, 0, at);
+                    pcmFrames[0] += count;
+                }
+            };
+        }
+
+        Features features;
+        SongWriter.Stems stems = null;
+        String stemNote = null;
+        long separationMs = 0;
+        try {
+            try {
+                features = AudioDecoder.decode(this, uri, copyAsIs ? null : new File(dir, audioFile), stereo, new AudioDecoder.Progress() {
+                    @Override
+                    public void onProgress(final float fraction) {
+                        main.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                if (fraction < 0) {
+                                    progress.setIndeterminate(true);
+                                } else {
+                                    progress.setIndeterminate(false);
+                                    progress.setProgress(Math.round(fraction * 1000));
+                                }
+                            }
+                        });
+                    }
                 });
+            } finally {
+                if (pcmOut != null) pcmOut.close();
             }
-        });
-        if (features.duration < 5) throw new IOException("The audio is too short to chart.");
+            if (features.duration < 5) throw new IOException("The audio is too short to chart.");
+
+            if (useStems) {
+                long started = System.currentTimeMillis();
+                try {
+                    stems = separate(pcmFile, pcmFrames[0]);
+                    separationMs = System.currentTimeMillis() - started;
+                } catch (Exception | LinkageError | OutOfMemoryError e) {
+                    // The charts can still be made the old way, from the full mix.
+                    String why = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                    stemNote = "Splitting into instruments did not work on this song (" + why + "), so the charts were made from the full mix.";
+                }
+            }
+        } finally {
+            //noinspection ResultOfMethodCallIgnored
+            pcmFile.delete();
+        }
 
         status("Finding the beat and writing the charts…");
-        SongWriter.Result result = SongWriter.analyze(features, lyrics, options);
+        SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems);
         if (result.noteCount(GuitarCharter.EXPERT) == 0) {
             throw new IOException("No notes could be found in this audio. Is it silent, or speech only?");
         }
@@ -700,15 +849,128 @@ public final class MainActivity extends Activity {
         sb.append("Done. \"").append(meta.titleOrDefault()).append("\" is in\nInternal storage/YARG/songs/")
                 .append(SUBFOLDER).append('/').append(dir.getName()).append("\n\n");
         sb.append(String.format(Locale.US, "Tempo: about %.0f BPM, %d beats to the measure\n", result.bpm, result.beatsPerMeasure));
+        if (stemNote != null) sb.append(stemNote).append("\n");
+        if (stems != null) {
+            sb.append(String.format(Locale.US, "Split into instruments in %d min %02d s\n", separationMs / 60000, (separationMs / 1000) % 60));
+        }
+        sb.append("Guitar chart made from ").append(result.guitarSource).append("\n");
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 result.noteCount(GuitarCharter.EASY), result.noteCount(GuitarCharter.MEDIUM),
                 result.noteCount(GuitarCharter.HARD), result.noteCount(GuitarCharter.EXPERT)));
+        if (result.bassChart != null) {
+            sb.append(String.format(Locale.US, "Bass notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
+                    result.bassChart.notes.get(GuitarCharter.EASY).size(), result.bassChart.notes.get(GuitarCharter.MEDIUM).size(),
+                    result.bassChart.notes.get(GuitarCharter.HARD).size(), result.bassChart.notes.get(GuitarCharter.EXPERT).size()));
+        } else if (stems != null) {
+            sb.append("No bass chart: the song has little or no separate bass.\n");
+        }
         sb.append("Recognised ").append(result.chart.soundGroups).append(" different notes and chords, and ")
                 .append(result.chart.repeatedMeasures).append(" measures that repeat\n");
         sb.append(result.lyricLines > 0 ? "Lyrics: " + result.lyricLines + " lines\n" : "Lyrics: none\n");
         if (!copyAsIs) sb.append("Audio saved as WAV so YARG can play it.\n");
         sb.append("\nIn YARG: Settings > Songs > Scan, then look for the song in your library.");
         return sb.toString();
+    }
+
+    /**
+     * Runs the separation model over the parked audio and measures the guitar, the pitched
+     * instruments together, and the bass as they come out. Only the measurements are kept;
+     * the separated audio itself is not stored.
+     */
+    private SongWriter.Stems separate(File pcmFile, long frames) throws Exception {
+        final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        final AudioAnalyzer bass = new AudioAnalyzer(StemSplitter.SAMPLE_RATE, true);
+        final double[] energy = new double[4];
+        final float[] g = new float[StemSplitter.SEGMENT];
+        final float[] m = new float[StemSplitter.SEGMENT];
+        final float[] b = new float[StemSplitter.SEGMENT];
+        int cores = Runtime.getRuntime().availableProcessors();
+        int threads = Math.max(2, Math.min(6, cores - 2));
+        final long started = System.currentTimeMillis();
+        status("Loading the separation model…");
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                progress.setIndeterminate(false);
+                progress.setProgress(0);
+            }
+        });
+
+        try (OrtStemModel model = new OrtStemModel(ModelStore.file(this).getAbsolutePath(), threads);
+             InputStream in = new BufferedInputStream(new FileInputStream(pcmFile), 1 << 16)) {
+            final byte[] bytes = new byte[1 << 16];
+            StemSplitter.Source source = new StemSplitter.Source() {
+                @Override
+                public int read(float[] left, float[] right, int offset, int length) throws IOException {
+                    int want = Math.min(length, bytes.length / 4) * 4;
+                    int got = 0;
+                    while (got < want) {
+                        int n = in.read(bytes, got, want - got);
+                        if (n <= 0) break;
+                        got += n;
+                    }
+                    int count = got / 4;
+                    for (int i = 0; i < count; i++) {
+                        int at = i * 4;
+                        left[offset + i] = (short) ((bytes[at] & 0xFF) | (bytes[at + 1] << 8)) / 32768f;
+                        right[offset + i] = (short) ((bytes[at + 2] & 0xFF) | (bytes[at + 3] << 8)) / 32768f;
+                    }
+                    return count;
+                }
+            };
+            StemSplitter.Sink sink = new StemSplitter.Sink() {
+                @Override
+                public void accept(float[] mixLeft, float[] mixRight, float[][][] stems, int count) {
+                    float[][] gt = stems[StemSplitter.GUITAR], ot = stems[StemSplitter.OTHER];
+                    float[][] pn = stems[StemSplitter.PIANO], bs = stems[StemSplitter.BASS];
+                    for (int i = 0; i < count; i++) {
+                        float gv = (gt[0][i] + gt[1][i]) * 0.5f;
+                        float mv = gv + (ot[0][i] + ot[1][i] + pn[0][i] + pn[1][i]) * 0.5f;
+                        float bv = (bs[0][i] + bs[1][i]) * 0.5f;
+                        float xv = (mixLeft[i] + mixRight[i]) * 0.5f;
+                        g[i] = gv;
+                        m[i] = mv;
+                        b[i] = bv;
+                        energy[0] += gv * gv;
+                        energy[1] += mv * mv;
+                        energy[2] += bv * bv;
+                        energy[3] += xv * xv;
+                    }
+                    guitar.feed(g, 0, count);
+                    melodic.feed(m, 0, count);
+                    bass.feed(b, 0, count);
+                }
+            };
+            StemSplitter.Progress report = new StemSplitter.Progress() {
+                @Override
+                public boolean onSegment(final int done, final int total) {
+                    long elapsed = System.currentTimeMillis() - started;
+                    long left = done > 0 ? elapsed * (total - done) / done : 0;
+                    final String text = String.format(Locale.US, "Splitting into instruments: part %d of %d%s. Keep this screen open.",
+                            done, total, done < total ? String.format(Locale.US, " (about %d min %02d s left)", left / 60000, (left / 1000) % 60) : "");
+                    main.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            progress.setProgress(done * 1000 / total);
+                            log.setText(text);
+                        }
+                    });
+                    return true;
+                }
+            };
+            status("Splitting into instruments… Keep this screen open.");
+            StemSplitter.split(source, frames, model, sink, report);
+        }
+        SongWriter.Stems out = new SongWriter.Stems();
+        out.guitar = guitar.finish();
+        out.melodic = melodic.finish();
+        out.bass = bass.finish();
+        out.guitarEnergy = energy[0];
+        out.melodicEnergy = energy[1];
+        out.bassEnergy = energy[2];
+        out.mixEnergy = energy[3];
+        return out;
     }
 
     /** Saves the picture embedded in the audio file, if any, so YARG shows it as album art. */

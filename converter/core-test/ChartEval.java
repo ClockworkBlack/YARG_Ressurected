@@ -34,10 +34,15 @@ final class ChartEval {
     }
 
     static ChartEval score(SynthBand song, SongWriter.Result r) {
+        return score(song, r, song.guitar, r.chart);
+    }
+
+    /** Scores one instrument's charts against the notes that instrument really played. */
+    static ChartEval score(SynthBand song, SongWriter.Result r, List<SynthBand.GuitarNote> truth, GuitarCharter.Chart chart) {
         ChartEval e = new ChartEval();
         e.seconds = r.duration;
         e.tempoMarkers = r.tempo.tick.length;
-        for (int d = 0; d < 4; d++) e.counts[d] = r.noteCount(d);
+        for (int d = 0; d < 4; d++) e.counts[d] = chart.notes.get(d).size();
 
         // Tempo and beat grid.
         double trueBpm = 60.0 * (song.beats.size() - 1) / (song.beats.get(song.beats.size() - 1) - song.beats.get(0));
@@ -71,17 +76,17 @@ final class ChartEval {
         e.downbeatRate = total > 0 ? (double) hit / total : 0;
 
         // Expert notes against the guitar part.
-        List<GuitarCharter.Note> expert = r.chart.notes.get(GuitarCharter.EXPERT);
+        List<GuitarCharter.Note> expert = chart.notes.get(GuitarCharter.EXPERT);
         double[] noteTime = new double[expert.size()];
         for (int i = 0; i < noteTime.length; i++) noteTime[i] = r.tempo.tickToTime(expert.get(i).tick);
-        int[] match = new int[song.guitar.size()];
+        int[] match = new int[truth.size()];
         boolean[] used = new boolean[expert.size()];
         int covered = 0;
         for (int g = 0; g < match.length; g++) {
             match[g] = -1;
             double best = 0.045;
             for (int i = 0; i < noteTime.length; i++) {
-                double d = Math.abs(noteTime[i] - song.guitar.get(g).time);
+                double d = Math.abs(noteTime[i] - truth.get(g).time);
                 if (d < best) {
                     best = d;
                     match[g] = i;
@@ -102,7 +107,7 @@ final class ChartEval {
         int chords = 0, chordOk = 0, singles = 0, singleOk = 0;
         for (int g = 0; g < match.length; g++) {
             if (match[g] < 0) continue;
-            SynthBand.GuitarNote gn = song.guitar.get(g);
+            SynthBand.GuitarNote gn = truth.get(g);
             GuitarCharter.Note cn = expert.get(match[g]);
             if (gn.chord) {
                 chords++;
@@ -112,7 +117,7 @@ final class ChartEval {
                 if (cn.lane2 < 0) singleOk++;
             }
             if (g == 0 || match[g - 1] < 0 || match[g - 1] == match[g]) continue;
-            SynthBand.GuitarNote gp = song.guitar.get(g - 1);
+            SynthBand.GuitarNote gp = truth.get(g - 1);
             if (song.sectionOf.get(gp.measure) != song.sectionOf.get(gn.measure)) continue;
             GuitarCharter.Note cp = expert.get(match[g - 1]);
             int dp = gn.midi - gp.midi;
@@ -153,7 +158,7 @@ final class ChartEval {
         for (GuitarCharter.Note n : expert) expertTicks.add(n.tick);
         int lower = 0, inExpert = 0;
         for (int d = 0; d < 3; d++) {
-            for (GuitarCharter.Note n : r.chart.notes.get(d)) {
+            for (GuitarCharter.Note n : chart.notes.get(d)) {
                 lower++;
                 if (expertTicks.contains(n.tick)) inExpert++;
             }

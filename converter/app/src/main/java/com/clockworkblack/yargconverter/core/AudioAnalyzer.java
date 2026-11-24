@@ -14,9 +14,11 @@ import java.util.Arrays;
 public final class AudioAnalyzer {
     private static final double LOW_BAND_HZ = 180.0;
     private static final double TONAL_LO_HZ = 150.0, TONAL_HI_HZ = 3000.0;
-    private static final double PITCH_LO_HZ = 65.0, PITCH_HI_HZ = 3200.0;
+    private static final double PITCH_HI_HZ = 3200.0;
     /** Lowest pitch considered: D2, the low string of a drop-D guitar. */
     private static final double F0_MIN_HZ = 73.42;
+    /** Lowest pitch considered when listening to a bass on its own: B0, a five-string's low string. */
+    private static final double BASS_F0_MIN_HZ = 30.87;
     private static final int F0_STEPS = 24 * 4;
     private static final int MAX_HARMONIC = 8;
     private static final int MAX_PEAKS = 32;
@@ -87,7 +89,21 @@ public final class AudioAnalyzer {
     private float[] toneChroma = new float[4096 * 12];
     private int frames;
 
+    private final double f0Min;
+    private final int lowestRoot;
+
     public AudioAnalyzer(int sampleRate) {
+        this(sampleRate, false);
+    }
+
+    /**
+     * @param bassRange true when the audio is a separated bass part: pitches are then read two
+     *                  octaves lower than for a full mix or a guitar
+     */
+    public AudioAnalyzer(int sampleRate, boolean bassRange) {
+        f0Min = bassRange ? BASS_F0_MIN_HZ : F0_MIN_HZ;
+        // Index of the guitar's low E among the pitch candidates; a bass has no such floor.
+        lowestRoot = bassRange ? 0 : 4;
         if (sampleRate < 8000) throw new IllegalArgumentException("Unsupported sample rate " + sampleRate);
         this.sampleRate = sampleRate;
         int size = 2048;
@@ -151,9 +167,9 @@ public final class AudioAnalyzer {
         prevBand = new float[count];
         rise = new float[count];
 
-        pitchLoBin = Math.max(2, (int) Math.ceil(PITCH_LO_HZ / (binHz / 2)));
+        pitchLoBin = Math.max(2, (int) Math.ceil(f0Min * 0.89 / (binHz / 2)));
         pitchHiBin = Math.min(size - 2, (int) Math.floor(PITCH_HI_HZ / (binHz / 2)));
-        for (int c = 0; c < F0_STEPS; c++) f0Hz[c] = F0_MIN_HZ * Math.pow(2, c / 24.0);
+        for (int c = 0; c < F0_STEPS; c++) f0Hz[c] = f0Min * Math.pow(2, c / 24.0);
         for (int h = 1; h <= MAX_HARMONIC; h++) harmonicWeight[h] = Math.pow(0.84, h - 1);
 
         binPitchClass = new int[bins];
@@ -387,7 +403,6 @@ public final class AudioAnalyzer {
         // A chord's fifth and octave fit the peaks almost as well as its root does. When the
         // note a fifth or an octave below scores nearly as high, that lower note is the root
         // (down to the guitar's low E; below that it is the bass doubling the chord).
-        final int lowestRoot = 4;
         for (int pass = 0; pass < 2; pass++) {
             int root = -1;
             for (int down : new int[] {14, 24}) {

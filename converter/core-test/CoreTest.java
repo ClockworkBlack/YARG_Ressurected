@@ -44,6 +44,7 @@ public final class CoreTest {
         band("Band, busy mix 96 BPM", new SynthBand(44100, 96.0, 0.02, 0.50, 4, 7, true), 4);
         band("Band, waltz 126 BPM", new SynthBand(44100, 126.0, 0.0, 0.30, 3, 7), 3);
         oddInputs();
+        failures += StemTest.run();
         lyrics();
         if (failures > 0) {
             System.out.println("FAILED: " + failures + " check(s)");
