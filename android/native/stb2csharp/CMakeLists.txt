@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.18)
+project(STB2CSharp C)
+add_library(STB2CSharp SHARED stb2csharp.c)
+target_include_directories(STB2CSharp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(STB2CSharp PROPERTIES C_VISIBILITY_PRESET hidden)
+target_link_libraries(STB2CSharp PRIVATE m)

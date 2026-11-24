@@ -1,0 +1,195 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "YARC-Official/YARG commit to build (leave as-is unless the patch has been updated for a newer one)"
+        default: "e6e28a76281a8196623e438d5ec5e8865fa2f677"
+        required: true
+  push:
+    branches: [main]
+    paths:
+      - "patches/**"
+      - "overlay/**"
+      - "android/**"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: YARC-Official/YARG
+  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || 'e6e28a76281a8196623e438d5ec5e8865fa2f677' }}
+  PROJECT_DIR: project
+
+jobs:
+  native:
+    name: Native libraries (arm64-v8a)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get YARG source (no art assets needed here)
+        run: |
+          git init "$PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          git remote add origin "https://github.com/$UPSTREAM_REPO"
+          GIT_LFS_SKIP_SMUDGE=1 git fetch --depth 1 origin "$UPSTREAM_REF"
+          GIT_LFS_SKIP_SMUDGE=1 git checkout FETCH_HEAD
+
+      - name: Apply Android patches
+        run: |
+          cd "$PROJECT_DIR"
+          for p in ../patches/*.patch; do echo "Applying $p"; git apply --whitespace=nowarn "$p"; done
+
+      - name: Build native libraries with the Android NDK
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          echo "Using NDK: $ANDROID_NDK_HOME"
+          bash android/native/build-android-native.sh "$PROJECT_DIR" native-out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-native-libs
+          path: native-out/*.so
+          if-no-files-found: error
+
+  apk:
+    name: Unity Android build
+    needs: native
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Free disk space (Unity's Android image is big)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - uses: actions/checkout@v4
+
+      - name: Check Unity secrets
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$UNITY_LICENSE" ] && missing="$missing UNITY_LICENSE"
+          [ -z "$UNITY_EMAIL" ] && missing="$missing UNITY_EMAIL"
+          [ -z "$UNITY_PASSWORD" ] && missing="$missing UNITY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. See README.md > Setup."
+            exit 1
+          fi
+
+      - name: Get YARG source + submodules (LFS pulled separately so it can be cached)
+        run: |
+          git init "$PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          git remote add origin "https://github.com/$UPSTREAM_REPO"
+          GIT_LFS_SKIP_SMUDGE=1 git fetch --depth 1 origin "$UPSTREAM_REF"
+          GIT_LFS_SKIP_SMUDGE=1 git checkout FETCH_HEAD
+          GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --depth 1
+
+      - name: Restore LFS cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/.git/lfs
+          key: yarg-lfs-${{ env.UPSTREAM_REF }}
+          restore-keys: yarg-lfs-
+
+      - name: Pull LFS assets
+        run: |
+          cd "$PROJECT_DIR"
+          git lfs install --local
+          git lfs pull
+
+      - name: Apply Android patches and overlay
+        run: |
+          cd "$PROJECT_DIR"
+          for p in ../patches/*.patch; do echo "Applying $p"; git apply --whitespace=nowarn "$p"; done
+          cp -r ../overlay/. .
+          mkdir -p Assets/Plugins/Android/libs/arm64-v8a
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-native-libs
+          path: ${{ env.PROJECT_DIR }}/Assets/Plugins/Android/libs/arm64-v8a
+
+      - name: Restore NuGet packages
+        run: |
+          dotnet tool install --global NuGetForUnity.Cli
+          nugetforunity restore "$PROJECT_DIR"
+
+      - name: Restore Unity Library cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/Library
+          key: yarg-library-android-${{ env.UPSTREAM_REF }}-${{ hashFiles('patches/**', 'overlay/**') }}
+          restore-keys: |
+            yarg-library-android-${{ env.UPSTREAM_REF }}-
+            yarg-library-android-
+
+      - name: Decode signing keystore (optional)
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$PROJECT_DIR/yarg.keystore"
+            echo "name=yarg.keystore" >> "$GITHUB_OUTPUT"
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 secret, the APK will use a debug signature."
+            echo "name=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build APK with Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ env.PROJECT_DIR }}
+          targetPlatform: Android
+          buildMethod: YARG.Editor.Android.YargAndroidBuild.Build
+          buildName: YARG
+          androidExportType: androidPackage
+          androidVersionCode: ${{ github.run_number }}
+          androidKeystoreName: ${{ steps.keystore.outputs.name }}
+          androidKeystoreBase64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          androidKeystorePass: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          androidKeyaliasName: ${{ secrets.ANDROID_KEYALIAS_NAME }}
+          androidKeyaliasPass: ${{ secrets.ANDROID_KEYALIAS_PASS }}
+          allowDirtyBuild: true
+
+      - name: Find APK
+        id: apk
+        run: |
+          apk="$(find build "$PROJECT_DIR/build" -name '*.apk' 2>/dev/null | head -n1)"
+          if [ -z "$apk" ]; then echo "::error::No APK produced"; exit 1; fi
+          cp "$apk" "YARG-Resurrected-${{ github.run_number }}.apk"
+          echo "file=YARG-Resurrected-${{ github.run_number }}.apk" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YARG-Resurrected-apk
+          path: ${{ steps.apk.outputs.file }}
+
+      - name: Publish as a GitHub release (easy download on your phone)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: YARG Resurrected build ${{ github.run_number }}
+          prerelease: true
+          files: ${{ steps.apk.outputs.file }}
+          body: |
+            Android build of YARG (upstream `${{ env.UPSTREAM_REF }}`) for arm64 phones.
+            Download the .apk on your phone and open it to install.
