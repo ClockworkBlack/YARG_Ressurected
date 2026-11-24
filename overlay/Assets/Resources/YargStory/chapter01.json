@@ -1,0 +1,181 @@
+{
+  "id": "ch01",
+  "number": 1,
+  "side": "Side A",
+  "title": "I Am Eleven Seconds Long",
+  "subtitle": "Harlem and the Bronx, New York",
+  "focus": "Amateur Night and the Harlem theater circuit, gospel into soul, and the first park jams in the Bronx",
+  "intro": [
+    {"s": "title", "t": "SIDE A", "sub": "Track 1: I Am Eleven Seconds Long", "bg": "black"},
+    {"s": "narrator", "t": "A Wednesday in April. The line for Amateur Night goes around the block and starts coming back the other way.", "bg": "harlem-theater"},
+    {"s": "narrator", "t": "This house has seen everybody. Everybody who ever mattered stood in those wings once, sweating through a good shirt."},
+    {"s": "narrator", "t": "By the wings there is a stump of an old tree. Everybody touches it for luck on the way to the stage. It has been touched smooth. Nobody admits to believing in it. Everybody touches it."},
+    {"s": "odessa", "t": "Ticket.", "mood": "stern"},
+    {"s": "you", "t": "Nana. It's me."},
+    {"s": "odessa", "t": "House rules. Phones away during the acts. You boo, you boo from your seat. You cheer, you cheer like you paid. And nobody in my aisle rushes.", "mood": "stern"},
+    {"s": "narrator", "t": "She gives you the house rules the way she gives them to every stranger. Forty years, no exceptions. Tonight is not going to be the first."},
+    {"s": "you", "t": "Do I get a flashlight?"},
+    {"s": "odessa", "t": "You get a number. Performers use the stage door. Ushers don't go backstage, and grandmothers don't go near it. Go on.", "mood": "sly"},
+    {"s": "narrator", "t": "Somewhere behind the curtain, a stage manager runs a pencil down tonight's list. One. Two. Three. Four."},
+    {"s": "narrator", "t": "Fourth name down: {band}."}
+  ],
+  "outro": [
+    {"s": "narrator", "t": "The van pulls away from the curb. Tuesday rides up front with the reel box on her knees and both gloved hands on the lid, like it might try to leave.", "bg": "van"},
+    {"s": "narrator", "t": "It says MT. NEBO YOUTH CHOIR on both sides. Nobody in it can sing a hymn all the way through."},
+    {"s": "cross", "t": "Philly. I got a cousin in Philly.", "mood": "hype", "bg": "road"},
+    {"s": "tuesday", "t": "Fun fact -", "mood": "hype"},
+    {"s": "cross", "t": "Tuesday. Not now.", "mood": "laugh"},
+    {"s": "narrator", "t": "One, two. One, two, three, four. South."}
+  ],
+  "gigs": [
+    {
+      "id": "g01-amateur-night",
+      "title": "Amateur Night",
+      "venue": "harlem-theater",
+      "stamp": "87 BPM, as cut",
+      "blurb": "The toughest crowd on earth, and your grandmother is working aisle three.",
+      "vibe": {"label": "Soul and classic R&B", "genres": ["soul", "rnb", "gospel"], "yearFrom": 1958, "yearTo": 1975, "keywords": ["soul"]},
+      "songs": 1,
+      "starsToPass": 3,
+      "challenge": {"type": "accuracy", "value": 85, "text": "Miss Odessa never missed a cue. Hit 85% of the notes.", "badge": "Row Z Regular"},
+      "rewards": ["ln-g01", "k-tape-box"],
+      "before": [
+        {"s": "narrator", "t": "The wings. Hot dust, old velvet and other people's nerves.", "bg": "backstage"},
+        {"s": "narrator", "t": "Out front, the act before you is losing a fight with the whole house. The boos come in on two and four. This crowd keeps time even when it's being mean."},
+        {"s": "narrator", "t": "Mr. Broom waits at the edge of the light. Bow tie. Push broom. When an act loses, he sweeps them off slow and gentle, like he's walking them home."},
+        {"s": "you", "t": "Does he ever talk?"},
+        {"s": "narrator", "t": "He does not. He reaches into his vest and hands you a folded note instead. Ushers don't come backstage. Notes do."},
+        {"s": "narrator", "t": "In tidy capitals: 'TWO AND FOUR. - O.F.'"},
+        {"s": "you", "t": "That's the whole note?"},
+        {"s": "narrator", "t": "From her, that's a speech."},
+        {"s": "odessa", "t": "Ma'am. You boo from your seat or you boo from the sidewalk. Your choice.", "mood": "stern"},
+        {"s": "narrator", "t": "That came through the curtain from aisle three. The act before you gets swept off. The house cheers the broom louder than it cheered the act. Mr. Broom does not bow. He never bows."},
+        {"s": "narrator", "t": "You touch the stump on the way past. Don't be proud. Everybody does.", "bg": "harlem-theater"},
+        {"s": "narrator", "t": "Out in the dark, down aisle three, a brass flashlight finds you. Click. Click."},
+        {"s": "you", "t": "Two and four."},
+        {"s": "narrator", "t": "Here we go."}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "The house is on its feet. Mr. Broom leans on his broom and does not lift it. In this building, that is a review.", "bg": "harlem-theater"},
+        {"s": "odessa", "t": "Hm. Watch your step on the way down.", "mood": "warm"},
+        {"s": "narrator", "t": "She says it passing the foot of the stairs, without slowing down. Forty years on that aisle. That is the highest praise she has ever given anybody."},
+        {"s": "title", "t": "LATER", "sub": "Nana Dess's kitchen", "bg": "black"},
+        {"s": "tuesday", "t": "Fun fact - that stump by the wings used to be a whole tree, and it stood out front on the -", "mood": "hype", "bg": "kitchen"},
+        {"s": "odessa", "t": "Tuesday. Not now."},
+        {"s": "narrator", "t": "Tuesday. Your cousin, nineteen. Pencil behind one ear, white cotton gloves in her pocket in case history happens."},
+        {"s": "tuesday", "t": "Okay, but what's this? Cream paper, gold lantern. 'Lantern Legacy is pleased to offer a courtesy payment for memorabilia and a signature.' Nana, what memorabilia?", "mood": "worried"},
+        {"s": "narrator", "t": "Nana Dess reads it once. Then she tears it neatly in half, the way she tears a ticket, and sets the stub by the sugar bowl."},
+        {"s": "odessa", "t": "Cut the cake, baby.", "mood": "neutral"},
+        {"s": "narrator", "t": "Later still: a step stool, a closet, and Tuesday in gloves. Behind the hatbox on the top shelf, a grey cloth box in blue ballpoint. WATCH NIGHT - 11 SEC - DO NOT ERASE.", "bg": "black"},
+        {"s": "narrator", "t": "Oh. Hello.", "bg": "wave"}
+      ],
+      "afterLose": [
+        {"s": "narrator", "t": "The broom comes out. Mr. Broom sweeps you toward the wings, slow and careful, like you are something he means to keep.", "bg": "harlem-theater"},
+        {"s": "broom", "t": "Everybody you love got swept off this stage once.", "mood": "warm"},
+        {"s": "narrator", "t": "From aisle three, a flashlight. Click. Click. Run it back."}
+      ]
+    },
+    {
+      "id": "g02-park-jam",
+      "title": "Uncle Cross's Park Jam",
+      "venue": "bronx-block-party",
+      "stamp": "87 x 2 copies",
+      "blurb": "Power from the lamppost, two turntables, and an old DJ who owes somebody eleven seconds.",
+      "vibe": {"label": "Breakbeats and block-party funk", "genres": ["hiphop", "funk", "soul", "disco"], "yearFrom": 1970, "yearTo": 1990, "keywords": ["break", "funk"]},
+      "songs": 2,
+      "starsToPass": 5,
+      "challenge": {"type": "streak", "value": 87, "text": "Hold two copies: keep it going like a break on two turntables. Hit 87 notes in a row.", "badge": "Merry-Go-Round"},
+      "rewards": ["ln-g02"],
+      "before": [
+        {"s": "narrator", "t": "The first warm Saturday of May. The Bronx comes outside like it has been waiting all winter. It has.", "bg": "bronx-block-party"},
+        {"s": "narrator", "t": "Charcoal smoke, a double-dutch rope going, and a cable running from two turntables up the side of a lamppost. Nobody asks how. The lamppost doesn't either."},
+        {"s": "cross", "t": "Youngblood! The Amateur Night kid. Odessa Fontaine's grandbaby, in my park. Come here, come here.", "mood": "hype"},
+        {"s": "narrator", "t": "Uncle Cross. Bucket hat. One headphone cup on one ear, the other ear left free for the crowd. A carabiner of keys that jingles on the downbeat."},
+        {"s": "cross", "t": "My father built these boxes. Jamaican man. He said if the people across the street can't feel it in their chest, it ain't a sound system. It's a radio.", "mood": "proud"},
+        {"s": "tuesday", "t": "Mr. Braithwaite. Tuesday Fontaine, the cousin. Technically the archivist. We have a reel of tape from the sixties, and you have the only working reel-to-reel anybody knows."},
+        {"s": "tuesday", "t": "For the record, and there will be a record, I am wearing gloves."},
+        {"s": "cross", "t": "Listen. I got a cousin in Yonkers with two of those machines.", "mood": "sly"},
+        {"s": "you", "t": "So we could ask him."},
+        {"s": "cross", "t": "That don't count. Everybody got a cousin in Yonkers.", "mood": "laugh"},
+        {"s": "cross", "t": "Here's the deal. You hold my park for a set, I thread your tape. Two turntables, same record on both. When one runs out, the other one's already going. Nobody in this park waits for the good part."},
+        {"s": "you", "t": "Deal."},
+        {"s": "narrator", "t": "I know this park. Years ago they played me twice at the same time, right here. Rude. Also, the best night of my life."},
+        {"s": "cross", "t": "Bronx! Get up off the benches for {band}!", "mood": "hype"}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "Cross threads the reel. Hands that have done it ten thousand times, shaking anyway.", "bg": "bronx-block-party"},
+        {"s": "cross", "t": "Everybody hush. Old tape, lamppost power. Let it breathe.", "mood": "stern"},
+        {"s": "narrator", "t": "The lamppost hums. The whole park goes quiet. Two blocks over, somebody turns down a car stereo, out of respect or confusion."},
+        {"s": "narrator", "t": "Hiss. Under it, a man's voice, low and far away, behind glass. Nobody can make out a word."},
+        {"s": "narrator", "t": "Then five voices, one at a time. 'Deacon.' 'Low.' 'Sister.' 'Professor.' A girl laughs. Then: '...Dess.'"},
+        {"s": "tuesday", "t": "Dess. Nana's church friends call her Dess.", "mood": "shock"},
+        {"s": "narrator", "t": "And then four bars. And then me. Sixty years, and I never once heard what came before my downbeat. Five people. One of them laughing."},
+        {"s": "cross", "t": "That's the break under my record. Lamppost Power, nineteen eighty-six. My one hit. I took eleven seconds from five people and never learned their names.", "mood": "sad"},
+        {"s": "narrator", "t": "You call Nana Dess. She picks up on the first ring, like she was sitting next to it."},
+        {"s": "you", "t": "Nana. Who's Deacon?"},
+        {"s": "odessa", "t": "I gave my word, baby. My word is the only thing I ever owned outright.", "mood": "stern"},
+        {"s": "cross", "t": "She calls you Pocket, right? Pocket. I owe that woman something, and I don't even know what yet.", "mood": "sad"}
+      ],
+      "afterLose": [
+        {"s": "cross", "t": "Lamppost blinked. Happens to the best. Run it back, youngblood.", "mood": "warm", "bg": "bronx-block-party"},
+        {"s": "narrator", "t": "In the Bronx you always have a second copy. That's the whole idea. Again."}
+      ]
+    },
+    {
+      "id": "g03-top-of-the-night",
+      "title": "Top of the Night",
+      "venue": "harlem-theater",
+      "stamp": "87, Wednesday again",
+      "blurb": "Win Amateur Night twice and the house purse pays for the gas. Mr. Broom has his broom ready either way.",
+      "vibe": {"label": "Gospel, soul and R&B", "genres": ["rnb", "soul", "gospel", "pop"], "yearFrom": 1960, "yearTo": 1995, "keywords": []},
+      "songs": 2,
+      "starsToPass": 6,
+      "challenge": {"type": "allFive", "text": "Top of the Night: five stars on every song, like the house has never seen you before.", "badge": "Top of the Night"},
+      "rewards": ["ln-g03"],
+      "before": [
+        {"s": "tuesday", "t": "The plan, on an index card. Item one: win Amateur Night again. Item two: the house purse buys gas. Item three: Uncle Cross has, quote, a vehicle.", "bg": "backstage"},
+        {"s": "cross", "t": "I have a vehicle, Pocket. A blessed vehicle. You'll see.", "mood": "sly"},
+        {"s": "you", "t": "What kind of vehicle?"},
+        {"s": "cross", "t": "The kind with seats."},
+        {"s": "tuesday", "t": "I've packed gloves, pencils, acid-free sleeves and a tote of records. I told my mother it's a college trip."},
+        {"s": "you", "t": "Is it?"},
+        {"s": "tuesday", "t": "It is. I'm the college.", "mood": "proud"},
+        {"s": "narrator", "t": "Gas to where, nobody knows. Five nicknames and a laugh on a tape, and the one person who could explain them is working aisle three."},
+        {"s": "cross", "t": "She say anything? About the tape?"},
+        {"s": "you", "t": "She asked if we wanted more cake."},
+        {"s": "cross", "t": "Lord. That's a no with frosting on it.", "mood": "laugh"},
+        {"s": "narrator", "t": "Mr. Broom is polishing the stump with his sleeve. Nobody has ever seen him do that. He looks at you once, and goes back to polishing."},
+        {"s": "odessa", "t": "Row M, left side. And spit out that gum, baby, this is a theater.", "mood": "stern", "bg": "harlem-theater"},
+        {"s": "narrator", "t": "Second Wednesday. The house remembers you now. That's worse. Last time they didn't know what to expect. This time they do."}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "Outside, after. The marquee buzzing over the sidewalk. And at the curb, with a cough and a long sigh of brakes, a vehicle.", "bg": "street"},
+        {"s": "narrator", "t": "A retired fifteen-passenger church van. On both sides, in proud white letters: MT. NEBO YOUTH CHOIR."},
+        {"s": "tuesday", "t": "Uncle Cross. Are we a youth choir now?", "mood": "worried"},
+        {"s": "cross", "t": "Bought her at auction from a church in the Bronx. Good people. Better brakes than you'd think. Never repainted her. Paint costs money. Faith is free.", "mood": "proud"},
+        {"s": "cross", "t": "I call her the Choir."},
+        {"s": "narrator", "t": "The stage door opens. Nana Dess, still in her usher jacket, the brass buttons catching the marquee light."},
+        {"s": "you", "t": "Come with us, Nana."},
+        {"s": "narrator", "t": "She doesn't answer that. She presses a ticket stub into your hand. On the back, in her neat hand, an address in North Philadelphia."},
+        {"s": "odessa", "t": "I said I wouldn't tell. I never said I wouldn't point.", "mood": "sly"},
+        {"s": "odessa", "t": "Watch your step.", "mood": "warm"},
+        {"s": "narrator", "t": "And she goes back inside. The late show doesn't usher itself."}
+      ],
+      "afterLose": [
+        {"s": "broom", "t": "Same broom. Same stage. They'll be back next Wednesday, and so will you.", "mood": "warm", "bg": "harlem-theater"},
+        {"s": "narrator", "t": "I have been played wrong by the best. Run it back."}
+      ],
+      "afterChallenge": [
+        {"s": "narrator", "t": "Watch Night, 1967. Eleven o'clock. Greater Hope Tabernacle, two blocks from Lantern Records, and not an empty seat in the house.", "bg": "tape"},
+        {"s": "narrator", "t": "The organist was a Harlem boy with long fingers. He played the church in, and nobody had to tell him the tempo."},
+        {"s": "narrator", "t": "In the back pew sat three out-of-towners in matching suits: the band from the Christmas revue at the theater. The revue had closed. Their bus home did not leave until the second."},
+        {"s": "narrator", "t": "Mother Clementine Fontaine stood to lead the Watch Night hymn. Number 211. 'Watchman, Hold the Light.'"},
+        {"s": "narrator", "t": "She did not sing it the way the hymnal printed it. She never had. She sang it her own way, and the church went with her the way it always did."},
+        {"s": "narrator", "t": "In the back pew the drummer tapped two and four on the pew in front of him. An usher gave him a look. He tapped softer. He did not stop."},
+        {"s": "narrator", "t": "Up in the choir loft, a nineteen-year-old singer from the revue was supposed to be watching the pastor."},
+        {"s": "narrator", "t": "She was watching the guitar player."},
+        {"s": "narrator", "t": "I was one hour and forty-four minutes from being born."}
+      ]
+    }
+  ]
+}

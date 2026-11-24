@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using YARG.Core.Logging;
 using YARG.Menu.Persistent;
 
 namespace YARG.Story
@@ -475,7 +476,7 @@ namespace YARG.Story
             string where = venue != null ? JoinDash(venue.Name, venue.City) : "";
             StoryUi.Text(row, 0.17f, 0.34f, 0.74f, 0.6f, where, 28, false, StoryTheme.Muted, TextAlignmentOptions.Left, false);
             string stamp = gig.Optional ? JoinDash("Side gig", gig.Stamp) : gig.Stamp;
-            StoryUi.Text(row, 0.17f, 0.08f, 0.74f, 0.34f, stamp, 26, false, StoryUi.Alpha(StoryTheme.Gold, 0.85f),
+            StoryUi.Text(row, 0.17f, 0.08f, 0.72f, 0.34f, stamp, 26, false, StoryUi.Alpha(StoryTheme.Gold, 0.85f),
                 TextAlignmentOptions.Left, false);
 
             string status = locked ? "Locked" : state == StoryGigState.Won ? "Won" : "Open";
@@ -488,14 +489,14 @@ namespace YARG.Story
             StoryUi.Text(row, 0.86f, 0.55f, 0.98f, 0.85f, status, 28, true, statusColor, TextAlignmentOptions.Right, false);
             if (record != null && record.BestStars > 0)
             {
-                StoryArt.Icon(row, StoryArt.Star, 0.78f, 0.2f, 0.83f, 0.46f, StoryTheme.Gold);
-                StoryUi.Text(row, 0.83f, 0.16f, 0.98f, 0.5f, record.BestStars + "/" + gig.MaxStars, 28, false, StoryTheme.Cream,
+                StoryArt.Icon(row, StoryArt.Star, 0.78f, 0.3f, 0.83f, 0.54f, StoryTheme.Gold);
+                StoryUi.Text(row, 0.83f, 0.28f, 0.98f, 0.56f, record.BestStars + "/" + gig.MaxStars, 28, false, StoryTheme.Cream,
                     TextAlignmentOptions.Right, false);
             }
 
             if (record != null && record.ChallengeMet && gig.Challenge != null && !string.IsNullOrEmpty(gig.Challenge.Badge))
             {
-                var badge = StoryUi.Area(row, 0.5f, 0.06f, 0.76f, 0.32f, "Badge");
+                var badge = StoryUi.Area(row, 0.74f, 0.04f, 0.98f, 0.27f, "Badge");
                 StoryArt.Badge(badge, gig.Challenge.Badge, StoryTheme.Gold, 24);
             }
 
@@ -555,7 +556,7 @@ namespace YARG.Story
                     bool credits = _page == Page.Credits;
                     var body = Header(credits ? "Credits" : "About", credits ? "" : campaign.Title, _pageBack);
                     string text = credits ? string.Join("\n\n", campaign.Credits) : Fill(campaign.About);
-                    var reader = Reader(body, 0f, credits ? 0.13f : 0f, 1f, 1f, text, credits);
+                    var reader = Reader(body, 0f, credits ? 0.13f : 0f, 1f, 1f, text, credits, 1f);
                     Top.Move = (dx, dy) => ScrollReader(reader, dx, dy, true);
                     if (credits)
                     {
@@ -606,10 +607,10 @@ namespace YARG.Story
                 var focus = AddButton(row, StoryButtonStyle.Card, null, 0, () =>
                 {
                     _noteIndex = index;
-                    _keepFocus = index;
                     Rebuild(true);
                 });
                 InList(focus, scroll, row, listHeight);
+                if (i == _noteIndex && _layers[0].Index < 0) Prefer(focus);
                 if (i == _noteIndex) StoryUi.Solid(row, 0f, 0.12f, 0.012f, 0.88f, StoryTheme.Gold);
                 StoryUi.Text(row, 0.05f, 0.45f, 0.86f, 0.92f, have ? note.Title : "???", 34, true, have ? StoryTheme.Cream : StoryTheme.Faint,
                     TextAlignmentOptions.Left, false);
@@ -623,14 +624,13 @@ namespace YARG.Story
             }
 
             StoryUi.SetHeight(items, notes.Count * 118f + 12f);
-            if (_layers[0].Index < 0) _layers[0].Index = _noteIndex;
 
             var chosen = notes[_noteIndex];
             bool readable = progress != null && progress.LinerNotes.Contains(chosen.Id);
             string text = readable
                 ? chosen.Title + "\n" + chosen.Kicker + "\n\n" + Fill(chosen.Body)
                 : "This note is still sealed.\n\n" + UnlockedBy(campaign, chosen.Id);
-            var reader = Reader(reading, 0f, 0f, 1f, 1f, text, false);
+            var reader = Reader(reading, 0f, 0f, 1f, 1f, text, false, Wide ? 0.59f : 1f);
             Top.Move = (dx, dy) => dx != 0 && ScrollReader(reader, 0, -dx, false);
 
             if (readable && progress.ReadLinerNotes.Add(chosen.Id))
@@ -686,7 +686,8 @@ namespace YARG.Story
         }
 
         /// <summary>A long text in its own scroll list, on a dark panel.</summary>
-        private ScrollRect Reader(RectTransform parent, float x0, float y0, float x1, float y1, string text, bool centred)
+        private ScrollRect Reader(RectTransform parent, float x0, float y0, float x1, float y1, string text, bool centred,
+            float widthShare)
         {
             var panel = StoryUi.Area(parent, x0, y0, x1, y1, "Reader");
             StoryUi.Inset(panel, M, 8f, M, 8f);
@@ -696,10 +697,8 @@ namespace YARG.Story
             var label = StoryUi.Reading(area, text, 34, StoryTheme.Cream);
             if (centred) label.alignment = TextAlignmentOptions.Top;
 
-            // Width of the text in units: the panel's share of the body, less the insets
-            var body = BodySize;
-            float width = body.x * Mathf.Abs(x1 - x0) * (Wide || _page != Page.LinerNotes ? 1f : 1f) - 2f * M - 72f;
-            if (_view == View.Notes && _page == Page.LinerNotes && Wide) width = body.x * 0.59f - 2f * M - 72f;
+            // Width of the text in units: the panel's share of the screen, less the insets
+            float width = _size.x * widthShare * Mathf.Abs(x1 - x0) - 2f * M - 72f;
             float height = StoryUi.HeightOf(label, width) + 20f;
             area.offsetMin = new Vector2(36f, -28f - height);
             StoryUi.SetHeight(items, height + 60f);

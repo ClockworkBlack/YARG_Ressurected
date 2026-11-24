@@ -1,0 +1,181 @@
+{
+  "id": "ch07",
+  "number": 7,
+  "side": "Side C",
+  "title": "I Had a Passport Before They Did",
+  "subtitle": "London, Tokyo and Bucharest",
+  "focus": "World tours of the late 1980s and 1990s, Black British music from Northern Soul and lovers rock to jungle and grime, Japanese soul bars and collectors, and music crossing borders on copied cassettes",
+  "intro": [
+    {"s": "title", "t": "TRACK 7", "sub": "I Had a Passport Before They Did", "bg": "black"},
+    {"s": "narrator", "t": "Heathrow. A long hall, a short queue, and a man in a booth whose whole job is to ask you why you came.", "bg": "airport"},
+    {"s": "narrator", "t": "The Watch Night 60 world tour lands all at once: The Birthrights, their crew, Lantern's people with their folders, and four crates marked FRAGILE that hold five people who do not exist."},
+    {"s": "ruth", "t": "Purpose of visit? Gospel, baby. Same as 1964. Somebody stamped me in at that very booth. Not you. Your granddaddy, probably.", "mood": "laugh"},
+    {"s": "tuesday", "t": "For the record, she has now shown that passport to four flight attendants, a pilot and a sniffer dog.", "mood": "sly"},
+    {"s": "narrator", "t": "The tour bus has two lounges, a microwave and a rule nobody wrote down: The Birthrights up front, the opening act in the back.", "bg": "van"},
+    {"s": "cross", "t": "This bus got a bathroom, a microwave and not one ounce of soul. I miss the Choir.", "mood": "sad"},
+    {"s": "narrator", "t": "Kingston Lark keeps to his side of the aisle. Every time the bus brakes, he touches the monitor in his ear, like he is checking it is still there."},
+    {"s": "kingston", "t": "{band}. Soundcheck is at four. Please keep to time.", "mood": "neutral"},
+    {"s": "narrator", "t": "Nine o'clock Sunday night in Harlem is two in the morning on a bus outside Heathrow. You call anyway."},
+    {"s": "odessa", "t": "Who showed up?", "mood": "neutral"},
+    {"s": "you", "t": "London did. Ruth made friends with customs."},
+    {"s": "odessa", "t": "She always does. Go to sleep, Pocket. And look both ways over there. They do it backwards.", "mood": "warm"},
+    {"s": "narrator", "t": "London. They played me at 165 here. I have never been so young.", "bg": "wave"}
+  ],
+  "outro": [
+    {"s": "narrator", "t": "After Bucharest the tour took two weeks off. Lantern called it a scheduled rest. The crates called it repairs.", "bg": "street"},
+    {"s": "doina", "t": "I have a friend at a festival beside a lake. Jazz, mostly. There is an afternoon lawn with nobody on it yet. I made a call. You are welcome.", "mood": "warm"},
+    {"s": "tuesday", "t": "'An American pianist teaching beside a lake in Switzerland.' I've read it forty times. I keep hoping it'll say more. It keeps saying exactly that.", "mood": "worried"},
+    {"s": "ruth", "t": "It's him, baby. I'd know that sentence in the dark. It's got its tie on.", "mood": "sly"},
+    {"s": "narrator", "t": "At the hotel curb, with the bags on the pavement, Kingston Lark came out to find you. No coat. Nothing in his ear."},
+    {"s": "kingston", "t": "Tell me if you find him.", "mood": "worried"},
+    {"s": "you", "t": "We'll tell you. First call."},
+    {"s": "narrator", "t": "His hand went to his ear out of habit, found nothing there, and came back down. He let it."}
+  ],
+  "gigs": [
+    {
+      "id": "g20-seventy-thousand",
+      "title": "Seventy Thousand",
+      "venue": "london-stadium",
+      "stamp": "165",
+      "blurb": "Seventy thousand people, a pirate-radio legend on the air, and the dead wax of every copy in the city.",
+      "vibe": {"label": "Black British soul, lovers rock, jungle and grime", "genres": ["dance", "reggae", "hiphop", "rnb"], "yearFrom": 1975, "yearTo": 2015, "keywords": ["jungle", "grime", "lovers rock"]},
+      "songs": 3,
+      "starsToPass": 11,
+      "challenge": {"type": "stars", "value": 14, "text": "Seventy thousand witnesses: earn 14 stars over the set.", "badge": "Check the Dead Wax"},
+      "rewards": ["ln-g20"],
+      "before": [
+        {"s": "narrator", "t": "South London, the afternoon of the show. A tower block with a working lift, which Cross calls a miracle, and a cable running up the stairwell to the roof.", "bg": "street"},
+        {"s": "cross", "t": "Listen. My cousin in Brixton says this man IS London radio. Says they chased him off nine frequencies and he came back on a tenth.", "mood": "hype"},
+        {"s": "pressure", "t": "Your cousin in Brixton owes me a fiver from 1994. Come in, come in. Mind the records. Mind the other records.", "mood": "sly", "bg": "radio"},
+        {"s": "narrator", "t": "Pressure talks like the microphone is always on. In this flat it usually is. Crates to the ceiling, a kettle that never cools, and a transmitter on the roof pointed at half the city."},
+        {"s": "pressure", "t": "My mum ran blues parties in this front room. Speaker box the size of a wardrobe. Lovers rock till the windows ran wet. Your break used to come on at four in the morning and wake the whole road.", "mood": "warm"},
+        {"s": "cross", "t": "My father built boxes like that. Bronx. Same wood, same island, different cold.", "mood": "warm"},
+        {"s": "pressure", "t": "Then you know. We never bought a record to keep it on a shelf. Later we took your four bars and ran them at one-six-five till they caught fire. Then grime came along and talked over the top.", "mood": "proud"},
+        {"s": "tuesday", "t": "Fun fact: the run-out groove of a seven-inch is cut by hand, so every matrix number is basically someone's handwrit-", "mood": "hype"},
+        {"s": "pressure", "t": "Tuesday. Not now. We're live.", "mood": "laugh"},
+        {"s": "narrator", "t": "The red light had been on the whole time. Nobody had told Tuesday, which Pressure said was the only honest way to do radio."},
+        {"s": "pressure", "t": "London. Pressure, live and direct. Tonight a band from Harlem opens the big stadium, and before you go, you've got homework.", "mood": "hype"},
+        {"s": "pressure", "t": "Go in your mum's cupboard. Your nan's loft. That crate your uncle won't let you touch. Find a lantern on the label, side B. Look in the run-out, right by the number."},
+        {"s": "pressure", "t": "Five little letters. D, L, S, P, D. Deacon. Low. Sister. Professor. Dess. Check the dead wax, London.", "mood": "proud"},
+        {"s": "ruth", "t": "Baby, I been on the radio in nine countries and never once been on it illegal. I feel twenty-two.", "mood": "laugh"},
+        {"s": "pressure", "t": "If a van with an aerial on top parks downstairs, we're off air in ninety seconds and you lot were never here.", "mood": "sly"}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "Seventy thousand people. When the lights came up they were all looking down at their phones, and for once that was the point.", "bg": "london-stadium"},
+        {"s": "tuesday", "t": "Cousin. Cousin. My phone is doing something phones should not do.", "mood": "shock"},
+        {"s": "narrator", "t": "Photographs. A run-out groove in a basement in Peckham. Another on a kitchen table in Lagos. Osaka. Sao Paulo. A thumb and a torch beside five scratched letters, again and again and again."},
+        {"s": "tuesday", "t": "D-L-S-P-D. D-L-S-P-D. A woman in Lagos says her father bought it here in 1971 and carried it home in his coat. I can't number these. These aren't items. This is weather.", "mood": "shock"},
+        {"s": "ruth", "t": "Look at us. In a basement in Lagos. Child, we got around.", "mood": "laugh"},
+        {"s": "cross", "t": "Every one of those copies got carried. Somebody packed it in a suitcase. Somebody kept it dry through a whole life.", "mood": "warm"},
+        {"s": "pressure", "t": "Pressure, live and direct, one in the morning, and the phone lines are melting. Big up Lagos. Big up Osaka. Big up somebody's nan in Croydon with the gloves on.", "mood": "hype", "bg": "radio"},
+        {"s": "you", "t": "Tuesday. Breathe."},
+        {"s": "tuesday", "t": "I am breathing. I'm breathing in footnotes.", "mood": "laugh"},
+        {"s": "narrator", "t": "Here is what I know. My five names were scratched into me the whole time. It took the whole world turning me over to notice.", "bg": "wave"}
+      ],
+      "afterLose": [
+        {"s": "pressure", "t": "Signal drops. You find it again. Again.", "mood": "warm", "bg": "london-stadium"},
+        {"s": "narrator", "t": "Seventy thousand people waited for me in this city once. They'll wait for you. Run it back."}
+      ]
+    },
+    {
+      "id": "g21-mint-pressing",
+      "title": "Mint Pressing",
+      "venue": "tokyo-dome",
+      "stamp": "87.0 exactly, mint pressing",
+      "blurb": "Fifty thousand people so attentive you can hear your own count-in. Across town, a twelve-seat bar named Watch Night.",
+      "vibe": {"label": "Soul, funk and city pop", "genres": ["soul", "funk", "pop", "jazz"], "yearFrom": 1965, "yearTo": 1990, "keywords": ["city pop", "soul"]},
+      "songs": 3,
+      "starsToPass": 11,
+      "challenge": {"type": "accuracy", "value": 95, "text": "A crowd this quiet hears everything: 95% on every song.", "badge": "87.0 Exactly"},
+      "rewards": ["ln-g21"],
+      "before": [
+        {"s": "narrator", "t": "Tokyo, mid-October. A side street, a narrow stair, a door the width of one person. Above it, hand-lettered in English: WATCH NIGHT. Twelve seats.", "bg": "diner"},
+        {"s": "cross", "t": "He named his bar after us. Pocket. He named his bar after US.", "mood": "shock"},
+        {"s": "hayashi", "t": "Welcome. Please, sit. Here we lower the needle and we do not talk.", "mood": "warm"},
+        {"s": "narrator", "t": "So for one whole side of a record, nobody talked. Not Cross. Not Ruth. Not even Tuesday, which I would like entered into the record."},
+        {"s": "cross", "t": "Listen. I got a cousin here. Married a jazz drummer, moved over in '89. She says Tokyo listens harder than church.", "mood": "warm"},
+        {"s": "hayashi", "t": "I know them. He drinks here on Thursdays. She talks during his records.", "mood": "sly"},
+        {"s": "narrator", "t": "Mr. Hayashi took out a pair of white cotton gloves. Tuesday took out hers. For one second, nobody in the bar was the strangest person in it."},
+        {"s": "hayashi", "t": "Lantern L-1167. Japanese pressing, 1974. The obi is original. Inside, notes translated for us, so we could know what we were hearing.", "mood": "proud"},
+        {"s": "hayashi", "t": "The writer asked about the organ. He quotes an American pianist teaching beside a lake in Switzerland: 'I know who played the organ on that record. It was not a Lark.'"},
+        {"s": "ruth", "t": "That's Aurelius. Nobody else alive talks like a footnote. Except you, child.", "mood": "shock"},
+        {"s": "tuesday", "t": "A lake in Switzerland. In 1974. He was right there the whole time, and he told a stranger in Tokyo before he told anybody at home.", "mood": "worried"},
+        {"s": "narrator", "t": "That night, backstage at the Dome, Graham Ellery stood beside four open crates with a tablet in his hand and a smile he wears like a lanyard.", "bg": "tokyo-dome"},
+        {"s": "ellery", "t": "Tonight the Lark Five: Forever debut, right after your set. Tokyo is a very engaged market. We're expecting extraordinary engagement.", "mood": "warm"},
+        {"s": "tuesday", "t": "Two engagements in one breath. I'm starting a second page.", "mood": "sly"},
+        {"s": "kingston", "t": "{band}. Fifty thousand people, and in this room you can hear a programme rustle. Please keep to time.", "mood": "worried"},
+        {"s": "you", "t": "We'll keep it. You'll hear it."}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "After your set the Dome went dark, and five invented faces made of light walked out and played me. Every note exactly where it belongs.", "bg": "tokyo-dome"},
+        {"s": "narrator", "t": "Fifty thousand people applauded politely. Nothing on that stage had asked them anything, so nobody answered."},
+        {"s": "ellery", "t": "Engagement in Tokyo was extraordinary. The asset performed.", "mood": "proud"},
+        {"s": "tuesday", "t": "Assets, plural. I've lost count, which I want noted, because I never lose count.", "mood": "stern"},
+        {"s": "narrator", "t": "Midnight, back up the narrow stair. You asked Kingston to come. He came, still in his stage jacket, and sat very straight on a stool built for somebody shorter.", "bg": "diner"},
+        {"s": "you", "t": "You've heard the roll call. Everybody has. You've never heard the whole reel."},
+        {"s": "hayashi", "t": "I have a deck. It has waited thirty years for a tape worth threading.", "mood": "warm"},
+        {"s": "narrator", "t": "Hiss. And under it, clear for the first time in sixty years, a man on a talkback: 'Roll it. Keep the girl's holler, that's the hook. No names on the label.'"},
+        {"s": "kingston", "t": "That's my great-grandfather.", "mood": "shock"},
+        {"s": "kingston", "t": "We watch his Christmas films every year. He carves. He says the grace. That's his voice.", "mood": "sad"},
+        {"s": "narrator", "t": "He walked out without his coat. Mr. Hayashi folded it over his arm and said nothing at all. Here we lower the needle, and we do not talk."}
+      ],
+      "afterLose": [
+        {"s": "hayashi", "t": "Again. I will lower the needle again.", "mood": "warm", "bg": "tokyo-dome"},
+        {"s": "narrator", "t": "A room this quiet hears every slip. It also stays in its seats. Run it back."}
+      ]
+    },
+    {
+      "id": "g22-blackout",
+      "title": "Blackout",
+      "venue": "bucharest-open-air",
+      "stamp": "10th-gen tape, battery tempo",
+      "blurb": "A storm kills the hologram mid-headline. One working amp, no screens, and a promoter handing you the stage.",
+      "vibe": {"label": "Pop and dance, whatever got through on the tape", "genres": ["pop", "dance", "rock", "funk"], "yearFrom": 1980, "yearTo": 2000, "keywords": []},
+      "songs": 3,
+      "starsToPass": 11,
+      "challenge": {"type": "fullCombo", "value": 1, "text": "One working amp and nowhere to hide: one song with no misses.", "badge": "One Working Amp"},
+      "rewards": ["ln-g22"],
+      "before": [
+        {"s": "narrator", "t": "Bucharest, late October. An open field, a headline set, and the kind of rain that has waited all day to make its point.", "bg": "bucharest-open-air"},
+        {"s": "narrator", "t": "Halfway through the headline, the five faces made of light flickered, held, and went out. Then the screens. Then most of the stage."},
+        {"s": "ellery", "t": "Weather is a known risk. We'll have the asset back up for the next market.", "mood": "neutral"},
+        {"s": "doina", "t": "So. I have one generator, one car battery and one amp older than me. Pick two.", "mood": "sly"},
+        {"s": "doina", "t": "Our tapes were copies of copies of copies. By the tenth copy only the drums got through. So we fell in love with the drums.", "mood": "warm"},
+        {"s": "doina", "t": "These people did not come out in the rain to go home in the rain. The stage is yours. Tempo depends on the battery.", "mood": "proud"},
+        {"s": "narrator", "t": "Out in the field the phones came on, one by one, until the whole dark looked like somebody was lighting a very large church."},
+        {"s": "narrator", "t": "Kingston Lark stood in the wings with no click in his ear and no screen to read. Just rain, and a field waiting for somebody."},
+        {"s": "tuesday", "t": "Kingston. Your coat. You left it in Tokyo. Mr. Hayashi folded it.", "mood": "warm"},
+        {"s": "kingston", "t": "I have rehearsed every day since I was four. Do you know what I have never done?", "mood": "worried"},
+        {"s": "kingston", "t": "Played something I didn't already know the end of.", "mood": "sad"},
+        {"s": "ruth", "t": "Baby, nobody knows the end of anything. We just get there and act like we planned it.", "mood": "laugh"},
+        {"s": "you", "t": "Come on. We'll find the end together."},
+        {"s": "narrator", "t": "He touched the monitor in his ear one more time. Then he took it out and put it in his coat pocket, and walked into the rain."}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "One amp, one battery, and a field singing louder than both.", "bg": "bucharest-open-air"},
+        {"s": "narrator", "t": "Somewhere in the middle of your set, Kingston Lark laughed on stage. Out loud. Nobody in that field had ever seen it. Neither had anybody in his band."},
+        {"s": "kingston", "t": "Again. No click. From wherever we are.", "mood": "laugh"},
+        {"s": "doina", "t": "That is the wobble. Now you know why we loved it.", "mood": "proud"},
+        {"s": "ruth", "t": "Look at him. Child's sweating like a Saturday.", "mood": "laugh"},
+        {"s": "cross", "t": "Whole tour I been waiting for somebody off that front lounge to sweat.", "mood": "laugh"},
+        {"s": "tuesday", "t": "For the record, I didn't film it. I asked myself first. I said no.", "mood": "warm"},
+        {"s": "narrator", "t": "In the production tent, on a small monitor, Vivienne Lark watched her son laugh in the rain. She said nothing at all. She did not look away, either."}
+      ],
+      "afterLose": [
+        {"s": "doina", "t": "The tape always had a little wobble. We loved it anyway. Again.", "mood": "warm", "bg": "bucharest-open-air"},
+        {"s": "narrator", "t": "The battery's still warm and nobody's left the field. Run it back."}
+      ],
+      "afterChallenge": [
+        {"s": "narrator", "t": "Twelve forty-four in the morning, Watch Night, 1967. Take one. There was only ever going to be one.", "bg": "tape"},
+        {"s": "narrator", "t": "Gus Lark moved one microphone eighteen inches toward the girl. That was the whole arrangement for the voice."},
+        {"s": "narrator", "t": "On the talkback, low, under the hiss: 'Roll it. Keep the girl's holler, that's the hook. No names on the label.'"},
+        {"s": "narrator", "t": "The Professor swung around on the organ bench. 'Then we'll name ourselves. Roll call.'"},
+        {"s": "narrator", "t": "'Deacon.' 'Low.' 'Sister.' 'Professor.' Dess laughed before her turn, because she could not help it, and then: '...Dess.'"},
+        {"s": "narrator", "t": "Deacon counted it in soft, the way you count in a choir that has been up since ten: 'One, two... one, two, three, four.'"},
+        {"s": "narrator", "t": "Four bars. Eighty-seven beats a minute. Eleven seconds. At the end of bar four the tail of the reel ran off the spool and slapped the take-up, tick, tick, tick."},
+        {"s": "narrator", "t": "The clock over the door said twelve forty-seven. The booked time was gone. Nobody asked for take two. There was no tape to ask with."},
+        {"s": "narrator", "t": "Gus leaned on the talkback one more time. 'That's the B-side.'"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,178 @@
+{
+  "id": "ch03",
+  "number": 3,
+  "side": "Side A",
+  "title": "The Man Who Kept Books",
+  "subtitle": "Detroit, Pontiac and Chicago",
+  "focus": "The Detroit revue and its uncredited house bands, techno as the next branch, and Chicago: electric blues, gospel quartets, steppers and house music born in the warehouse",
+  "intro": [
+    {"s": "title", "t": "TRACK 3", "sub": "The Man Who Kept Books", "bg": "black"},
+    {"s": "narrator", "t": "Detroit at dusk. The river on one side, Canada across it, and the city's lights coming on one at a time, like a band nobody bothered to introduce.", "bg": "street"},
+    {"s": "narrator", "t": "This town made a thousand records with the same players in the basement and never said who they were. Nobody announced me either. We have that in common."},
+    {"s": "tuesday", "t": "Inventory, for the record. Gloves on. Item one: one reel box, grey cloth, Nana's handwriting. Item two: one pencil rubbing, dead wax, five letters.", "bg": "van"},
+    {"s": "tuesday", "t": "Item three: one lead. Quote: 'Low kept a little book. Detroit boy.' End quote."},
+    {"s": "cross", "t": "That ain't a lead. That's a fortune cookie.", "mood": "sly"},
+    {"s": "tuesday", "t": "It's a bass player who wrote things down. Do you know how rare that is? Fun fact - most session players in the sixties never even -", "mood": "hype"},
+    {"s": "cross", "t": "Tuesday. Not now.", "mood": "laugh"},
+    {"s": "you", "t": "Where do bass players go in Detroit?"},
+    {"s": "cross", "t": "Same place as everybody who never got introduced, Pocket. The basement. And tonight the basement's playing the revue."}
+  ],
+  "outro": [
+    {"s": "narrator", "t": "The van points south. Tuesday has the ledger open on her knees to the address page, as if it might change its mind.", "bg": "road"},
+    {"s": "tuesday", "t": "Ruth, Memphis. Wendell, New Orleans. The Professor, overseas. That's a river and an ocean."},
+    {"s": "cross", "t": "River first. The Choir don't swim.", "mood": "laugh"},
+    {"s": "you", "t": "Down the river, then."},
+    {"s": "title", "t": "END OF SIDE A", "bg": "black"},
+    {"s": "narrator", "t": "Harlem made me. The Bronx played me twice at the same time. Philly dressed me up in strings. D.C. would not let me end.", "bg": "wave"},
+    {"s": "narrator", "t": "Detroit forgot to introduce me. Chicago put me on the floor and made me dance till morning. Every one of them remembered me. Not one of them remembered who."}
+  ],
+  "gigs": [
+    {
+      "id": "g07-revue-night",
+      "title": "Revue Night",
+      "venue": "detroit-fox",
+      "stamp": "120, nobody announced",
+      "blurb": "A revue with a house band that has backed every act for thirty years and never once been introduced.",
+      "vibe": {"label": "Motown-era soul and Detroit R&B", "genres": ["soul", "rnb", "pop", "funk"], "yearFrom": 1960, "yearTo": 1985, "keywords": ["motown"]},
+      "songs": 2,
+      "starsToPass": 6,
+      "challenge": {"type": "band", "value": 2, "text": "Introduce the band: play this set with at least 2 people.", "badge": "Introduce the Band"},
+      "rewards": ["ln-g07"],
+      "before": [
+        {"s": "narrator", "t": "The Motor City Grand. Gold leaf to the ceiling, a balcony that leans over the stage like it wants to hear better, and revue night: eight acts, one band.", "bg": "detroit-fox"},
+        {"s": "narrator", "t": "Act after act walks out to the lip of the stage in a new suit. Behind every one of them, in the same seats, in the same jackets: the Basement Saints."},
+        {"s": "velvet", "t": "Velvet Odom, master of ceremonies. Let me see my card. Next up... the Mt. Nebo Youth Choir. Beautiful. What hymn are we doing, children?", "mood": "warm", "bg": "backstage"},
+        {"s": "tuesday", "t": "It's a van. Somebody tell him it's a van.", "mood": "worried"},
+        {"s": "cross", "t": "Mr. Odom, the choir is the van. The band is the band."},
+        {"s": "velvet", "t": "Brother, I have introduced stranger things than a van.", "mood": "sly"},
+        {"s": "narrator", "t": "In the corner, Hollis Gaines is tuning between acts the way he has for longer than you have been alive. BASEMENT SAINTS on his jacket, in thread gone gold with age."},
+        {"s": "you", "t": "How long have you been the house band?"},
+        {"s": "hollis", "t": "Fifty years. Nobody ever asked our names.", "mood": "neutral"},
+        {"s": "you", "t": "Mr. Odom. Tonight, will you introduce the band? By name. All of them."},
+        {"s": "velvet", "t": "Introduce the band. Fifty years and nobody asked me that either.", "mood": "shock"},
+        {"s": "velvet", "t": "Tell you what, children. If that balcony stands up for you, I'll do it."},
+        {"s": "velvet", "t": "Ladies and gentlemen, the Mt. Nebo... I'm being told that is a van.", "mood": "laugh", "bg": "detroit-fox"},
+        {"s": "velvet", "t": "Ladies and gentlemen... {band}!", "mood": "hype"}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "The balcony stands. All of it. The old gold leaf seems to lean in.", "bg": "detroit-fox"},
+        {"s": "velvet", "t": "Well. A deal is a deal. Ladies and gentlemen, before you go home tonight... the band.", "mood": "proud"},
+        {"s": "velvet", "t": "On the drums, Mr. Raymond Dukes."},
+        {"s": "narrator", "t": "The balcony stands for him. Raymond Dukes stands up too, by accident, and sits back down like he got caught."},
+        {"s": "velvet", "t": "On the keys, Miss Sylvia Pruett. On the horns, the Barnes brothers, Cleophus and June. On guitar, Mr. Earl Witcher, who has never once been late."},
+        {"s": "narrator", "t": "The balcony does not sit down between names. It has decided not to."},
+        {"s": "velvet", "t": "And on bass, leading the Basement Saints for fifty years... Mr. Hollis Gaines.", "mood": "hype"},
+        {"s": "narrator", "t": "I have been announced on ten thousand records. Never once like that."},
+        {"s": "hollis", "t": "Fifty years. Fifty years, and it took a youth choir.", "mood": "laugh", "bg": "backstage"},
+        {"s": "you", "t": "We're looking for a bass player called Low. He kept a little book."},
+        {"s": "hollis", "t": "Low Castile. Lord. Gone a long time now. His daughter owns the Pontiac Ballroom. Plays his bass.", "mood": "sad"},
+        {"s": "hollis", "t": "Don't call it the bass in front of her. Call it his.", "mood": "stern"}
+      ],
+      "afterLose": [
+        {"s": "hollis", "t": "Basement's always open. Come on back down.", "mood": "warm", "bg": "detroit-fox"},
+        {"s": "narrator", "t": "Fifty years he's been waiting on a name. He can wait one more set. Run it back."}
+      ]
+    },
+    {
+      "id": "g08-left-hands-daughter",
+      "title": "His Left Hand's Daughter",
+      "venue": "pontiac-ballroom",
+      "stamp": "87, on Low's bass",
+      "blurb": "Ren Castile owns the room, plays her father's bass, and is not in the business of making strangers feel better.",
+      "vibe": {"label": "Funk, soul and Detroit grooves", "genres": ["funk", "soul", "rnb", "dance"], "yearFrom": 1968, "yearTo": 1995, "keywords": ["funk", "bass"]},
+      "songs": 3,
+      "starsToPass": 9,
+      "challenge": {"type": "fullCombo", "value": 1, "text": "Low never dropped a note in his life. Play one song with no misses.", "badge": "Left Hand's Daughter"},
+      "rewards": ["ln-g08", "k-ledger"],
+      "before": [
+        {"s": "narrator", "t": "The Pontiac Ballroom. A sprung wooden floor, a bar older than most of its customers, and one light over the stage that flickers like it's thinking it over.", "bg": "pontiac-ballroom"},
+        {"s": "narrator", "t": "Up a ladder, fixing that light: a woman in coveralls and a bandana, a ring of club keys on her belt, and a bass slung across her back."},
+        {"s": "ren", "t": "If you're the electrician, you're late. If you're not the electrician, you're in my light.", "mood": "stern"},
+        {"s": "tuesday", "t": "Ms. Castile? This is going to sound strange. We think your father played on a record in 1967."},
+        {"s": "ren", "t": "My father played on a lot of records. Most of them didn't say so."},
+        {"s": "ren", "t": "My father died owed. I'm not in the business of making strangers feel better about that.", "mood": "stern"},
+        {"s": "you", "t": "Hollis said to call it his."},
+        {"s": "ren", "t": "Hollis talks too much. He's right, though.", "mood": "sly"},
+        {"s": "ren", "t": "I'm not him. I'm his left hand's daughter."},
+        {"s": "narrator", "t": "She comes down the ladder, wipes her hands, and looks out the front window at the van. She reads the side of it. Slowly. Under her breath."},
+        {"s": "ren", "t": "Mt. Nebo Youth Choir.", "mood": "laugh"},
+        {"s": "narrator", "t": "Something happens to her face that she has clearly not authorized."},
+        {"s": "ren", "t": "Fine. You made me laugh, and that's rarer than an electrician who shows up. You get one night. The room decides the rest."},
+        {"s": "cross", "t": "Yes, ma'am.", "mood": "warm"}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "Ren wipes down his strings with a rag from her back pocket, slow, before she says a word. Then she goes into the office and comes back with something small.", "bg": "pontiac-ballroom"},
+        {"s": "ren", "t": "He wrote everything down. Every session, every studio, every dollar. Like if he wrote it, somebody would have to pay it.", "mood": "sad"},
+        {"s": "narrator", "t": "A pocket ledger, black oilcloth, the corners worn round. Tuesday has her gloves on before anybody asks."},
+        {"s": "tuesday", "t": "December thirty-first, sixty-seven. 'Lantern, back room. Watch Night. Fifteen dollars, plus plate.'"},
+        {"s": "tuesday", "t": "And under it: 'D. got paper. We got a plate.'", "mood": "worried"},
+        {"s": "you", "t": "What does that mean?"},
+        {"s": "ren", "t": "I've read that line my whole life. Never could make it say anything."},
+        {"s": "narrator", "t": "Somebody just turned the bass up in me."},
+        {"s": "ren", "t": "Take it. Bring it back with his name on something.", "mood": "stern"},
+        {"s": "tuesday", "t": "Ms. Castile, may I film the page and post it? Somebody out there might know what it means."},
+        {"s": "ren", "t": "You asked. Most people don't. Yes.", "mood": "warm"}
+      ],
+      "afterLose": [
+        {"s": "ren", "t": "He used to say the first set's for the band. Second set's for the room. Go again.", "mood": "neutral", "bg": "pontiac-ballroom"},
+        {"s": "narrator", "t": "She doesn't leave the light on for just anybody. Run it back."}
+      ]
+    },
+    {
+      "id": "g09-for-the-room",
+      "title": "For the Room Only",
+      "venue": "chicago-regal",
+      "stamp": "122, four on the floor",
+      "blurb": "Lantern's lawyers have written to the theater. Miss Tempo has a basket for your phones.",
+      "vibe": {"label": "House, steppers and Chicago soul", "genres": ["dance", "rnb", "soul", "gospel"], "yearFrom": 1975, "yearTo": 2000, "keywords": ["house", "chicago"]},
+      "songs": 3,
+      "starsToPass": 9,
+      "challenge": {"type": "stars", "value": 12, "text": "For the room only: earn 12 stars for the people who put their phones in the basket.", "badge": "No Phones, All Room"},
+      "rewards": ["ln-g09"],
+      "before": [
+        {"s": "tuesday", "t": "It's gone. The ledger video. It had people guessing all night, and at seven this morning: 'removed following a legal complaint.'", "mood": "sad", "bg": "van"},
+        {"s": "cross", "t": "Complaint from who?"},
+        {"s": "tuesday", "t": "Lantern Legacy's lawyers. On behalf of, quote, the rights holder.", "mood": "stern"},
+        {"s": "narrator", "t": "The South Side Regal. The manager meets you at the stage door holding a letter on cream paper with a gold lantern at the top. I am starting to recognize the stationery.", "bg": "chicago-regal"},
+        {"s": "narrator", "t": "It reminds the theater, very politely, of the risks of 'hosting the unauthorized exhibition of recordings'. The manager looks ready to cancel you, very politely."},
+        {"s": "tempo", "t": "Sugar, give me that.", "mood": "sly"},
+        {"s": "narrator", "t": "Miss Tempo. House DJ since the warehouse days. Silver sneakers, a towel over one shoulder, and a laundry basket on her hip."},
+        {"s": "tempo", "t": "Phones. All of them. In the basket. Yours too, sugar. Yours especially.", "mood": "stern"},
+        {"s": "tuesday", "t": "That's my whole archive."},
+        {"s": "tempo", "t": "Then you'll remember tonight the old way. With your feet.", "mood": "warm"},
+        {"s": "tempo", "t": "They can take a video down. They can't take a room down."},
+        {"s": "you", "t": "What if somebody films anyway?"},
+        {"s": "tempo", "t": "Then they'll be the only one in here not dancing, and everybody will know. Sugar, I've been running this floor since before the floor had a name.", "mood": "laugh"},
+        {"s": "narrator", "t": "By eight the basket is full and the floor is fuller. Nobody is filming. Everybody is here. Four on the floor. One, two, three, four."}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "Two in the morning, under the marquee. The bulbs are still warm. Miss Tempo hands back the phones one at a time, like a coat check.", "bg": "chicago-regal"},
+        {"s": "tuesday", "t": "Cousin. There's an address page in the back of the ledger. In his hand.", "mood": "shock"},
+        {"s": "tuesday", "t": "'Sister (Ruth) - Memphis, Beale, Saturdays.'"},
+        {"s": "tuesday", "t": "'Deacon (Wendell) - New Orleans, the brass band.'"},
+        {"s": "tuesday", "t": "'Professor (A.) - overseas, 1969.'"},
+        {"s": "you", "t": "Ruth. Wendell. A."},
+        {"s": "narrator", "t": "Three of the five who made me just got first names. Well. Two names and an initial. I am counting the initial."},
+        {"s": "tuesday", "t": "And much later in the book, in a different pen: '1984. Called Mr. Lark. Nothing.'", "mood": "sad"},
+        {"s": "narrator", "t": "Nobody says anything for a while. The bulbs tick as they cool."},
+        {"s": "cross", "t": "Memphis. New Orleans. That's straight down the river, Pocket."},
+        {"s": "cross", "t": "I got a cousin in Memphis.", "mood": "warm"},
+        {"s": "tuesday", "t": "Is there a city where you don't?", "mood": "laugh"}
+      ],
+      "afterLose": [
+        {"s": "tempo", "t": "Sugar, the floor's still here. Again.", "mood": "warm", "bg": "chicago-regal"},
+        {"s": "narrator", "t": "Nobody filmed that one. Lucky you. Run it back."}
+      ],
+      "afterChallenge": [
+        {"s": "narrator", "t": "Watch Night, 1967. Ten minutes past midnight. The church let out onto the steps, and it had started, lightly, to snow.", "bg": "tape"},
+        {"s": "narrator", "t": "The guitar player told Mother Clementine she had never heard that hymn sung that way, and she wanted to learn it before she forgot it."},
+        {"s": "narrator", "t": "Mother Clementine opened her hymnal to 211 and tore the page out, neatly, right there on the church steps. Nobody said one word to her about it."},
+        {"s": "narrator", "t": "In the margin, in her own pencil, years old already: 'sing it C.F.'s way'."},
+        {"s": "narrator", "t": "The bass player asked what the date was. Somebody told him it was a brand-new year, ten minutes old. He wrote it down anyway, in the little book."},
+        {"s": "narrator", "t": "The guitar player had no case. She carried her guitar wrapped in a pillowcase, and nobody asked where the pillowcase came from."},
+        {"s": "narrator", "t": "The organist said he knew a back door two blocks over, at Lantern Records, and that the man upstairs was throwing a party."},
+        {"s": "narrator", "t": "Five of them walked there through the snow. Not one of them knew they were on their way to make me. That's the best way to be made."}
+      ]
+    }
+  ]
+}
