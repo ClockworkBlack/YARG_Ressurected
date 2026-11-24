@@ -24,19 +24,70 @@ copies `overlay/` on top, builds the native libraries (`android/native/`), then 
 
 > Status: **experimental.** Expect the first CI runs to need fixes from the logs.
 
-## Gamepad (Guitar Hero 2 layout)
+## Gamepad (PS5 controller layout, others supported)
 
-YARG's default gamepad layout already matches Guitar Hero 2 on a DualShock:
+The game is set up for a **PS5 DualSense** (PS4 works the same) and uses the usual PlayStation
+buttons. Xbox, Switch and generic Android pads work too: pick yours in
+**Settings > General > Controller Layout**.
 
-| Guitar | Gamepad |
-|---|---|
-| Green / Red / Yellow / Blue | L2 / L1 / R1 / R2 (LT / LB / RB / RT) |
-| Orange | Cross / A |
-| Strum | D-pad Up / Down |
-| Star Power | Select / Back |
-| Whammy | Left stick left/right |
+### Menus
 
-When you add a controller to a profile, pick **Gamepad**. You can remap any button in the profile's binding menu.
+Any connected gamepad moves around the menus straight away, before it's in a profile.
+
+| Menu action | PS5 / PS4 (default) | Xbox / generic | Nintendo Switch | PlayStation, Japan style |
+|---|---|---|---|---|
+| Move | D-pad or left stick (hold to scroll) | same | same | same |
+| Confirm / select (green) | Cross | A | A (right) | Circle |
+| Back (red) | Circle | B | B (bottom) | Cross |
+| Yellow action (Play Show / Start Setlist) | Triangle | Y | Y | Triangle |
+| Blue action (Filters) | Square | X | X | Square |
+| More Options (orange) | L1 or R1 | LB or RB | L or R | L1 or R1 |
+| Start / pause | Options | Menu | + | Options |
+| Select ("go to the song that's playing" on the main menu) | Create | View | − | Create |
+
+While a gamepad is connected, the bar at the bottom of the screen names the button next to each
+action (e.g. "Back  Circle"). Turn this off with **Settings > General > Show Controller Button Names**.
+
+A gamepad in a profile uses that profile's menu buttons. They are set from the Controller Layout
+when you add the gamepad to the profile, so after changing the layout, remove the gamepad from
+its profile and add it again (or change the buttons in the profile's binding menu).
+
+### Playing a song
+
+When you add a gamepad to a profile, pick **Gamepad: PS5 / PS4 / Xbox / other**. Guitar and bass
+use the Guitar Hero 2 layout on a DualShock / DualSense:
+
+| Guitar | PS5 / PS4 | Xbox |
+|---|---|---|
+| Green / Red / Yellow / Blue | L2 / L1 / R1 / R2 | LT / LB / RB / RT |
+| Orange | Cross | A |
+| Strum | D-pad Up / Down | D-pad Up / Down |
+| Star Power | Create | View |
+| Whammy | Left stick left/right | Left stick left/right |
+| Pause | Options | Menu |
+
+Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pause menu the menu buttons above apply.
+Any button can be remapped in the profile's binding menu. For a guitar controller, pick
+**CRKD Guitar** or **Other guitar** instead of Gamepad.
+
+## Menu music: pick a startup song and a playlist
+
+The menus play songs from your library in the background. You choose what plays:
+
+- **A song on startup.** In the music library, highlight a song, open **More Options**
+  (orange / LB) and choose **Play On Startup**. It plays first every time the game starts, then
+  the menu music carries on as below. Choose **Don't Play On Startup** on the same song, or set
+  **Settings > Sound > Startup Song** to **None**, to turn it off.
+- **Which songs play after it.** **Settings > Sound > Menu Music**: *Whole library*, *Favorites*,
+  or any of your playlists. Or in the music library's **Playlists** view, highlight a playlist
+  (or Favorites), open **More Options** and choose **Use As Menu Music** (and **Stop Using As
+  Menu Music** to go back to the whole library). The music switches right away.
+- **Order.** **Settings > Sound > Shuffle Menu Music**: on plays them in random order, off plays
+  the playlist in its own order (and loops).
+- **Volume** stays **Settings > Sound > Music Player Volume** (0 turns menu music off).
+
+If the playlist is empty, deleted, or none of its songs are in the library, the whole library
+plays instead.
 
 ## Phone remote: friends' phones as guitars and mics
 
@@ -161,8 +212,9 @@ download the `.apk` and install it.
 ## Using it on the phone
 1. Open the app and allow **All files access** when Android asks.
 2. Put songs (Clone Hero / YARG / Rock Band format folders) in `Internal storage/YARG/songs`.
-3. In YARG: **Settings → Songs → Scan**.
-4. Add your controller to a profile and pick **Gamepad** (or CRKD Guitar). Touch buttons: Profiles → Add Device → Virtual.
+   Songs from the [YARG Converter](converter/README.md#adding-a-converted-song-to-yarg) are put there for you.
+3. In YARG: **Settings → Songs → Scan Songs** (or in the music library: **More Options → Scan Songs**).
+4. Add your controller to a profile and pick **Gamepad: PS5 / PS4 / Xbox / other** (or CRKD Guitar). Touch buttons: Profiles → Add Device → Virtual.
 
 Only play songs you own (for example, charts ripped from your own Rock Band DLC) or free/official setlists.
 

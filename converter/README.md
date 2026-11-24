@@ -28,7 +28,53 @@ the one-time download of the instrument-separation model.
    guitar chart from the guitar alone, and adds a bass chart. Expect it to take a few minutes per
    song (not yet timed on a phone), so keep the screen open.
 5. **Convert and add to YARG**. The first time, Android asks for "All files access" so the app can write into the YARG folder.
-6. In YARG: **Settings > Songs > Scan**.
+6. Add the song to the game (next section).
+
+## Adding a converted song to YARG
+
+The converter already puts the song where YARG looks for songs, so there is nothing to copy or
+unzip. YARG just has to scan for it once.
+
+**Once per install of YARG Resurrected**
+
+1. Open YARG and allow **All files access** when Android asks (or later: Android **Settings >
+   Apps > YARG > Permissions > Files and media > Allow management of all files**). Without it the
+   game can't see `Internal storage/YARG/songs`, where the converter writes.
+2. Check the folder is in the game's list: **Settings > Songs**. `/storage/emulated/0/YARG/songs`
+   should be listed under song folders (YARG Resurrected adds it by itself). If it isn't, press
+   **Add Folder** and pick `Internal storage > YARG > songs`. Don't add the `Converted` folder on
+   its own: subfolders are scanned anyway, and adding it twice shows every song twice.
+
+**After every conversion**
+
+1. Wait for the converter's **Done** message. It shows where the song was saved:
+   `Internal storage/YARG/songs/Converted/<Artist - Title>/`.
+2. Open YARG (if it was already open, it won't notice the new song by itself).
+3. Scan, either way:
+   - **Settings > Songs > Scan Songs**, or
+   - in the music library (**Quickplay**), open **More Options** (orange button / LB on a
+     gamepad) and choose **Scan Songs**.
+4. Find the song: in the music library press **Search** and type the title, or sort by
+   **Charter** and look under **YARG Converter (auto)**, where all converted songs are grouped.
+5. Pick a profile and difficulty and play. Guitar and bass charts are in the song on
+   Easy / Medium / Hard / Expert; vocals only if lyrics were added.
+
+**Doing it from a computer, or moving songs to another phone**
+
+Copy the whole song folder (the one with `notes.chart`, `song.ini` and the audio in it) into
+`Internal storage/YARG/songs/` on the phone, keeping the folder together, then scan as above.
+A folder with only some of the files won't show up.
+
+**If the song doesn't show up**
+
+- Scan again after the converter says **Done**; a scan that ran before then won't have it.
+- Check the folder in a file manager: it must contain `notes.chart`, `song.ini` and a `song.*`
+  audio file. If it is empty, the conversion was cancelled: convert again.
+- If a scan ends with a **"Some Songs Could Not Be Scanned"** message, it lists the songs it
+  couldn't read and why.
+- If YARG lost All files access (Android can take it away after an update or reinstall), give it
+  back as in step 1 above and scan again.
+- Converting the same song again replaces the old folder; scan again to see the new chart.
 
 ## How the charts are made
 

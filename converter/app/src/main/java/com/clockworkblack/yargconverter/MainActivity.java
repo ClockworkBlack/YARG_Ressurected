@@ -868,7 +868,11 @@ public final class MainActivity extends Activity {
                 .append(result.chart.repeatedMeasures).append(" measures that repeat\n");
         sb.append(result.lyricLines > 0 ? "Lyrics: " + result.lyricLines + " lines\n" : "Lyrics: none\n");
         if (!copyAsIs) sb.append("Audio saved as WAV so YARG can play it.\n");
-        sb.append("\nIn YARG: Settings > Songs > Scan, then look for the song in your library.");
+        sb.append("\nTo play it in YARG:\n")
+                .append("1. Open YARG (allow All files access if it asks).\n")
+                .append("2. Settings > Songs > Scan Songs (or in the music library: More Options > Scan Songs).\n")
+                .append("3. In the music library, Search for \"").append(meta.titleOrDefault())
+                .append("\", or sort by Charter: this one is under \"").append(meta.charter).append("\".");
         return sb.toString();
     }
 
