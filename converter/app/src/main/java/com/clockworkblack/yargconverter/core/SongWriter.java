@@ -25,6 +25,7 @@ public final class SongWriter {
         public double bpm;
         public double duration;
         public int lyricLines;
+        public int beatsPerMeasure = 4;
         public int guitarTier;
         public long previewMs;
 
@@ -35,13 +36,25 @@ public final class SongWriter {
 
     /** Runs the whole analysis on already-measured audio. */
     public static Result analyze(Features f, List<Lrc.Line> lyrics) {
+        return analyze(f, lyrics, null);
+    }
+
+    public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options) {
         Result r = new Result();
         BeatTracker.Result beats = BeatTracker.track(f);
         r.bpm = beats.bpm;
         r.duration = f.duration;
-        r.tempo = TempoMap.fromBeats(beats.beats, beats.firstDownbeat);
+        r.beatsPerMeasure = beats.beatsPerMeasure;
         List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(f);
-        r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm);
+        double[] times = new double[onsets.size()];
+        float[] strengths = new float[onsets.size()];
+        for (int i = 0; i < times.length; i++) {
+            times[i] = onsets.get(i).time;
+            strengths[i] = onsets.get(i).strength;
+        }
+        double[] aligned = BeatTracker.alignToOnsets(beats.beats, times, strengths);
+        r.tempo = TempoMap.fromBeats(aligned, beats.firstDownbeat, beats.beatsPerMeasure);
+        r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             r.lyrics = LyricsCharter.build(lyrics, r.tempo, f.duration);
             for (LyricsCharter.Event e : r.lyrics) if (e.text.equals("phrase_start")) r.lyricLines++;
@@ -110,25 +123,19 @@ public final class SongWriter {
         w.write("}\n");
 
         w.write("[SyncTrack]\n{\n");
-        if (map.pickupBeats > 0) {
-            w.write("  0 = TS " + map.pickupBeats + "\n");
-        } else {
-            w.write("  0 = TS 4\n");
-        }
-        boolean wroteFour = map.pickupBeats == 0;
-        long fourTick = (long) map.pickupBeats * TempoMap.RESOLUTION;
+        // A short first measure holds any beats before the first real "one".
+        int full = map.beatsPerMeasure;
+        long fullTick = map.origin();
+        w.write("  0 = TS " + (map.pickupBeats > 0 ? map.pickupBeats : full) + "\n");
+        boolean wroteFull = map.pickupBeats == 0;
         for (int i = 0; i < map.tick.length; i++) {
-            if (!wroteFour && map.tick[i] > fourTick) {
-                w.write("  " + fourTick + " = TS 4\n");
-                wroteFour = true;
-            }
-            if (!wroteFour && map.tick[i] == fourTick) {
-                w.write("  " + fourTick + " = TS 4\n");
-                wroteFour = true;
+            if (!wroteFull && map.tick[i] >= fullTick) {
+                w.write("  " + fullTick + " = TS " + full + "\n");
+                wroteFull = true;
             }
             w.write("  " + map.tick[i] + " = B " + map.milliBpm[i] + "\n");
         }
-        if (!wroteFour) w.write("  " + fourTick + " = TS 4\n");
+        if (!wroteFull) w.write("  " + fullTick + " = TS " + full + "\n");
         w.write("}\n");
 
         // Global events: practice sections every 16 measures, plus lyrics. At the same tick a

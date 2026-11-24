@@ -13,22 +13,27 @@ public final class TempoMap {
     public final long[] milliBpm;
     /** Time in seconds of each marker, as the game will compute it. */
     public final double[] time;
-    /** Number of beats before the first full measure (0-3). */
+    /** Number of beats before the first full measure. */
     public final int pickupBeats;
+    /** Beats in a measure: 4, or 3 for waltz-time songs. */
+    public final int beatsPerMeasure;
 
-    private TempoMap(long[] tick, long[] milliBpm, double[] time, int pickupBeats) {
+    private TempoMap(long[] tick, long[] milliBpm, double[] time, int pickupBeats, int beatsPerMeasure) {
         this.tick = tick;
         this.milliBpm = milliBpm;
         this.time = time;
         this.pickupBeats = pickupBeats;
+        this.beatsPerMeasure = beatsPerMeasure;
     }
 
     /**
      * @param beats beat times in seconds, beats[0] == 0
-     * @param firstDownbeat index of the first beat that starts a measure (0-3)
+     * @param firstDownbeat index of the first beat that starts a measure
+     * @param beatsPerMeasure 3 or 4
      */
-    public static TempoMap fromBeats(double[] beats, int firstDownbeat) {
-        final double tolerance = 0.022;
+    public static TempoMap fromBeats(double[] rawBeats, int firstDownbeat, int beatsPerMeasure) {
+        final double tolerance = 0.018;
+        double[] beats = smooth(rawBeats);
         List<Integer> bounds = new ArrayList<>();
         bounds.add(0);
         int s = 0;
@@ -57,7 +62,38 @@ public final class TempoMap {
             time[i] = chartTime;
             chartTime += (b - a) * 60000.0 / m;
         }
-        return new TempoMap(tick, milli, time, ((firstDownbeat % 4) + 4) % 4);
+        return new TempoMap(tick, milli, time, Math.floorMod(firstDownbeat, beatsPerMeasure), beatsPerMeasure);
+    }
+
+    /**
+     * Irons out frame-to-frame jitter: each beat is moved onto the straight line through its
+     * three neighbours on either side. Beat 0 (the lead-in at time zero) is left alone.
+     */
+    private static double[] smooth(double[] beats) {
+        int n = beats.length;
+        double[] out = beats.clone();
+        for (int i = 1; i < n; i++) {
+            int a = Math.max(1, i - 3);
+            int b = Math.min(n - 1, i + 3);
+            int count = b - a + 1;
+            if (count < 3) continue;
+            double mx = 0, my = 0;
+            for (int k = a; k <= b; k++) {
+                mx += k;
+                my += beats[k];
+            }
+            mx /= count;
+            my /= count;
+            double sxy = 0, sxx = 0;
+            for (int k = a; k <= b; k++) {
+                sxy += (k - mx) * (beats[k] - my);
+                sxx += (k - mx) * (k - mx);
+            }
+            out[i] = my + (sxx > 0 ? sxy / sxx : 0) * (i - mx);
+        }
+        // Keep time moving forwards whatever the input looked like.
+        for (int i = 1; i < n; i++) if (out[i] <= out[i - 1] + 0.02) out[i] = out[i - 1] + 0.02;
+        return out;
     }
 
     private static boolean fits(double[] beats, int s, int e, double tol) {
@@ -99,9 +135,24 @@ public final class TempoMap {
         return Math.max(0, Math.round(timeToTickExact(Math.max(0, t)) / grid) * grid);
     }
 
+    /** Ticks in one measure. */
+    public long measureTicks() {
+        return (long) beatsPerMeasure * RESOLUTION;
+    }
+
+    /** Tick where the first full measure starts. */
+    public long origin() {
+        return (long) pickupBeats * RESOLUTION;
+    }
+
     /** Tick where measure {@code index} starts (measure 0 is the first full measure). */
     public long measureStart(int index) {
-        return (long) pickupBeats * RESOLUTION + (long) index * 4 * RESOLUTION;
+        return origin() + index * measureTicks();
+    }
+
+    /** Measure a tick falls in; -1 for the pickup before the first full measure. */
+    public int measureOf(long tk) {
+        return (int) Math.floorDiv(tk - origin(), measureTicks());
     }
 
     public boolean isBeat(long tk) {
@@ -109,7 +160,7 @@ public final class TempoMap {
     }
 
     public boolean isDownbeat(long tk) {
-        long rel = tk - (long) pickupBeats * RESOLUTION;
-        return rel >= 0 && rel % (4L * RESOLUTION) == 0;
+        long rel = tk - origin();
+        return rel >= 0 && rel % measureTicks() == 0;
     }
 }

@@ -26,10 +26,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Check the chart engine (tempo, beat grid, chart files, lyrics)
+      - name: Check the chart engine (beats, frets, repeats, chords, chart files, lyrics)
         working-directory: converter/core-test
         run: |
-          javac -d out $(find ../app/src/main/java -path '*core*' -name '*.java') CoreTest.java
+          javac -d out $(find ../app/src/main/java -path '*core*' -name '*.java') *.java
           java -cp out CoreTest
 
       - uses: gradle/actions/setup-gradle@v4

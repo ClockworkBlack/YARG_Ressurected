@@ -3,21 +3,33 @@ package com.clockworkblack.yargconverter.core;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Finds the tempo and the beat positions of a song (dynamic-programming beat tracker). */
+/**
+ * Finds the tempo, the beat positions and the measure layout of a song.
+ *
+ * 1. Overall tempo from how the rhythm repeats.
+ * 2. Local tempo every two seconds, so songs that speed up or slow down (most music played
+ *    without a click track) stay locked.
+ * 3. A dynamic-programming pass picks the chain of beats that best sits on strong onsets.
+ * 4. Bass hits and chord changes say which beat is the "one", and whether measures have
+ *    three beats or four.
+ */
 public final class BeatTracker {
     private BeatTracker() {}
 
     public static final class Result {
         /** Beat times in seconds; the first is always 0 and the last is at or past the end of the song. */
         public final double[] beats;
-        /** Index (0-3) of the first beat that starts a measure. */
+        /** Index of the first beat that starts a measure. */
         public final int firstDownbeat;
+        /** Beats per measure: 3 or 4. */
+        public final int beatsPerMeasure;
         /** Overall tempo in beats per minute. */
         public final double bpm;
 
-        Result(double[] beats, int firstDownbeat, double bpm) {
+        Result(double[] beats, int firstDownbeat, int beatsPerMeasure, double bpm) {
             this.beats = beats;
             this.firstDownbeat = firstDownbeat;
+            this.beatsPerMeasure = beatsPerMeasure;
             this.bpm = bpm;
         }
     }
@@ -25,93 +37,130 @@ public final class BeatTracker {
     public static Result track(Features f) {
         int n = f.frames();
         double fps = f.fps;
-        if (n < fps * 2) {
-            return fallback(f.duration);
-        }
+        if (n < fps * 2) return fallback(f.duration);
+
         // Bass counts extra: kick drum and bass guitar are the most reliable guide to the beat.
         float[] mixed = new float[n];
         for (int i = 0; i < n; i++) mixed[i] = f.flux[i] + 1.5f * f.lowFlux[i];
         float[] env = normalize(mixed, (int) Math.round(fps * 0.75));
 
-        double period = estimatePeriod(env, fps);
-        if (period <= 0) return fallback(f.duration);
+        double activity = 0;
+        for (float v : env) activity += v;
+        // Silence or a steady drone has no beat to find.
+        if (activity < 1e-3) return fallback(f.duration);
+        double global = estimatePeriod(env, fps);
+        if (global <= 0) return fallback(f.duration);
+        double[] period = localPeriods(env, fps, global);
 
-        // Dynamic programming: best chain of beats that sit on strong onsets and stay near the period.
-        double tightness = 100.0;
+        // Dynamic programming: best chain of beats that sit on strong onsets and stay near the
+        // local beat length.
+        final double tightness = 100.0;
         double[] cum = new double[n];
         int[] back = new int[n];
-        int lo = (int) Math.round(period * 2);
-        int hi = (int) Math.max(1, Math.round(period / 2));
         for (int t = 0; t < n; t++) {
+            double p = period[t];
+            int lo = (int) Math.round(p * 2);
+            int hi = (int) Math.max(1, Math.round(p / 2));
             double best = 0;
             int bestPrev = -1;
-            for (int p = Math.max(0, t - lo); p <= t - hi; p++) {
-                double l = Math.log((t - p) / period);
-                double s = cum[p] - tightness * l * l;
+            for (int q = Math.max(0, t - lo); q <= t - hi; q++) {
+                double l = Math.log((t - q) / p);
+                double s = cum[q] - tightness * l * l;
                 if (s > best) {
                     best = s;
-                    bestPrev = p;
+                    bestPrev = q;
                 }
             }
             cum[t] = env[t] + best;
             back[t] = bestPrev;
         }
         int last = n - 1;
-        for (int t = Math.max(0, n - (int) Math.round(period)); t < n; t++) {
+        for (int t = Math.max(0, n - (int) Math.round(period[n - 1])); t < n; t++) {
             if (cum[t] > cum[last]) last = t;
         }
-        List<Integer> chain = new ArrayList<>();
-        for (int t = last; t >= 0; t = back[t]) chain.add(t);
-        int count = chain.size();
+        List<Integer> reversed = new ArrayList<>();
+        for (int t = last; t >= 0; t = back[t]) reversed.add(t);
+        int count = reversed.size();
         if (count < 4) return fallback(f.duration);
-
+        int[] chain = new int[count];
         double[] raw = new double[count];
-        for (int i = 0; i < count; i++) raw[i] = f.timeOf(refine(env, chain.get(count - 1 - i)));
-
-        // Which of every four beats is the "one"? The kick/bass usually lands hardest there.
-        double[] phase = new double[4];
         for (int i = 0; i < count; i++) {
-            int fr = chain.get(count - 1 - i);
-            float m = 0;
-            for (int k = Math.max(0, fr - 2); k <= Math.min(n - 1, fr + 2); k++) {
-                m = Math.max(m, f.lowFlux[k] + 0.25f * f.flux[k]);
-            }
-            phase[i % 4] += m;
+            chain[i] = reversed.get(count - 1 - i);
+            raw[i] = f.timeOf(refine(env, chain[i]));
         }
-        int down = 0;
-        for (int i = 1; i < 4; i++) if (phase[i] > phase[down]) down = i;
+
+        int[] meter = findMeter(f, chain, period);
+        int beatsPerMeasure = meter[0];
+        int down = meter[1];
 
         // Extend the grid back to the start and forward to the end of the song.
-        double secPerBeat = period / fps;
+        double firstStep = period[chain[0]] / fps;
+        double lastStep = period[chain[count - 1]] / fps;
         List<Double> beats = new ArrayList<>();
-        double t0 = raw[0];
         int before = 0;
-        while (t0 - secPerBeat * (before + 1) >= 0) before++;
-        for (int i = before; i >= 1; i--) beats.add(t0 - secPerBeat * i);
+        while (raw[0] - firstStep * (before + 1) >= 0) before++;
+        for (int i = before; i >= 1; i--) beats.add(raw[0] - firstStep * i);
         for (double b : raw) beats.add(b);
-        while (beats.get(beats.size() - 1) < f.duration) beats.add(beats.get(beats.size() - 1) + secPerBeat);
-        down = ((down + before) % 4 + 4) % 4;
+        while (beats.get(beats.size() - 1) < f.duration) beats.add(beats.get(beats.size() - 1) + lastStep);
+        down = Math.floorMod(down + before, beatsPerMeasure);
 
         // Chart time starts at 0, so a beat has to sit there. If the music's first beat comes a
         // little later, a short lead-in beat is added in front of it (charters sync songs the
         // same way, with a first tempo marker that only exists to line things up).
-        double firstBeat = beats.get(0);
-        if (firstBeat < 0.03) {
+        if (beats.get(0) < 0.03) {
             beats.set(0, 0.0);
         } else {
             beats.add(0, 0.0);
-            down = (down + 1) % 4;
+            down = (down + 1) % beatsPerMeasure;
         }
         double[] out = new double[beats.size()];
         for (int i = 0; i < out.length; i++) out[i] = beats.get(i);
-        return new Result(out, down, 60.0 / secPerBeat);
+        return new Result(out, down, beatsPerMeasure, 60.0 * fps / global);
+    }
+
+    /**
+     * Nudges each beat onto the strongest note that starts within a few hundredths of a second
+     * of it. Note starts are timed more exactly than the beat tracker's own guess, so this is
+     * what makes notes in the game line up with what is heard. Beats with no note nearby take
+     * the average nudge of their neighbours.
+     */
+    public static double[] alignToOnsets(double[] beats, double[] onsetTimes, float[] onsetStrengths) {
+        int n = beats.length;
+        double[] shift = new double[n];
+        boolean[] known = new boolean[n];
+        int at = 0;
+        for (int i = 1; i < n; i++) {
+            while (at < onsetTimes.length && onsetTimes[at] < beats[i] - 0.04) at++;
+            int best = -1;
+            for (int k = at; k < onsetTimes.length && onsetTimes[k] <= beats[i] + 0.04; k++) {
+                if (best < 0 || onsetStrengths[k] > onsetStrengths[best]) best = k;
+            }
+            if (best >= 0) {
+                shift[i] = onsetTimes[best] - beats[i];
+                known[i] = true;
+            }
+        }
+        double[] out = beats.clone();
+        for (int i = 1; i < n; i++) {
+            double sum = 0;
+            int count = 0;
+            for (int k = Math.max(1, i - 4); k <= Math.min(n - 1, i + 4); k++) {
+                if (known[k]) {
+                    sum += shift[k];
+                    count++;
+                }
+            }
+            if (known[i]) out[i] = beats[i] + 0.5 * shift[i] + 0.5 * sum / count;
+            else if (count > 0) out[i] = beats[i] + sum / count;
+        }
+        return out;
     }
 
     private static Result fallback(double duration) {
         int count = (int) Math.ceil(Math.max(1.0, duration) / 0.5) + 2;
         double[] beats = new double[count];
         for (int i = 0; i < count; i++) beats[i] = i * 0.5;
-        return new Result(beats, 0, 120.0);
+        return new Result(beats, 0, 4, 120.0);
     }
 
     /** Removes the slow-moving average and scales to unit spread, keeping only the peaks. */
@@ -193,7 +242,161 @@ public final class BeatTracker {
         return m;
     }
 
-    /** Sub-frame position of a peak near frame t. */
+    /**
+     * Beat length for every frame. The song is examined in overlapping 8-second windows; in
+     * each, candidate tempos within about 20% of the overall tempo are scored by how well the
+     * rhythm repeats at that spacing, and the smoothest high-scoring path through the windows wins.
+     */
+    private static double[] localPeriods(float[] env, double fps, double global) {
+        int n = env.length;
+        double[] out = new double[n];
+        java.util.Arrays.fill(out, global);
+        int win = (int) Math.round(8 * fps);
+        int step = (int) Math.round(2 * fps);
+        if (n < win * 2) return out;
+        final int states = 41;
+        double[] ratio = new double[states];
+        for (int s = 0; s < states; s++) ratio[s] = Math.exp(Math.log(0.8) + s * (Math.log(1.25) - Math.log(0.8)) / (states - 1));
+        int windows = (n - win) / step + 1;
+        int maxLag = Math.min(win - 2, (int) Math.ceil(global * 1.25 * 4) + 2);
+        double[][] score = new double[windows][states];
+        double[] ac = new double[maxLag + 2];
+        for (int j = 0; j < windows; j++) {
+            int start = j * step;
+            double zero = 0;
+            for (int i = start; i < start + win; i++) zero += env[i] * env[i];
+            zero /= win;
+            if (zero < 1e-6) continue;
+            for (int lag = 1; lag <= maxLag + 1 && lag < win; lag++) {
+                double s = 0;
+                int m = win - lag;
+                for (int i = start; i < start + m; i++) s += env[i] * env[i + lag];
+                ac[lag] = s / m / zero;
+            }
+            for (int s = 0; s < states; s++) {
+                double sum = 0;
+                for (int k = 1; k <= 4; k++) {
+                    double pos = k * global * ratio[s];
+                    int a = (int) Math.floor(pos);
+                    if (a < 1 || a + 1 > maxLag + 1 || a + 1 >= win) continue;
+                    double fr = pos - a;
+                    sum += ac[a] * (1 - fr) + ac[a + 1] * fr;
+                }
+                score[j][s] = sum;
+            }
+        }
+        // Viterbi: tempo may change between windows, but each step of change has a price.
+        final double stepCost = 0.05;
+        double[][] best = new double[windows][states];
+        int[][] from = new int[windows][states];
+        int mid = states / 2;
+        for (int s = 0; s < states; s++) best[0][s] = score[0][s] - 0.01 * Math.abs(s - mid);
+        for (int j = 1; j < windows; j++) {
+            for (int s = 0; s < states; s++) {
+                double b = -1e18;
+                int arg = s;
+                for (int q = Math.max(0, s - 8); q <= Math.min(states - 1, s + 8); q++) {
+                    double v = best[j - 1][q] - stepCost * Math.abs(s - q);
+                    if (v > b) {
+                        b = v;
+                        arg = q;
+                    }
+                }
+                best[j][s] = b + score[j][s] - 0.01 * Math.abs(s - mid);
+                from[j][s] = arg;
+            }
+        }
+        int[] path = new int[windows];
+        int end = 0;
+        for (int s = 1; s < states; s++) if (best[windows - 1][s] > best[windows - 1][end]) end = s;
+        path[windows - 1] = end;
+        for (int j = windows - 1; j > 0; j--) path[j - 1] = from[j][path[j]];
+
+        for (int i = 0; i < n; i++) {
+            double pos = (i - win / 2.0) / step;
+            int a = (int) Math.floor(pos);
+            double fr = pos - a;
+            int ja = Math.max(0, Math.min(windows - 1, a));
+            int jb = Math.max(0, Math.min(windows - 1, a + 1));
+            out[i] = global * (ratio[path[ja]] * (1 - fr) + ratio[path[jb]] * fr);
+        }
+        return out;
+    }
+
+    /**
+     * Decides how many beats make a measure and which beat is the first of a measure.
+     * Measures usually begin with a bass hit and a change of chord.
+     *
+     * @return {beats per measure, index of the first downbeat}
+     */
+    private static int[] findMeter(Features f, int[] chain, double[] period) {
+        int count = chain.length;
+        int n = f.frames();
+        double[] low = new double[count];
+        double[] hit = new double[count];
+        double[] change = new double[count];
+        float[] prev = null;
+        for (int i = 0; i < count; i++) {
+            int fr = chain[i];
+            float l = 0, h = 0;
+            for (int k = Math.max(0, fr - 2); k <= Math.min(n - 1, fr + 2); k++) {
+                l = Math.max(l, f.lowFlux[k]);
+                h = Math.max(h, f.flux[k]);
+            }
+            low[i] = l;
+            hit[i] = h;
+            int next = i + 1 < count ? chain[i + 1] : (int) Math.min(n, fr + Math.round(period[fr]));
+            float[] c = f.chromaBetween(fr + 1, next);
+            change[i] = prev == null ? 0 : 1 - Features.cosine(c, prev);
+            prev = c;
+        }
+        zscore(low);
+        zscore(hit);
+        zscore(change);
+        double[] feat = new double[count];
+        for (int i = 0; i < count; i++) feat[i] = low[i] + change[i] + 0.3 * hit[i];
+
+        double best4 = -1e9, best3 = -1e9;
+        int phase4 = 0, phase3 = 0;
+        for (int m = 3; m <= 4; m++) {
+            for (int p = 0; p < m; p++) {
+                double on = 0, off = 0;
+                int nOn = 0, nOff = 0;
+                for (int i = 0; i < count; i++) {
+                    if (i % m == p) {
+                        on += feat[i];
+                        nOn++;
+                    } else {
+                        off += feat[i];
+                        nOff++;
+                    }
+                }
+                double s = (nOn > 0 ? on / nOn : 0) - (nOff > 0 ? off / nOff : 0);
+                if (m == 4 && s > best4) {
+                    best4 = s;
+                    phase4 = p;
+                } else if (m == 3 && s > best3) {
+                    best3 = s;
+                    phase3 = p;
+                }
+            }
+        }
+        // Four is by far the most common, so three has to win clearly.
+        if (count >= 24 && best3 > best4 * 1.3 + 0.2) return new int[] {3, phase3};
+        return new int[] {4, phase4};
+    }
+
+    private static void zscore(double[] x) {
+        double mean = 0;
+        for (double v : x) mean += v;
+        mean /= Math.max(1, x.length);
+        double var = 0;
+        for (double v : x) var += (v - mean) * (v - mean);
+        double std = Math.sqrt(var / Math.max(1, x.length));
+        for (int i = 0; i < x.length; i++) x[i] = std > 1e-9 ? (x[i] - mean) / std : 0;
+    }
+
+    /** Sub-frame position of a beat near frame t. */
     private static double refine(float[] env, int t) {
         if (t <= 0 || t >= env.length - 1) return t;
         double a = env[t - 1], b = env[t], c = env[t + 1];

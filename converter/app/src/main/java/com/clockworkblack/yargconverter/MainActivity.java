@@ -25,6 +25,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -67,6 +69,8 @@ public final class MainActivity extends Activity {
     private TextView lyricsStatus, log;
     private Button pickButton, findButton, lrcButton, tapButton, convertButton;
     private ProgressBar progress;
+    private RadioGroup densityGroup;
+    private static final int DENSITY_FEWER = 1, DENSITY_STANDARD = 2, DENSITY_MORE = 3;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -185,6 +189,21 @@ public final class MainActivity extends Activity {
         root.addView(lyricsStatus);
 
         root.addView(section("3. Convert"));
+        TextView densityLabel = new TextView(this);
+        densityLabel.setText("How many notes");
+        root.addView(densityLabel);
+        densityGroup = new RadioGroup(this);
+        densityGroup.setOrientation(RadioGroup.HORIZONTAL);
+        String[] names = {"Fewer", "Standard", "More"};
+        int[] ids = {DENSITY_FEWER, DENSITY_STANDARD, DENSITY_MORE};
+        for (int i = 0; i < names.length; i++) {
+            RadioButton rb = new RadioButton(this);
+            rb.setId(ids[i]);
+            rb.setText(names[i]);
+            densityGroup.addView(rb, new RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        densityGroup.check(DENSITY_STANDARD);
+        root.addView(densityGroup, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         convertButton = button("Convert and add to YARG", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -565,6 +584,10 @@ public final class MainActivity extends Activity {
         meta.genre = genreBox.getText().toString();
         final Uri uri = audioUri;
         final String name = audioName;
+        final GuitarCharter.Options options = new GuitarCharter.Options();
+        int choice = densityGroup.getCheckedRadioButtonId();
+        // "Fewer" keeps only the stronger sounds; "More" lets weaker ones through.
+        options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
 
         setBusy(true);
         progress.setIndeterminate(false);
@@ -578,7 +601,7 @@ public final class MainActivity extends Activity {
                 String summary;
                 boolean ok = false;
                 try {
-                    summary = runConversion(uri, name, meta, lyrics, lrcText);
+                    summary = runConversion(uri, name, meta, lyrics, lrcText, options);
                     ok = true;
                 } catch (IOException e) {
                     summary = "Conversion failed: " + e.getMessage();
@@ -609,7 +632,7 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText) throws IOException {
+    private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options) throws IOException {
         File songs = new File(new File(Environment.getExternalStorageDirectory(), "YARG"), "songs");
         File dir = new File(new File(songs, SUBFOLDER), meta.folderName());
         if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -645,7 +668,10 @@ public final class MainActivity extends Activity {
         if (features.duration < 5) throw new IOException("The audio is too short to chart.");
 
         status("Finding the beat and writing the charts…");
-        SongWriter.Result result = SongWriter.analyze(features, lyrics);
+        SongWriter.Result result = SongWriter.analyze(features, lyrics, options);
+        if (result.noteCount(GuitarCharter.EXPERT) == 0) {
+            throw new IOException("No notes could be found in this audio. Is it silent, or speech only?");
+        }
         SongWriter.writeFolder(dir, meta, result, audioFile);
 
         if (copyAsIs) {
@@ -673,10 +699,12 @@ public final class MainActivity extends Activity {
         StringBuilder sb = new StringBuilder();
         sb.append("Done. \"").append(meta.titleOrDefault()).append("\" is in\nInternal storage/YARG/songs/")
                 .append(SUBFOLDER).append('/').append(dir.getName()).append("\n\n");
-        sb.append(String.format(Locale.US, "Tempo: about %.0f BPM\n", result.bpm));
+        sb.append(String.format(Locale.US, "Tempo: about %.0f BPM, %d beats to the measure\n", result.bpm, result.beatsPerMeasure));
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 result.noteCount(GuitarCharter.EASY), result.noteCount(GuitarCharter.MEDIUM),
                 result.noteCount(GuitarCharter.HARD), result.noteCount(GuitarCharter.EXPERT)));
+        sb.append("Recognised ").append(result.chart.soundGroups).append(" different notes and chords, and ")
+                .append(result.chart.repeatedMeasures).append(" measures that repeat\n");
         sb.append(result.lyricLines > 0 ? "Lyrics: " + result.lyricLines + " lines\n" : "Lyrics: none\n");
         if (!copyAsIs) sb.append("Audio saved as WAV so YARG can play it.\n");
         sb.append("\nIn YARG: Settings > Songs > Scan, then look for the song in your library.");
