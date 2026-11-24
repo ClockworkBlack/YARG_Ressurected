@@ -92,7 +92,7 @@
         {"s": "narrator", "t": "Here I run at seventy and at one-forty at the same time. Atlanta likes to have it both ways. So do I."},
         {"s": "cross", "t": "I got a cousin in Atlanta. Sells wings out of an old hearse. Says business is dead, but it's steady.", "mood": "laugh"},
         {"s": "decibel", "t": "Y'all are the van! The roll call van! Oh no. Oh, I owe somebody money.", "mood": "hype"},
-        {"s": "narrator", "t": "Decibel is twenty-two, in a bucket hat, with a laptop open on an ironing board, which she says is the best stand money can't buy."},
+        {"s": "narrator", "t": "Decibel is twenty-two, in a sun visor, with a laptop open on an ironing board, which she says is the best stand money can't buy."},
         {"s": "decibel", "t": "Okay. So. I have flipped that break forty times. Chopped it, pitched it, put it under every hi-hat in this zip code."},
         {"s": "decibel", "t": "And then the roll call comes up on my phone. There's a grandmother inside the sample? I flipped it forty times and never once asked who's in it.", "mood": "shock"},
         {"s": "decibel", "t": "It's like borrowing somebody's car for six years and finding their baby seat in the back."},
@@ -149,7 +149,7 @@
         {"s": "narrator", "t": "Miami. The sand still warm at nine at night, a sound system as tall as a lifeguard tower, and the ocean keeping time behind it.", "bg": "miami-beach"},
         {"s": "boom", "t": "Bonswa, bonswa! Come, stand here. No, closer. Closer. You feel that?", "mood": "hype"},
         {"s": "boom", "t": "Bass is a hug you feel in your teeth.", "mood": "laugh"},
-        {"s": "tuesday", "t": "Lantern's here. By the soundboard. The man with the folder from D.C., and a woman in a cream suit holding her shoes.", "mood": "worried"},
+        {"s": "tuesday", "t": "Lantern's here. By the soundboard. The man with the folder from D.C., and a woman in a cream suit who has not sat down once.", "mood": "worried"},
         {"s": "you", "t": "Let them watch."}
       ],
       "afterWin": [

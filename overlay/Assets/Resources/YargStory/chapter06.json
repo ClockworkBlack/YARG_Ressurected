@@ -140,7 +140,7 @@
         {"s": "narrator", "t": "Row ten, center: The Birthrights in matching jackets, and Kingston Lark with one in-ear monitor in, the way other people wear a watch."},
         {"s": "whitlock", "t": "Three songs. The panel will confer afterwards. Please don't address the panel."},
         {"s": "you", "t": "Hi, Kingston."},
-        {"s": "kingston", "t": "{band}. You'll have the spotlight and house sound. The opening slot is thirty-one minutes every night. Please keep to time.", "mood": "neutral"},
+        {"s": "kingston", "t": "{band}. You'll have the spotlight and house sound. The opening slot is timed to the second, every night. Please keep to time.", "mood": "neutral"},
         {"s": "kingston", "t": "Try not to be memorable."},
         {"s": "ruth", "t": "Baby, I've been trying not to be memorable for sixty years. Didn't take.", "mood": "laugh"},
         {"s": "tuesday", "t": "Objection."},
