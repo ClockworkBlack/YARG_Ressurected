@@ -96,12 +96,13 @@ namespace YARG.Editor.Android
             PlayerSettings.Android.forceSDCardPermission = true;
             PlayerSettings.Android.preferredInstallLocation = AndroidPreferredInstallLocation.Auto;
 
-            // Landscape only. Works on the Fold's inner and cover screens.
+            // Portrait or landscape: follows the phone's rotation (and its rotation lock).
+            // Works on the Fold's inner and cover screens. OrientationUnlock re-applies this at runtime.
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;
             PlayerSettings.allowedAutorotateToLandscapeLeft = true;
             PlayerSettings.allowedAutorotateToLandscapeRight = true;
-            PlayerSettings.allowedAutorotateToPortrait = false;
-            PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+            PlayerSettings.allowedAutorotateToPortrait = true;
+            PlayerSettings.allowedAutorotateToPortraitUpsideDown = true;
 
             // Vulkan first (works with Turnip / Adreno 830), GLES3 fallback.
             PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
