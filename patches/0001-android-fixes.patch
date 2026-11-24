@@ -23,6 +23,27 @@ index 7839ac3..8d94a17 100644
  
  using System.Diagnostics;
  using System.IO;
+diff --git a/Assets/Script/Menu/MusicLibrary/SongSorting.cs b/Assets/Script/Menu/MusicLibrary/SongSorting.cs
+index 040c4ac..7ce7797 100644
+--- a/Assets/Script/Menu/MusicLibrary/SongSorting.cs
++++ b/Assets/Script/Menu/MusicLibrary/SongSorting.cs
+@@ -151,11 +151,12 @@ namespace YARG.Menu.MusicLibrary
+             }
+         }
+ 
+-        private static readonly unsafe delegate*<SongCache, SortedSongs, void>[] SORTERS =
++        // YARG Resurrected: IL2CPP (Android) crashes on arrays of function pointers; use managed delegates.
++        private static readonly System.Action<SongCache, SortedSongs>[] SORTERS =
+         {
+-            &SortByTitle,    &SortByArtist,   &SortByAlbum,  &SortByGenre,       &SortBySubgenre,   &SortByYear,
+-            &SortByCharter,  &SortByPlaylist, &SortBySource, &SortByArtistAlbum, &SortByLength,     &SortByDateAdded,
+-            &SortByInstruments
++            SortByTitle,    SortByArtist,   SortByAlbum,  SortByGenre,       SortBySubgenre,   SortByYear,
++            SortByCharter,  SortByPlaylist, SortBySource, SortByArtistAlbum, SortByLength,     SortByDateAdded,
++            SortByInstruments
+         };
+ 
+         internal static unsafe void SortEntries(SongCache cache, SortedSongs sorted)
 diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
 index bb70c1e..a9019ec 100644
 --- a/Assets/Script/Menu/ProfileList/ProfileView.cs

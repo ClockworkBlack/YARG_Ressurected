@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - "patches/**"
+      - "patches-core/**"
       - "overlay/**"
       - "android/**"
       - ".github/workflows/android.yml"
@@ -117,6 +118,7 @@ jobs:
         run: |
           cd "$PROJECT_DIR"
           for p in ../patches/*.patch; do echo "Applying $p"; git apply --whitespace=nowarn "$p"; done
+          for p in "$GITHUB_WORKSPACE"/patches-core/*.patch; do echo "Applying $p to YARG.Core"; git -C YARG.Core apply --whitespace=nowarn "$p"; done
           cp -r ../overlay/. .
           mkdir -p Assets/Plugins/Android/libs/arm64-v8a
 
