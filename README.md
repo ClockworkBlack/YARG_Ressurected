@@ -199,8 +199,9 @@ get one; songs converted before only have a lyric bar).
 
 **Getting set up**
 
-1. **Profiles** > pick or make a profile > **Add Device** > choose a microphone (below).
-   A profile with a microphone becomes a vocals profile.
+1. **Profiles** > pick or make a profile > set its **Game Mode** to **Vocals** (new profiles
+   start as Five Fret Guitar, and those are never offered Vocals) > **Add Device** > choose a
+   microphone (below).
 2. Pick a song, then on the screen before it choose **Vocals** as the instrument and a level.
 3. Sing. Notes scroll along the top with the words under them; your needle shows where your
    voice is. Words in italics over a shaded block, with no note line to follow, are **rapped or
@@ -231,6 +232,13 @@ offer a second instrument, **Harmonies**. Choose it and a **Whose Lines** row ap
 artist. Each player then gets only that artist's lines to sing, in their own color, with the
 other artist's words on the second line. Lines marked for both go to both. All singers have to
 choose the same instrument, Vocals or Harmonies. **Vocals** is always the whole song as one part.
+
+**No vocals to pick?** Then the song has no vocals part: a message says so when the instrument
+screen opens. Songs from the converter only get one when they are converted with lyrics.
+
+**Hearing yourself.** Your voice is played back to you (**Settings > Sound > Vocal Monitoring
+Volume**) only while headphones are connected, wired, USB or Bluetooth. Through the phone's own
+speaker the microphone would hear it again and squeal, so without headphones it is silent.
 
 **Sing-off**
 

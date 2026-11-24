@@ -31,24 +31,29 @@ the one-time download of the instrument-separation model.
      under it to the same artist. The names come from the Artist box ("A feat. B", "A & B")
      and can be changed there. Pasted lyrics with headers such as `[Verse 2: Travis Scott]`
      are filled in for you.
-4. **Split into instruments** (optional, recommended). Press *Download the separation model*
-   once (136 MB, Wi-Fi recommended; it resumes if interrupted). With the box ticked, the app
-   first separates the song into guitar, bass, drums, vocals, piano and "other", makes the
-   guitar chart from the guitar alone, adds a bass chart, and listens to the voice on its own
-   to place every word where it is sung and find its note. Expect it to take a few minutes per
-   song (not yet timed on a phone).
-   With **Two artists: ... guess it from their voices** also ticked, lyrics that don't say who
-   sings a line are split between the two artists by the sound of their voices. It is a guess:
-   the lyrics box shows the result afterwards, so you can correct it with *Choose who sings
-   what* and convert again.
-   With **R&B mode** also ticked, the voice comes first. The guitar chart follows the lead
-   singer instead of the band: the notes come where the words and runs are sung, the frets
-   climb and fall with the tune, a held note is a sustain for as long as it is held, and
-   there are no chords (a voice sings one note at a time). The vocals part follows runs and
-   riffs note by note, so a melisma is sung through its notes instead of as one or two long
-   ones. The bass chart still follows the bass. Made for R&B, soul and vocal-led pop. On a
-   song with little singing in it (an instrumental, say) the guitar chart follows the band as
-   usual, and the summary says so.
+4. **How to convert**: pick one.
+   - **Normal**: quick, about a minute, and needs no download. The guitar chart is made from
+     the whole song as it is. There is no bass chart, and with lyrics the words are spread at
+     speaking pace (any sound in time counts; the notes are not read).
+   - **Split into instruments**: the best charts. Press *Download the separation model* once
+     (136 MB, Wi-Fi recommended; it resumes if interrupted). The app first separates the song
+     into guitar, bass, drums, vocals, piano and "other", makes the guitar chart from the guitar
+     alone, adds a bass chart, and listens to the voice on its own to place every word where it
+     is sung and find its note. Expect a few minutes per song (not yet timed on a phone).
+   - **R&B mode**: the voice comes first. Like the split, but the guitar chart follows the lead
+     singer instead of the band: the notes come where the words and runs are sung, the frets
+     climb and fall with the tune, a held note is a sustain for as long as it is held, and
+     there are no chords. The vocals part follows runs and riffs note by note. The bass chart
+     still follows the bass. Made for R&B, soul and vocal-led pop. On a song with little
+     singing in it the guitar chart follows the band as usual, and the summary says so.
+
+   With **Two artists: ... guess it from their voices** also ticked (split modes only), lyrics
+   that don't say who sings a line are split between the two artists by the sound of their
+   voices. It is a guess: the lyrics box shows the result afterwards, so you can correct it with
+   *Choose who sings what* and convert again.
+
+   The split uses one thread for each of the phone's fast cores and listens to the separated
+   instruments side by side, so it finishes sooner than it used to with the same result.
 5. **Convert and add to YARG**. The first time, Android asks for "All files access" so the app can write into the YARG folder.
    Once it has started you can leave the app, switch to something else or turn the screen off:
    the conversion keeps going, with its progress in a notification, and a second notification

@@ -8,7 +8,10 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.content.res.ColorStateList;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
@@ -21,9 +24,11 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -84,7 +89,18 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private Button pickButton, findButton, lrcButton, tapButton, convertButton;
     private ProgressBar progress;
     private RadioGroup densityGroup;
-    private CheckBox stemsCheck, guessCheck, rnbCheck;
+    private CheckBox guessCheck;
+    private RadioGroup modeGroup;
+    private RadioButton modeNormal, modeSplit, modeRnb;
+    private static final int MODE_NORMAL = 11, MODE_SPLIT = 12, MODE_RNB = 13;
+
+    // Colours of the screen. Set by hand so every option reads clearly whatever the phone's theme.
+    private static final int INK = 0xFF0F1318, CARD = 0xFF1B222B, CARD_ON = 0xFF2B2410, LINE = 0xFF3A4654;
+    private static final int TEXT = 0xFFF4F6F8, SOFT = 0xFFC3CCD6, FAINT = 0xFF7D8894, GOLD = 0xFFFFC53D;
+
+    /** A copy of the chosen audio in the app's own storage, and the file it is a copy of. */
+    private volatile File audioCopy;
+    private volatile Uri audioCopyOf;
     private Button singersButton;
     private TextView singersStatus;
     /** The two artists' names as typed on the "Who sings what" screen; null until that has been used. */
@@ -271,25 +287,21 @@ public final class MainActivity extends Activity implements ConversionService.Li
         root.addView(singersStatus);
 
         root.addView(section("3. Convert"));
-        stemsCheck = new CheckBox(this);
-        stemsCheck.setText("Split the song into instruments first. The guitar chart is then made from the guitar alone, and a bass chart is added. Takes a few minutes per song.");
-        root.addView(stemsCheck);
-        modelStatus = new TextView(this);
-        modelStatus.setPadding(dp(32), 0, 0, dp(4));
-        root.addView(modelStatus);
-        modelButton = button("Download the separation model (136 MB)", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                downloadModel();
-            }
-        });
-        root.addView(modelButton);
+        TextView modeLabel = new TextView(this);
+        modeLabel.setText("How to convert");
+        modeLabel.setPadding(0, 0, 0, dp(4));
+        root.addView(modeLabel);
+        modeGroup = new RadioGroup(this);
+        modeGroup.setOrientation(RadioGroup.VERTICAL);
+        modeNormal = mode(MODE_NORMAL, "Normal", "Quick: about a minute. Charts the guitar from the whole song as it is. No download needed. No bass chart; with lyrics, the words are spread at speaking pace.");
+        modeSplit = mode(MODE_SPLIT, "Split into instruments", "Best charts. Separates the song first, so the guitar chart comes from the guitar alone, a bass chart is added, and every word is placed where it is sung. Takes a few minutes.");
+        modeRnb = mode(MODE_RNB, "R&B mode", "The voice comes first. Like the split, but the guitar chart follows the lead singer's melody and runs instead of the band. For R&B, soul and vocal-led pop.");
+        modeGroup.check(MODE_NORMAL);
+        root.addView(modeGroup, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        modeStatusHolder(root);
         guessCheck = new CheckBox(this);
-        guessCheck.setText("Two artists: where the lyrics don't say who sings a line, guess it from their voices. Needs the split above. It is a guess; check it afterwards with \"Choose who sings what\".");
+        guessCheck.setText("Two artists: where the lyrics don't say who sings a line, guess it from their voices. For the two split modes. It is a guess; check it afterwards with \"Choose who sings what\".");
         root.addView(guessCheck);
-        rnbCheck = new CheckBox(this);
-        rnbCheck.setText("R&B mode: put the voice first. The guitar chart follows the lead singer's melody (the notes come with the words and runs, the frets climb with the tune, held notes are sustains) instead of the band, and the vocals part follows runs note by note. For R&B, soul and vocal-led pop. Needs the split above.");
-        root.addView(rnbCheck);
         refreshModelUi(true);
 
         TextView densityLabel = new TextView(this);
@@ -324,6 +336,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
         log.setTextIsSelectable(true);
         root.addView(log);
 
+        scroll.setBackgroundColor(INK);
+        getWindow().setStatusBarColor(INK);
+        getWindow().setNavigationBarColor(INK);
+        heading.setTextColor(GOLD);
+        style(root);
         setContentView(scroll);
     }
 
@@ -334,6 +351,99 @@ public final class MainActivity extends Activity implements ConversionService.Li
         t.setTypeface(Typeface.DEFAULT_BOLD);
         t.setPadding(0, dp(18), 0, dp(6));
         return t;
+    }
+
+    /** One way of converting: a name in bold with what it does underneath, as a card that lights up when chosen. */
+    private RadioButton mode(int id, String name, String what) {
+        RadioButton rb = new RadioButton(this);
+        rb.setId(id);
+        android.text.SpannableString text = new android.text.SpannableString(name + "\n" + what);
+        text.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), 0, name.length(), 0);
+        text.setSpan(new android.text.style.RelativeSizeSpan(1.15f), 0, name.length(), 0);
+        rb.setText(text);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(4), 0, dp(4));
+        modeGroup.addView(rb, lp);
+        return rb;
+    }
+
+    /** The line about the separation model and its download button, under the ways of converting. */
+    private void modeStatusHolder(LinearLayout root) {
+        modelStatus = new TextView(this);
+        modelStatus.setPadding(0, dp(2), 0, dp(4));
+        root.addView(modelStatus);
+        modelButton = button("Download the separation model (136 MB)", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                downloadModel();
+            }
+        });
+        root.addView(modelButton);
+    }
+
+    private GradientDrawable box(int fill, int stroke) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(10));
+        if (stroke != 0) d.setStroke(dp(1.5f), stroke);
+        return d;
+    }
+
+    /**
+     * Gives every control on the screen the same clear look: light text on a dark page, options
+     * as cards with a gold edge when chosen, gold buttons, and greyed-out things that still read.
+     */
+    private void style(View v) {
+        int[][] states = {{-android.R.attr.state_enabled}, {android.R.attr.state_checked}, {}};
+        if (v instanceof CompoundButton) {
+            CompoundButton c = (CompoundButton) v;
+            c.setTextColor(new ColorStateList(states, new int[] {FAINT, TEXT, TEXT}));
+            c.setButtonTintList(new ColorStateList(states, new int[] {FAINT, GOLD, SOFT}));
+            StateListDrawable bg = new StateListDrawable();
+            bg.addState(new int[] {android.R.attr.state_checked}, box(CARD_ON, GOLD));
+            bg.addState(new int[] {}, box(CARD, LINE));
+            c.setBackground(bg);
+            c.setPadding(dp(10), dp(10), dp(12), dp(10));
+            c.setLineSpacing(dp(2), 1f);
+        } else if (v instanceof Button) {
+            Button b = (Button) v;
+            StateListDrawable bg = new StateListDrawable();
+            bg.addState(new int[] {-android.R.attr.state_enabled}, box(CARD, LINE));
+            bg.addState(new int[] {android.R.attr.state_pressed}, box(0xFFE0A91F, 0));
+            bg.addState(new int[] {}, box(GOLD, 0));
+            b.setBackground(bg);
+            b.setTextColor(new ColorStateList(new int[][] {{-android.R.attr.state_enabled}, {}}, new int[] {FAINT, 0xFF14110A}));
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setMinHeight(dp(48));
+            ViewGroup.LayoutParams lp = b.getLayoutParams();
+            if (lp instanceof LinearLayout.LayoutParams && ((LinearLayout.LayoutParams) lp).topMargin == 0) {
+                ((LinearLayout.LayoutParams) lp).topMargin = dp(4);
+                ((LinearLayout.LayoutParams) lp).bottomMargin = dp(4);
+            }
+        } else if (v instanceof EditText) {
+            EditText e = (EditText) v;
+            e.setTextColor(TEXT);
+            e.setHintTextColor(FAINT);
+            e.setBackground(box(CARD, LINE));
+            e.setPadding(dp(12), dp(10), dp(12), dp(10));
+            ViewGroup.LayoutParams lp = e.getLayoutParams();
+            if (lp instanceof LinearLayout.LayoutParams) {
+                ((LinearLayout.LayoutParams) lp).topMargin = dp(4);
+                ((LinearLayout.LayoutParams) lp).bottomMargin = dp(4);
+                ((LinearLayout.LayoutParams) lp).rightMargin = dp(4);
+            }
+        } else if (v instanceof TextView) {
+            TextView t = (TextView) v;
+            // Headings are bold already: keep those bright, the explanations a little softer
+            if (t.getCurrentTextColor() != GOLD) t.setTextColor(t.getTypeface() != null && t.getTypeface().isBold() ? TEXT : SOFT);
+        } else if (v instanceof ProgressBar) {
+            ((ProgressBar) v).setProgressTintList(ColorStateList.valueOf(GOLD));
+            ((ProgressBar) v).setIndeterminateTintList(ColorStateList.valueOf(GOLD));
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) style(g.getChildAt(i));
+        }
     }
 
     private Button button(String text, View.OnClickListener l) {
@@ -372,9 +482,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
         convertButton.setEnabled(!value);
         modelButton.setEnabled(!value);
         singersButton.setEnabled(!value);
-        stemsCheck.setEnabled(!value && ModelStore.installed(this));
-        guessCheck.setEnabled(!value && ModelStore.installed(this));
-        rnbCheck.setEnabled(!value && ModelStore.installed(this));
+        boolean model = ModelStore.installed(this);
+        modeNormal.setEnabled(!value);
+        modeSplit.setEnabled(!value && model);
+        modeRnb.setEnabled(!value && model);
+        guessCheck.setEnabled(!value && model);
         if (value) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
@@ -385,17 +497,20 @@ public final class MainActivity extends Activity implements ConversionService.Li
     /** Shows whether the separation model is on the phone, and offers the download if not. */
     private void refreshModelUi(boolean tickIfInstalled) {
         boolean installed = ModelStore.installed(this);
-        stemsCheck.setEnabled(installed && !busy);
+        modeSplit.setEnabled(installed && !busy);
+        modeRnb.setEnabled(installed && !busy);
         guessCheck.setEnabled(installed && !busy);
-        rnbCheck.setEnabled(installed && !busy);
-        if (!installed) guessCheck.setChecked(false);
-        if (!installed) rnbCheck.setChecked(false);
-        if (!installed) stemsCheck.setChecked(false);
-        else if (tickIfInstalled) stemsCheck.setChecked(true);
+        if (!installed) {
+            guessCheck.setChecked(false);
+            modeGroup.check(MODE_NORMAL);
+        } else if (tickIfInstalled && modeGroup.getCheckedRadioButtonId() == MODE_NORMAL) {
+            // Just downloaded (or already there when the app opens): the split is what it is for
+            modeGroup.check(MODE_SPLIT);
+        }
         modelButton.setVisibility(installed ? View.GONE : View.VISIBLE);
         modelStatus.setText(installed
                 ? "Separation model installed (HT-Demucs, 6 instruments)."
-                : "Needs a one-time 136 MB download from Hugging Face (HT-Demucs). Wi-Fi recommended.");
+                : "The two split modes need a one-time 136 MB download from Hugging Face (HT-Demucs). Wi-Fi recommended. Normal works without it.");
     }
 
     private void downloadModel() {
@@ -534,6 +649,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
             public void run() {
                 final String[] tags = new String[5];
                 double seconds = 0;
+                try {
+                    // While the permission to read it is fresh
+                    localCopy(uri);
+                } catch (IOException | RuntimeException e) {
+                    // Tried again, with a message, when the conversion starts
+                }
                 MediaMetadataRetriever r = new MediaMetadataRetriever();
                 try {
                     r.setDataSource(MainActivity.this, uri);
@@ -821,9 +942,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
         int choice = densityGroup.getCheckedRadioButtonId();
         // "Fewer" keeps only the stronger sounds; "More" lets weaker ones through.
         options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
-        final boolean useStems = stemsCheck.isChecked() && ModelStore.installed(this);
+        int mode = modeGroup.getCheckedRadioButtonId();
+        final boolean useStems = mode != MODE_NORMAL && ModelStore.installed(this);
         final boolean guessSingers = useStems && guessCheck.isChecked();
-        final boolean rnb = useStems && rnbCheck.isChecked();
+        final boolean rnb = useStems && mode == MODE_RNB;
         meta.singers = singers();
 
         setBusy(true);
@@ -856,6 +978,31 @@ public final class MainActivity extends Activity implements ConversionService.Li
         }, "convert").start();
     }
 
+    /**
+     * Copies the chosen audio into the app's own storage, once. The permission to read a file
+     * picked or shared from another app only lasts while this screen is alive, and a conversion
+     * carries on long after that.
+     */
+    private synchronized File localCopy(Uri uri) throws IOException {
+        File copy = audioCopy;
+        if (copy != null && uri.equals(audioCopyOf) && copy.isFile() && copy.length() > 0) return copy;
+        File target = new File(app.getCacheDir(), "chosen-audio");
+        audioCopy = null;
+        audioCopyOf = null;
+        try (InputStream in = app.getContentResolver().openInputStream(uri);
+             OutputStream out = new FileOutputStream(target)) {
+            if (in == null) throw new IOException("The audio file could not be opened. Choose it again.");
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        } catch (SecurityException e) {
+            throw new IOException("Android no longer lets the app read that file. Tap \"Choose audio file\" and pick it again.");
+        }
+        audioCopy = target;
+        audioCopyOf = uri;
+        return target;
+    }
+
     private void askForNotifications() {
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -869,6 +1016,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
 
     private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options,
                                  boolean useStems, boolean guessSingers, boolean rnb) throws IOException {
+        // Everything below reads the app's own copy: Android can take back the right to read the
+        // original at any moment (it did, with "Permission Denial", once the screen had been left)
+        uri = Uri.fromFile(localCopy(uri));
         File songs = new File(new File(Environment.getExternalStorageDirectory(), "YARG"), "songs");
         File dir = new File(new File(songs, SUBFOLDER), meta.folderName());
         if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -1066,8 +1216,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
         final float[] g = new float[StemSplitter.SEGMENT];
         final float[] m = new float[StemSplitter.SEGMENT];
         final float[] b = new float[StemSplitter.SEGMENT];
-        int cores = Runtime.getRuntime().availableProcessors();
-        int threads = Math.max(2, Math.min(6, cores - 2));
+        int threads = modelThreads();
+        // The four or five listeners each take a separated instrument; they run side by side on
+        // cores the model is not using at that moment, instead of one after another
+        final java.util.concurrent.ExecutorService listeners = java.util.concurrent.Executors.newFixedThreadPool(4);
         final long started = System.currentTimeMillis();
         ConversionService.setTextAndProgress("Loading the separation model…", 0);
 
@@ -1113,11 +1265,24 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         energy[2] += bv * bv;
                         energy[3] += xv * xv;
                     }
-                    guitar.feed(g, 0, count);
-                    melodic.feed(m, 0, count);
-                    bass.feed(b, 0, count);
-                    voice.feed(vox, 0, count);
-                    if (vocals != null) vocals.feed(vox, 0, count);
+                    final int n = count;
+                    List<java.util.concurrent.Callable<Void>> jobs = new ArrayList<>();
+                    jobs.add(listen(new Runnable() { @Override public void run() { guitar.feed(g, 0, n); } }));
+                    jobs.add(listen(new Runnable() { @Override public void run() { melodic.feed(m, 0, n); } }));
+                    jobs.add(listen(new Runnable() { @Override public void run() { bass.feed(b, 0, n); } }));
+                    jobs.add(listen(new Runnable() { @Override public void run() {
+                        voice.feed(vox, 0, n);
+                        if (vocals != null) vocals.feed(vox, 0, n);
+                    } }));
+                    try {
+                        // Waits for all of them, and passes on anything one of them threw
+                        for (java.util.concurrent.Future<Void> done : listeners.invokeAll(jobs)) done.get();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("Interrupted while listening to the instruments");
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        throw new IllegalStateException(e.getCause());
+                    }
                 }
             };
             StemSplitter.Progress report = new StemSplitter.Progress() {
@@ -1133,6 +1298,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
             };
             status("Splitting into instruments… You can leave the app; it keeps going.");
             StemSplitter.split(source, frames, model, sink, report);
+        } finally {
+            listeners.shutdown();
         }
         SongWriter.Stems out = new SongWriter.Stems();
         out.guitar = guitar.finish();
@@ -1145,6 +1312,45 @@ public final class MainActivity extends Activity implements ConversionService.Li
         out.bassEnergy = energy[2];
         out.mixEnergy = energy[3];
         return out;
+    }
+
+    private static java.util.concurrent.Callable<Void> listen(final Runnable work) {
+        return new java.util.concurrent.Callable<Void>() {
+            @Override
+            public Void call() {
+                work.run();
+                return null;
+            }
+        };
+    }
+
+    /**
+     * How many threads the separation model gets: one for each of the phone's fast cores. Phones
+     * mix fast and slow cores, and a model spread over both runs at the pace of the slow ones, so
+     * the slow ones are left out. A core counts as fast when its top speed is at least 70% of the
+     * fastest core's. When the phone will not say, the old rule is used (all but two, at most 6).
+     */
+    static int modelThreads() {
+        int cores = Runtime.getRuntime().availableProcessors();
+        int fallback = Math.max(2, Math.min(6, cores - 2));
+        try {
+            long[] top = new long[cores];
+            long best = 0;
+            for (int i = 0; i < cores; i++) {
+                File f = new File("/sys/devices/system/cpu/cpu" + i + "/cpufreq/cpuinfo_max_freq");
+                try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+                    top[i] = Long.parseLong(r.readLine().trim());
+                }
+                best = Math.max(best, top[i]);
+            }
+            int fast = 0;
+            for (long t : top) if (t >= 0.7 * best) fast++;
+            // Leave one fast core for the rest of the phone when all of them are fast
+            if (fast == cores) fast = cores - 1;
+            return Math.max(2, Math.min(8, fast));
+        } catch (IOException | RuntimeException e) {
+            return fallback;
+        }
     }
 
     /** Saves the picture embedded in the audio file, if any, so YARG shows it as album art. */
