@@ -23,7 +23,7 @@ using UnityEngine.UI;
 
 namespace YARG.Remote
 {
-    public sealed class RemotePlayManager : MonoBehaviour, IRemoteServerHandler
+    public sealed partial class RemotePlayManager : MonoBehaviour, IRemoteServerHandler
     {
         public const int DEFAULT_PORT = 7777;
         public const string INTERFACE_NAME = "YARGRemote";
@@ -83,6 +83,13 @@ namespace YARG.Remote
             public Gamepad Pad;                                             // main thread only
             public double HoldMs = DelayEstimator.DEFAULT_MS;               // fixed while a song plays
             public double LastEventTime;
+
+            // Lobby (main thread only): what the phone asked to play, and the player made for it
+            public RemoteClient Client;
+            public string Role;
+            public string Difficulty;
+            public bool RolePending;
+            public YARG.Player.YargPlayer AutoPlayer;
         }
 
         private readonly ConcurrentQueue<Action> _mainThread = new ConcurrentQueue<Action>();
@@ -137,7 +144,6 @@ namespace YARG.Remote
         private Canvas _canvas;
         private TextMeshProUGUI _text;
         private RectTransform _panel;
-        private bool _expanded = true;
         private string _lastText;
 
         private void Awake()
@@ -189,6 +195,7 @@ namespace YARG.Remote
             }
             _phones.Clear();
 
+            StopHotspot();
             SetWifiLock(false);
             if (Instance == this)
             {
@@ -231,6 +238,7 @@ namespace YARG.Remote
             }
 
             SetWifiLock(_padCount > 0);
+            UpdateLobby();
             UpdateOverlay();
         }
 
@@ -238,7 +246,7 @@ namespace YARG.Remote
 
         public void OnClientHello(RemoteClient client)
         {
-            var phone = new PhoneState();
+            var phone = new PhoneState { Client = client };
             // A phone that reconnects mid-song keeps the hold time its player was started with.
             if (_holdByKey.TryGetValue(client.Key, out double remembered))
             {
@@ -267,6 +275,16 @@ namespace YARG.Remote
                     {
                         RemoteMics.Start(client, sampleRate);
                         client.SendText("micok\n" + RemoteMics.DisplayNameFor(client.Name));
+                        // A phone that joined as a singer gets its mic attached once it's streaming.
+                        _mainThread.Enqueue(() => MarkRolePending(client));
+                    }
+                    break;
+                case "role": // role \n <guitar|bass|vocals|none> \n <easy|medium|hard|expert>
+                    if (parts.Length > 2)
+                    {
+                        string role = parts[1];
+                        string difficulty = parts[2];
+                        _mainThread.Enqueue(() => SetRole(client, role, difficulty));
                     }
                     break;
                 case "micoff":
@@ -366,7 +384,11 @@ namespace YARG.Remote
 
         private void RemovePad(RemoteClient client)
         {
-            if (_phones.TryRemove(client, out var phone) && phone.Pad != null)
+            if (_phones.TryRemove(client, out var phone))
+            {
+                OnPhoneLeft(phone);
+            }
+            if (phone != null && phone.Pad != null)
             {
                 _padCount--;
                 RemovePadDevice(phone.Pad);
@@ -640,7 +662,7 @@ namespace YARG.Remote
             image.color = new Color(0f, 0f, 0f, 0.7f);
             var button = panelObject.AddComponent<Button>();
             button.transition = Selectable.Transition.None;
-            button.onClick.AddListener(() => _expanded = !_expanded);
+            button.onClick.AddListener(OpenLobby);
 
             var textObject = new GameObject("Text");
             textObject.transform.SetParent(panelObject.transform, false);
@@ -704,33 +726,19 @@ namespace YARG.Remote
             string counts = phones == 0 ? "none connected"
                 : phones + (phones == 1 ? " phone" : " phones") + (mics > 0 ? $", {mics} mic{(mics == 1 ? "" : "s")}" : "");
 
-            if (!_expanded)
+            string address = PrimaryAddress();
+            if (address == null)
             {
-                return $"<b>PHONES</b>  {counts}";
+                return $"<b>PHONES</b>  Tap here to let friends join with their phones  |  {counts}";
             }
 
-            if (_addresses.Count == 0)
-            {
-                return $"<b>PHONES</b>  Connect to Wi-Fi (or turn on your hotspot) so other phones can join  |  {counts}";
-            }
+            return $"<b>PHONES</b>  Tap here for the join codes, or open <color=#FFD84D>{BuildUrl(address)}</color>  |  {counts}";
+        }
 
+        private string BuildUrl(string address)
+        {
             string scheme = _tlsState == -1 ? "http" : "https";
-            var links = new StringBuilder();
-            for (int i = 0; i < _addresses.Count && i < 2; i++)
-            {
-                if (i > 0)
-                {
-                    links.Append("  or  ");
-                }
-                links.Append("<color=#FFD84D>").Append(scheme).Append("://").Append(_addresses[i])
-                    .Append(':').Append(_server.Port).Append("</color>");
-            }
-
-            string note = _tlsState == -1
-                ? "  <size=75%>(phone mics need https, which isn't working on this device)</size>"
-                : "  <size=75%>(tap \"Advanced\" then \"Proceed\" on the warning)</size>";
-
-            return $"<b>PHONES</b>  On the same Wi-Fi, open {links}{note}  |  {counts}";
+            return $"{scheme}://{address}:{_server.Port}";
         }
 
         #endregion

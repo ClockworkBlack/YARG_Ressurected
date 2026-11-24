@@ -280,6 +280,8 @@ namespace YARG.Editor.Android
                 "android.permission.ACCESS_NETWORK_STATE",
                 "android.permission.ACCESS_WIFI_STATE",
                 "android.permission.WAKE_LOCK",
+                // "Start game network" (local-only hotspot)
+                "android.permission.CHANGE_WIFI_STATE",
             };
 
             foreach (var permission in permissions)
@@ -289,6 +291,21 @@ namespace YARG.Editor.Android
                     xml = Regex.Replace(xml, @"(<manifest[^>]*>)",
                         $"$1\n  <uses-permission android:name=\"{permission}\" />", RegexOptions.Singleline);
                 }
+            }
+
+            // The local-only hotspot needs "Nearby devices" on Android 13+, and Location before that.
+            if (!xml.Contains("android.permission.NEARBY_WIFI_DEVICES"))
+            {
+                xml = Regex.Replace(xml, @"(<manifest[^>]*>)",
+                    "$1\n  <uses-permission android:name=\"android.permission.NEARBY_WIFI_DEVICES\" android:usesPermissionFlags=\"neverForLocation\" />",
+                    RegexOptions.Singleline);
+            }
+            if (!xml.Contains("android.permission.ACCESS_FINE_LOCATION"))
+            {
+                xml = Regex.Replace(xml, @"(<manifest[^>]*>)",
+                    "$1\n  <uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\" android:maxSdkVersion=\"32\" />" +
+                    "\n  <uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\" android:maxSdkVersion=\"32\" />",
+                    RegexOptions.Singleline);
             }
 
             if (!xml.Contains("android.hardware.gamepad"))
