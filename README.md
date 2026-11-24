@@ -183,6 +183,20 @@ bottom. Tap it to open a screen where you can change things while listening to t
 The settings belong to the song you opened the screen for. Picking a different song starts
 again from normal speed, original key and the whole song.
 
+## Error logs on the phone
+
+The game keeps a copy of its log next to the songs, in **Internal storage/YARG/logs**, so it can be
+opened or sent from any file manager:
+
+- `yarg-errors.txt`: only the errors, from every run, with the build and phone they happened on.
+  **This is the file to send when something goes wrong.**
+- `yarg-log-<date>_<time>.txt`: everything the game logged in one run. The newest 10 are kept.
+
+It records errors the game caught, exceptions nothing caught (with where they happened), and low-memory
+warnings. A song that fails to start now says why in a dialog and goes back to the menu, instead of
+stopping on an empty screen. Nothing is uploaded: the files stay on the phone. A crash inside a native
+library (the app closing with no message) is not recorded.
+
 ## Setup (one time)
 
 ### 1. Unity license (needs a computer once, e.g. a Chromebook's Linux)
