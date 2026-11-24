@@ -1,0 +1,282 @@
+diff --git a/Assets/Script/Audio/Bass/BassStemMixer.cs b/Assets/Script/Audio/Bass/BassStemMixer.cs
+index 895dab1..be73491 100644
+--- a/Assets/Script/Audio/Bass/BassStemMixer.cs
++++ b/Assets/Script/Audio/Bass/BassStemMixer.cs
+@@ -110,6 +110,30 @@ namespace YARG.Audio.BASS
+             }
+         }
+ 
++        // Key change (semitones) chosen on the Song Setup screen, on top of any pitch change
++        // that comes with the song speed
++        private float _keyShift;
++        private float _speedPitch;
++
++        /// <summary>Moves the whole song up or down in pitch without changing its speed.</summary>
++        public void SetKeyShift(float semitones)
++        {
++            lock (this)
++            {
++                _keyShift = semitones;
++                ApplyPitch();
++            }
++        }
++
++        private void ApplyPitch()
++        {
++            float pitch = Math.Clamp(_speedPitch + _keyShift, -60f, 60f);
++            if (!Bass.ChannelSetAttribute(_tempoStreamHandle, ChannelAttribute.Pitch, pitch))
++            {
++                YargLogger.LogFormatError("Failed to set channel pitch: {0}!", Bass.LastError);
++            }
++        }
++
+         private readonly BassNormalizer _normalizer = new();
+         private          bool           _shouldNormalize;
+         private          int            _gainDspHandle;
+@@ -466,6 +490,16 @@ namespace YARG.Audio.BASS
+             _speed = speed;
+ 
+             BassAudioManager.SetSpeed(speed, _tempoStreamHandle, shiftPitch);
++
++            // SetSpeed may have set the pitch for the speed alone; put the key change back on top
++            if (GlobalAudioHandler.IsChipmunkSpeedup && shiftPitch)
++            {
++                _speedPitch = (float) Math.Clamp(12 * Math.Log(speed, 2), -60, 60);
++            }
++            if (_keyShift != 0f)
++            {
++                ApplyPitch();
++            }
+         }
+ 
+         protected override bool AddChannels_Internal(Stream stream, params StemInfo[] stemInfos)
+diff --git a/Assets/Script/Gameplay/GameManager.Audio.cs b/Assets/Script/Gameplay/GameManager.Audio.cs
+index f9aa711..bb12012 100644
+--- a/Assets/Script/Gameplay/GameManager.Audio.cs
++++ b/Assets/Script/Gameplay/GameManager.Audio.cs
+@@ -9,6 +9,7 @@ using YARG.Audio.BASS;
+ using YARG.Audio.GuitarVoice;
+ using YARG.Core.Audio;
+ using YARG.Core.Logging;
++using YARG.Menu.SongSetup;
+ using YARG.Playback;
+ using YARG.Settings;
+ 
+@@ -113,6 +114,13 @@ namespace YARG.Gameplay
+                 return;
+             }
+ 
++            // Key change from the Song Setup screen (never for replays)
++            float keyShift = ReplayInfo == null ? SongSetupState.KeyShiftFor(Song) : 0f;
++            if (keyShift != 0f && _mixer is BassStemMixer keyMixer)
++            {
++                keyMixer.SetKeyShift(keyShift);
++            }
++
+             _backgroundStem = SongStem.Song;
+             foreach (var channel in _mixer.Channels)
+             {
+diff --git a/Assets/Script/Gameplay/GameManager.cs b/Assets/Script/Gameplay/GameManager.cs
+index 7492607..424766f 100644
+--- a/Assets/Script/Gameplay/GameManager.cs
++++ b/Assets/Script/Gameplay/GameManager.cs
+@@ -243,6 +243,7 @@ namespace YARG.Gameplay
+ 
+             DisposeDebug();
+             _pauseMenu.PopAllMenus();
++            YARG.Audio.GuitarVoice.GuitarFreestyle.Clear();
+             _mixer?.Dispose();
+             _songRunner?.Dispose();
+             BackgroundManager.Dispose();
+diff --git a/Assets/Script/Gameplay/HUD/Practice/PracticeHud.cs b/Assets/Script/Gameplay/HUD/Practice/PracticeHud.cs
+index d4944fc..93e4a8d 100644
+--- a/Assets/Script/Gameplay/HUD/Practice/PracticeHud.cs
++++ b/Assets/Script/Gameplay/HUD/Practice/PracticeHud.cs
+@@ -144,7 +144,8 @@ namespace YARG.Gameplay.HUD
+             _speedChanged = false;
+ 
+             _bestPercentText.text = "0%";
+-            _sectionText.text = _sections[_currentSectionIndex].Name;
++            // A hand-picked stretch of the song may not contain a whole named section
++            _sectionText.text = _sections.Length > 0 ? _sections[_currentSectionIndex].Name : "";
+         }
+     }
+ }
+\ No newline at end of file
+diff --git a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+index 5dfbac4..72ab0b9 100644
+--- a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
++++ b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+@@ -2,6 +2,7 @@
+ using System.Collections.Generic;
+ using System.Linq;
+ using UnityEngine;
++using YARG.Audio.GuitarVoice;
+ using YARG.Core;
+ using YARG.Core.Audio;
+ using YARG.Core.Chart;
+@@ -158,8 +159,16 @@ namespace YARG.Gameplay.Player
+             LaneCount = LANE_COUNT;
+ 
+             base.Initialize(index, player, chart, trackView, mixer, currentHighScore);
++
++            // Freestyle guitar (Song Setup screen): this player's strums sound their own notes
++            if (GuitarFreestyle.Active && !player.IsReplay && !player.Profile.IsBot)
++            {
++                _freestyle = GuitarFreestyle.CreateVoice(player.Profile.CurrentInstrument);
++            }
+         }
+ 
++        private FreestyleVoice _freestyle;
++
+         protected override InstrumentDifficulty<GuitarNote> GetNotes(SongChart chart)
+         {
+             var track = chart.GetFiveFretTrack(Player.Profile.CurrentInstrument).Clone();
+@@ -544,7 +553,8 @@ namespace YARG.Gameplay.Player
+                 return;
+             }
+ 
+-            if (SettingsManager.Settings.OverstrumAndOverhitSoundEffects.Value)
++            // In freestyle a strum with no chart note is a note of your own, not a mistake
++            if (SettingsManager.Settings.OverstrumAndOverhitSoundEffects.Value && _freestyle == null)
+             {
+                 const int MIN = (int) SfxSample.Overstrum1;
+                 const int MAX = (int) SfxSample.Overstrum4;
+@@ -669,6 +679,11 @@ namespace YARG.Gameplay.Player
+         {
+             base.OnInputQueued(input);
+ 
++            if (_freestyle != null && !GameManager.Paused)
++            {
++                _freestyle.Input(input.GetAction<GuitarAction>(), input.Button, input.Axis, Time.realtimeSinceStartupAsDouble);
++            }
++
+             // Update the whammy factor
+             if (_sustainCount > 0 && input.GetAction<GuitarAction>() == GuitarAction.Whammy)
+             {
+diff --git a/Assets/Script/Gameplay/PracticeManager.cs b/Assets/Script/Gameplay/PracticeManager.cs
+index 813f191..dbe13e6 100644
+--- a/Assets/Script/Gameplay/PracticeManager.cs
++++ b/Assets/Script/Gameplay/PracticeManager.cs
+@@ -3,6 +3,7 @@ using System.Linq;
+ using UnityEngine;
+ using YARG.Core.Chart;
+ using YARG.Core.Input;
++using YARG.Menu.SongSetup;
+ using YARG.Gameplay.HUD;
+ using YARG.Menu.Navigation;
+ using YARG.Settings;
+@@ -105,10 +106,53 @@ namespace YARG.Gameplay
+             }
+         }
+ 
++        // A stretch of the song picked on the Song Setup screen: practice starts straight on it
++        private bool _spanPending;
++
++        protected override void OnSongStarted()
++        {
++            if (!_spanPending)
++            {
++                return;
++            }
++            _spanPending = false;
++
++            if (!SongSetupState.TryGetSpan(GameManager.Song, out double start, out double end))
++            {
++                _pauseMenu.PushMenu(PauseMenuManager.Menu.SelectSections);
++                return;
++            }
++
++            // The screen works in seconds of audio; the chart starts `offset` seconds into it
++            double offset = GameManager.Song.SongOffsetSeconds;
++            uint tickStart = _chart.SyncTrack.TimeToTick(Math.Max(0.0, start - offset));
++            uint tickEnd = _chart.SyncTrack.TimeToTick(Math.Max(0.0, end - offset));
++            if (tickEnd <= tickStart)
++            {
++                _pauseMenu.PushMenu(PauseMenuManager.Menu.SelectSections);
++                return;
++            }
++
++            _sectionStartTick = tickStart;
++            _sectionStartTime = _chart.SyncTrack.TickToTime(tickStart);
++            _sectionEndTick = tickEnd;
++            _sectionEndTime = _chart.SyncTrack.TickToTime(tickEnd);
++
++            SetPracticeSection(_sectionStartTick, _sectionEndTick, _sectionStartTime, _sectionEndTime);
++            GameManager.Resume();
++        }
++
+         public void DisplayPracticeMenu()
+         {
+             GameManager.Pause(showMenu: false);
+ 
++            if (SongSetupState.TryGetSpan(GameManager.Song, out _, out _))
++            {
++                // Applied once everything has finished loading (OnSongStarted)
++                _spanPending = true;
++                return;
++            }
++
+             var savedInputTime = GlobalVariables.State.SavedInputTime;
+             if (savedInputTime.HasValue)
+             {
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index 1c46939..a61e9ff 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -98,8 +98,29 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private Scrollbar _scrollbar;
+ 
++        /// <summary>The menu while it is on screen (for the Song Setup screen).</summary>
++        public static DifficultySelectMenu Current { get; private set; }
++
++        /// <summary>The song speed shown in the speed box, where 1 is normal.</summary>
++        public float ShownSongSpeed
++        {
++            get
++            {
++                return float.TryParse(_speedInput.text.TrimEnd('%'), NumberStyles.Number, null, out float percent)
++                    ? Mathf.Clamp(percent / 100f, 0.1f, 50f)
++                    : 1f;
++            }
++            set
++            {
++                _songSpeed = value;
++                _speedInput.SetTextWithoutNotify($"{Mathf.RoundToInt(value * 100f)}%");
++            }
++        }
++
+         private void OnEnable()
+         {
++            Current = this;
++
+             string subHeaderKey = GlobalVariables.State.IsPractice ? "Practice" : "Quickplay";
+             _subHeader.text = Localize.Key("Menu.Main.Options", subHeaderKey);
+ 
+@@ -554,6 +575,13 @@ namespace YARG.Menu.DifficultySelect
+                 _songSpeed = speed;
+                 GlobalVariables.State.SongSpeed = speed;
+ 
++                // A stretch of the song picked on the Song Setup screen is played as practice
++                if (!GlobalVariables.State.PlayingAShow
++                    && YARG.Menu.SongSetup.SongSetupState.TryGetSpan(GlobalVariables.State.CurrentSong, out _, out _))
++                {
++                    GlobalVariables.State.IsPractice = true;
++                }
++
+                 GlobalVariables.Instance.LoadScene(SceneIndex.Gameplay);
+                 return;
+             }
+@@ -673,6 +701,11 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private void OnDisable()
+         {
++            if (Current == this)
++            {
++                Current = null;
++            }
++
+             Navigator.Instance.PopScheme();
+         }
+ 

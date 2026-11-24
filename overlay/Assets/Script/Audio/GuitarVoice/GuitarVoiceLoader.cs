@@ -24,6 +24,7 @@ using YARG.Core.Audio;
 using YARG.Core.Chart;
 using YARG.Core.Logging;
 using YARG.Core.Song;
+using YARG.Menu.SongSetup;
 using YARG.Player;
 using YARG.Settings;
 
@@ -42,7 +43,8 @@ namespace YARG.Audio.GuitarVoice
         // Songs longer than this are left alone (analysis memory and loading time)
         private const double MAX_SECONDS = 20 * 60;
 
-        public static bool Enabled => SettingsManager.Settings.GuitarVoice.Value != GuitarVoiceMode.Off;
+        public static bool Enabled =>
+            SettingsManager.Settings.GuitarVoice.Value != GuitarVoiceMode.Off || SongSetupState.Freestyle;
 
         /// <summary>
         /// Adds a generated track for every guitar-family instrument in play that the song has no
@@ -53,10 +55,14 @@ namespace YARG.Audio.GuitarVoice
         {
             var added = new List<SongStem>();
             var mode = SettingsManager.Settings.GuitarVoice.Value;
-            if (mode == GuitarVoiceMode.Off || mixer is not BassStemMixer bassMixer || chart == null)
+            bool freestyle = SongSetupState.Freestyle;
+            GuitarFreestyle.Clear();
+            if ((mode == GuitarVoiceMode.Off && !freestyle) || mixer is not BassStemMixer bassMixer || chart == null)
             {
                 return added;
             }
+
+            bool freestyleGuitar = false, freestyleBass = false;
 
             // Which tracks are wanted, and from which chart (the hardest one in play)
             var wanted = new Dictionary<SongStem, (Instrument Instrument, Difficulty Difficulty)>();
@@ -85,8 +91,23 @@ namespace YARG.Audio.GuitarVoice
                         continue;
                 }
 
-                // The song already has the real thing
-                if (mixer[stem] != null || (stem == SongStem.Bass && mixer[SongStem.Rhythm] != null))
+                // Freestyle: this player makes their own sound, so no generated track for them
+                if (freestyle && !player.Profile.IsBot && !player.IsReplay)
+                {
+                    if (stem == SongStem.Bass)
+                    {
+                        freestyleBass = true;
+                    }
+                    else
+                    {
+                        freestyleGuitar = true;
+                    }
+                    continue;
+                }
+
+                // Turned off, or the song already has the real thing
+                if (mode == GuitarVoiceMode.Off || mixer[stem] != null
+                    || (stem == SongStem.Bass && mixer[SongStem.Rhythm] != null))
                 {
                     continue;
                 }
@@ -99,7 +120,7 @@ namespace YARG.Audio.GuitarVoice
             }
 
             var copies = bassMixer.SourceCopies;
-            if (wanted.Count == 0 || copies == null || copies.Count == 0)
+            if ((wanted.Count == 0 && !freestyleGuitar && !freestyleBass) || copies == null || copies.Count == 0)
             {
                 return added;
             }
@@ -118,6 +139,10 @@ namespace YARG.Audio.GuitarVoice
 
             // Chart time 0 is `offset` seconds into the audio
             double offset = song.SongOffsetSeconds;
+
+            var tone = mode == GuitarVoiceMode.Clean ? GuitarVoiceTone.Clean
+                : mode == GuitarVoiceMode.Heavy ? GuitarVoiceTone.Heavy
+                : GuitarVoiceTone.Rock;
 
             foreach (var (stem, (instrument, difficulty)) in wanted)
             {
@@ -143,10 +168,6 @@ namespace YARG.Audio.GuitarVoice
 
                     // A little under the song's own loudness, so it sits in the mix like a band member
                     float target = Math.Min(0.2f, Math.Max(0.04f, harmony.Rms * (bass ? 0.7f : 0.6f)));
-                    var tone = mode == GuitarVoiceMode.Clean ? GuitarVoiceTone.Clean
-                        : mode == GuitarVoiceMode.Heavy ? GuitarVoiceTone.Heavy
-                        : GuitarVoiceTone.Rock;
-
                     var rendered = GuitarVoiceSynth.Render(notes, seconds, tone, bass, harmony.Cents, target);
                     var wav = GuitarVoiceSynth.ToWav(rendered, GuitarVoiceSynth.SAMPLE_RATE, 2);
 
@@ -163,6 +184,19 @@ namespace YARG.Audio.GuitarVoice
                 catch (Exception e)
                 {
                     YargLogger.LogException(e, "Guitar voice: failed to build a track");
+                }
+            }
+
+            if (freestyleGuitar || freestyleBass)
+            {
+                try
+                {
+                    GuitarFreestyle.Prepare(harmony, tone, SongSetupState.KeyShiftFor(song),
+                        freestyleGuitar, freestyleBass);
+                }
+                catch (Exception e)
+                {
+                    YargLogger.LogException(e, "Freestyle: failed to record the notes");
                 }
             }
 

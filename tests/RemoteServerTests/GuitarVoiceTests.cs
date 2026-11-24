@@ -320,6 +320,38 @@ namespace RemoteServerTests
                 }
             }
 
+            // Freestyle: separate recordings of single notes and chords, ready to play at once
+            {
+                var wanted = new[]
+                {
+                    new VoiceNote { Pitch = 45, FretCount = 1 },
+                    new VoiceNote { Pitch = 57, FretCount = 1 },
+                    new VoiceNote { Pitch = 45, FretCount = 3 },
+                };
+                var bank = GuitarVoiceSynth.RenderBank(wanted, 3.0, GuitarVoiceTone.Rock, false, 0f, 0.1f);
+                check(bank.Length == 3 && bank[0].Length == 3 * SR && bank[2].Length == 3 * SR,
+                    "freestyle: one three-second recording per note");
+                bool startsAtOnce = true, endsQuiet = true;
+                var asFloat = new float[bank.Length][];
+                for (int i = 0; i < bank.Length; i++)
+                {
+                    asFloat[i] = new float[bank[i].Length];
+                    for (int k = 0; k < bank[i].Length; k++)
+                    {
+                        asFloat[i][k] = bank[i][k] / 32768f;
+                    }
+                    startsAtOnce &= Peak(asFloat[i], 0, (int) (0.01 * SR)) > 0.02f;
+                    endsQuiet &= Peak(asFloat[i], bank[i].Length - (int) (0.005 * SR), bank[i].Length) < 0.01f;
+                }
+                check(startsAtOnce, "freestyle: every recording sounds from its first moment");
+                check(endsQuiet, "freestyle: every recording ends quietly (no click)");
+                double off = CentsOff(asFloat[1], 1, 0, (int) (0.06 * SR), (int) (0.22 * SR), 220.0, SR);
+                check(Math.Abs(off) <= 4, $"freestyle: the A is an A ({off:+0;-0;0} cents)");
+                float single = Peak(asFloat[0], 0, SR), chord = Peak(asFloat[2], 0, SR);
+                check(chord < single * 2.5f && single < chord * 2.5f,
+                    $"freestyle: single notes and chords are balanced ({single:0.00} and {chord:0.00})");
+            }
+
             // Loudness lands on the target
             {
                 var run = new VoiceNote[16];

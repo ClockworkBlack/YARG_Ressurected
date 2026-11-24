@@ -112,6 +112,53 @@ namespace YARG.Audio.GuitarVoice
             return stereo;
         }
 
+        /// <summary>
+        /// Renders each note on its own, as a short mono 16-bit recording, for playing live
+        /// (freestyle). Only <see cref="VoiceNote.Pitch"/>, <see cref="VoiceNote.FretCount"/> and
+        /// <see cref="VoiceNote.Soft"/> are used. All recordings go through the same amplifier
+        /// settings and come out balanced against each other.
+        /// </summary>
+        public static short[][] RenderBank(VoiceNote[] notes, double seconds, GuitarVoiceTone tone, bool bass,
+            float cents, float targetRms)
+        {
+            // Laid end to end with a gap, played once, then cut apart
+            double slot = seconds + 0.5;
+            var sequence = new VoiceNote[notes.Length];
+            for (int i = 0; i < notes.Length; i++)
+            {
+                sequence[i] = notes[i];
+                sequence[i].Time = i * slot;
+                sequence[i].Length = seconds - 0.2;
+            }
+
+            var audio = Render(sequence, notes.Length * slot, tone, bass, cents, targetRms);
+            int frames = (int) (seconds * SAMPLE_RATE);
+            int fade = (int) (0.03 * SAMPLE_RATE);
+            var bank = new short[notes.Length][];
+            for (int i = 0; i < notes.Length; i++)
+            {
+                int start = (int) (i * slot * SAMPLE_RATE);
+                var one = new short[frames];
+                for (int f = 0; f < frames; f++)
+                {
+                    int at = (start + f) * 2;
+                    if (at + 1 >= audio.Length)
+                    {
+                        break;
+                    }
+                    float v = 0.5f * (audio[at] + audio[at + 1]);
+                    if (f >= frames - fade)
+                    {
+                        v *= (frames - f) / (float) fade;
+                    }
+                    v = v > 1f ? 1f : v < -1f ? -1f : v;
+                    one[f] = (short) Math.Round(v * 32767f);
+                }
+                bank[i] = one;
+            }
+            return bank;
+        }
+
         /// <summary>16-bit WAV file. With two channels the samples alternate left, right.</summary>
         public static byte[] ToWav(float[] samples, int sampleRate, int channels)
         {
@@ -193,25 +240,39 @@ namespace YARG.Audio.GuitarVoice
             int mask = size - 1;
             var buffer = new double[size];
 
-            // The pluck: a burst of noise, smoothed by the pick (forwards and backwards, so it has
-            // no direction), then combed by where along the string the pick strikes.
+            // The pluck. A string pulled aside by a pick and let go has a known shape, and a guitar
+            // pickup hears how fast the string moves: over one vibration that is a pulse as wide as
+            // the distance from the bridge to the pick (a fifth of the string here). This gives the
+            // real instrument's overtones: strongest at the bottom, falling away evenly, with every
+            // fifth one missing. A pinch of noise keeps two plucks from being identical, and the
+            // corners are rounded by how hard the pick is (softer for hammer-ons).
+            const double PICK_POSITION = 0.2;
+            int pick = Math.Max(1, (int) Math.Round(PICK_POSITION * length));
             var burst = new double[length];
             for (int i = 0; i < length; i++)
             {
-                burst[i] = Noise(ref rng);
+                burst[i] = (i < pick ? 1 - PICK_POSITION : -PICK_POSITION) + 0.04 * Noise(ref rng);
             }
-            double k = soft ? 0.25 : 0.45 + 0.4 * bright;
-            double lp = 0;
-            for (int i = 0; i < length; i++)
+            double cutoff = soft ? 1200.0 : 2200.0 + 3800.0 * bright;
+            double k = 1 - Math.Exp(-2 * Math.PI * cutoff / SAMPLE_RATE);
+            // Smoothed forwards then backwards, twice around the loop each way, so the shape
+            // stays symmetrical and has no seam where the loop closes
+            double lp = burst[length - 1];
+            for (int pass = 0; pass < 2; pass++)
             {
-                lp += k * (burst[i] - lp);
-                burst[i] = lp;
+                for (int i = 0; i < length; i++)
+                {
+                    lp += k * (burst[i] - lp);
+                    burst[i] = lp;
+                }
             }
-            lp = 0;
-            for (int i = length - 1; i >= 0; i--)
+            for (int pass = 0; pass < 2; pass++)
             {
-                lp += k * (burst[i] - lp);
-                burst[i] = lp;
+                for (int i = length - 1; i >= 0; i--)
+                {
+                    lp += k * (burst[i] - lp);
+                    burst[i] = lp;
+                }
             }
             double mean = 0;
             for (int i = 0; i < length; i++)
@@ -220,16 +281,10 @@ namespace YARG.Audio.GuitarVoice
             }
             mean /= length;
 
-            int pick = Math.Max(1, (int) Math.Round(0.13 * length));
             double peak = 0, power = 0;
             for (int i = 0; i < length; i++)
             {
-                int j = i - pick;
-                if (j < 0)
-                {
-                    j += length;
-                }
-                double v = (burst[i] - mean) - (burst[j] - mean);
+                double v = burst[i] - mean;
                 buffer[i] = v;
                 power += v * v;
                 if (Math.Abs(v) > peak)
@@ -251,7 +306,8 @@ namespace YARG.Audio.GuitarVoice
 
             // The loop filter: a blend of this sample and the last (high overtones fade first),
             // times a gain that sets how long the string rings.
-            double blend = 0.5 - 0.32 * bright;
+            // (less of it for high notes, whose overtones would otherwise vanish in a moment)
+            double blend = (0.5 - 0.32 * bright) * Math.Min(1.0, 220.0 / freq);
             double gainHeld = Math.Pow(10, -3.0 / (freq * t60));
             double gainDamped = Math.Pow(10, -3.0 / (freq * 0.06));
             int heldSamples = (int) (held * SAMPLE_RATE);

@@ -105,6 +105,33 @@ at any speed. A wrong strum still makes the game's own "clunk".
 - Every build's release includes `guitar-sound-demo.wav`: the three guitar sounds and the bass,
   recorded by the automated tests.
 
+## Song Setup: speed, key, a section of the song, freestyle
+
+After picking a song, the instrument / difficulty screen shows a **SONG SETUP** bar at the
+bottom. Tap it to open a screen where you can change things while listening to the song:
+
+- **Speed**, 50% to 200%. This is the game's own song speed (the same number as the speed box).
+- **Key**, up to 12 semitones down or up, without changing the speed. The generated guitar and
+  freestyle notes move with it.
+- **Section.** A bar shows the whole song. Drag its two yellow ends to choose where to start and
+  stop; tap anywhere on the bar to hear the song from there; or use *Start here* / *End here*
+  while it plays. The preview loops the chosen stretch at the chosen speed and key. A song
+  started with a section chosen is played in practice mode on that stretch, on repeat.
+- **Freestyle guitar** (stays on until you turn it off or close the game). Every strum plays a
+  real guitar note at once, chart or no chart, in the song's own scale and tuning:
+  - the five frets are the five notes of the song's pentatonic scale, green lowest; a strum
+    with no fret is the note just under green;
+  - strum down for the low octave, strum up for the octave above;
+  - two frets make a power chord, three or more a fuller one;
+  - change frets while a note rings to hammer on or pull off; let go of all frets to stop it;
+  - the whammy bar bends the note down.
+  With freestyle on, your instrument gets no generated track (you are the guitar), and wrong
+  strums do not clunk. The chart still scrolls and scores as usual; follow it or ignore it.
+  Works for five-fret guitar, bass and rhythm.
+
+The settings belong to the song you opened the screen for. Picking a different song starts
+again from normal speed, original key and the whole song.
+
 ## Setup (one time)
 
 ### 1. Unity license (needs a computer once, e.g. a Chromebook's Linux)
