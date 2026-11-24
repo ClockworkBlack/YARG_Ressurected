@@ -84,10 +84,17 @@ Any button can be remapped in the profile's binding menu. For a guitar controlle
 
 The menus play songs from your library in the background. You choose what plays:
 
-- **A song on startup.** In the music library, highlight a song, open **More Options**
-  (orange / LB) and choose **Play On Startup**. It plays first every time the game starts, then
-  the menu music carries on as below. Choose **Don't Play On Startup** on the same song, or set
-  **Settings > Sound > Startup Song** to **None**, to turn it off.
+- **Startup Songs.** Each time the game starts, the songs in the **Startup Songs** playlist play
+  first, in order, then the menu music carries on as below. It starts with **"No Pole" by Don
+  Toliver** as soon as that song is in your library (convert it or add its folder to
+  `YARG/songs`, then scan).
+  - **Add a song:** in the music library, highlight it, open **More Options** (L1) and choose
+    **Add To Startup Songs**. It goes to the end of the list.
+  - **Change the order:** music library > **Playlists** > **Startup Songs**, highlight a song and
+    press **Left / Right** on the D-pad to move it up or down.
+  - **Remove a song:** highlight it and choose **Remove From Startup Songs** in More Options.
+    Removing No Pole sticks: it isn't added back.
+  - **Turn them off:** **Settings > Sound > Play Startup Songs**.
 - **Which songs play after it.** **Settings > Sound > Menu Music**: *Whole library*, *Favorites*,
   or any of your playlists. Or in the music library's **Playlists** view, highlight a playlist
   (or Favorites), open **More Options** and choose **Use As Menu Music** (and **Stop Using As
