@@ -29,6 +29,14 @@
   #name { font: inherit; font-size: 20px; padding: 12px 16px; width: min(320px, 90vw); border-radius: 12px;
     border: 2px solid #334155; background: #0f172a; color: var(--text); text-align: center; -webkit-user-select: text; user-select: text; }
   .big { font-size: 20px; font-weight: 700; padding: 14px 28px; background: var(--accent); color: #111; }
+  .roles { display: grid; grid-template-columns: repeat(2, minmax(130px, 170px)); gap: 8px; }
+  .role { padding: 12px 8px; font-size: 16px; border: 2px solid transparent; }
+  .role.active { border-color: var(--accent); background: #2a2410; font-weight: 700; }
+  #difficulty { font: inherit; margin-left: 8px; padding: 6px 10px; border-radius: 8px; background: #0f172a;
+    color: var(--text); border: 2px solid #334155; }
+  #notice { position: absolute; left: 50%; transform: translateX(-50%); top: 6px; z-index: 5; max-width: 90%;
+    padding: 8px 14px; border-radius: 10px; background: #1e293b; color: var(--text); font-size: 14px;
+    text-align: center; pointer-events: none; }
   .note { font-size: 14px; color: var(--muted); }
   .note a { color: var(--accent); }
 
@@ -93,8 +101,22 @@
 
 <div id="join" class="screen">
   <h1><b>YARG</b> Remote</h1>
-  <p>Play along on the host's YARG using this phone as a guitar controller or microphone.</p>
+  <p>Pick what you want to play. You'll be added to the host's game automatically.</p>
   <input id="name" maxlength="20" placeholder="Your name" autocomplete="off" autocapitalize="words" spellcheck="false">
+  <div class="roles" id="roles">
+    <button class="role" data-role="guitar">🎸 Guitar</button>
+    <button class="role" data-role="bass">🎸 Bass</button>
+    <button class="role" data-role="vocals">🎤 Vocals</button>
+    <button class="role" data-role="none">🎮 Controller only</button>
+  </div>
+  <label class="note">Difficulty
+    <select id="difficulty">
+      <option value="easy">Easy</option>
+      <option value="medium">Medium</option>
+      <option value="hard">Hard</option>
+      <option value="expert">Expert</option>
+    </select>
+  </label>
   <button id="joinBtn" class="big">Join</button>
   <p class="note" id="joinNote"></p>
 </div>
@@ -112,6 +134,7 @@
   </header>
 
   <main>
+    <div id="notice" class="hidden"></div>
     <section id="pane-play" class="pane">
       <div id="lanes" class="lanes">
         <div class="side">
@@ -174,7 +197,7 @@
         <p id="micStatus" class="note">Sing into this phone and YARG scores your vocals.</p>
         <ol>
           <li>Tap <b>Start mic</b> and allow microphone access.</li>
-          <li>On the host phone: <b>Profiles</b> → your vocals profile → <b>Add Device</b> → <b id="micName">Phone mic: …</b></li>
+          <li>Joined as <b>Vocals</b>? You're added automatically. Otherwise, on the host phone: <b>Profiles</b> → a vocals profile → <b>Add Device</b> → <b id="micName">Phone mic: …</b></li>
           <li>Hold this phone close and sing. Headphones on the host help, so the music doesn't leak into your mic.</li>
         </ol>
       </div>
@@ -204,6 +227,9 @@
   }
 
   var playerName = store.get('yargRemoteName') || '';
+  // What this phone plays. The host makes a player for it automatically ("none" = host sets it up).
+  var role = store.get('yargRemoteRole') || 'guitar';
+  var difficulty = store.get('yargRemoteDifficulty') || 'medium';
   var ws = null, joined = false, connected = false, reconnectTimer = 0;
   var playerNumber = 0, rtt = -1;
 
@@ -281,15 +307,24 @@
         if (p[4]) { playerName = p[4]; }
         buttons = 0;
         sendState();
+        ws.send('role\n' + role + '\n' + difficulty);
         if (mic.on) { ws.send('mic\n' + mic.rate); }
         updateStatus();
         updateMicName();
       } else if (p[0] === 'pong') {
         onPong(parseFloat(p[1]), parseFloat(p[2]));
         updateStatus();
+      } else if (p[0] === 'roleok') {
+        notice(p[1] === 'vocals' ? "You're in on vocals. Sing when the song starts!"
+          : "You're in on " + p[1] + '. Wait for the host to start a song.');
+      } else if (p[0] === 'rolewait') {
+        notice("A song is playing. You'll be added when it ends.", 15000);
+      } else if (p[0] === 'roleno') {
+        notice('The host already set this phone up, so nothing was changed.');
       } else if (p[0] === 'micok') {
         $('micName').textContent = p[1];
-        $('micStatus').textContent = 'Mic is live. On the host, add "' + p[1] + '" to a vocals profile.';
+        $('micStatus').textContent = role === 'vocals' ? 'Mic is live.'
+          : 'Mic is live. On the host, add "' + p[1] + '" to a vocals profile.';
       }
     };
 
@@ -304,6 +339,15 @@
     setStatus('Reconnecting…', false);
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connect, 1500);
+  }
+
+  var noticeTimer = 0;
+  function notice(text, ms) {
+    var el = $('notice');
+    el.textContent = text;
+    el.classList.remove('hidden');
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () { el.classList.add('hidden'); }, ms || 6000);
   }
 
   function setStatus(text, ok) {
@@ -515,19 +559,20 @@
 
   // ---------- Tabs & layout ----------
 
-  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (tab) {
-    tab.addEventListener('click', function () {
-      var name = tab.getAttribute('data-tab');
-      Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
-        t.classList.toggle('active', t === tab);
-      });
-      ['play', 'menu', 'mic'].forEach(function (n) {
-        $('pane-' + n).classList.toggle('hidden', n !== name);
-      });
-      $('layoutBtn').classList.toggle('hidden', name !== 'play');
-      buttons = 0;
-      sendState();
+  function selectTab(name) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (t) {
+      t.classList.toggle('active', t.getAttribute('data-tab') === name);
     });
+    ['play', 'menu', 'mic'].forEach(function (n) {
+      $('pane-' + n).classList.toggle('hidden', n !== name);
+    });
+    $('layoutBtn').classList.toggle('hidden', name !== 'play');
+    buttons = 0;
+    sendState();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (tab) {
+    tab.addEventListener('click', function () { selectTab(tab.getAttribute('data-tab')); });
   });
 
   function applyLayout(layout) {
@@ -697,9 +742,23 @@
     $('joinNote').textContent = 'Tip: turn the phone sideways.';
   }
 
+  function showRole() {
+    Array.prototype.forEach.call(document.querySelectorAll('.role'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-role') === role);
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.role'), function (b) {
+    b.addEventListener('click', function () { role = b.getAttribute('data-role'); showRole(); });
+  });
+  showRole();
+  $('difficulty').value = difficulty;
+
   function join() {
     var name = $('name').value.trim().slice(0, 20);
     if (!name) { $('name').focus(); return; }
+    difficulty = $('difficulty').value || 'medium';
+    store.set('yargRemoteRole', role);
+    store.set('yargRemoteDifficulty', difficulty);
     playerName = name;
     store.set('yargRemoteName', name);
     joined = true;
@@ -709,6 +768,10 @@
     goFullscreen();
     keepAwake();
     connect();
+    if (role === 'vocals') {
+      selectTab('mic');
+      startMic(); // started from the Join tap, so the browser can ask for the mic right away
+    }
   }
 
   $('joinBtn').addEventListener('click', join);

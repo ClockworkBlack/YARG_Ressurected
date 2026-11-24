@@ -42,10 +42,15 @@ When you add a controller to a profile, pick **Gamepad**. You can remap any butt
 
 Other phones on the same Wi-Fi (or on your hotspot) can join from their **browser**, without installing anything.
 
-1. On the host, the main menu shows **PHONES: open https://192.168.x.x:7777**.
+0. No shared Wi-Fi? On the host, tap the **PHONES** bar on the main menu, then **Start game network**. YARG starts a
+   private Wi-Fi network (no internet) and shows a QR code to join it, and a second one to open the page.
+   Android asks for the "Nearby devices" permission the first time (Location on Android 12 and older).
+1. On the host, the main menu shows a **PHONES** bar with the address; tap it for QR codes.
 2. On the guest's phone, open that address. The browser warns that the connection isn't private, because the
    certificate is self-signed. Tap **Advanced → Proceed** (on iPhone, use **Safari**: *Show Details → visit this website*).
-3. Type a name and tap **Join**. Turn the phone sideways.
+3. Type a name, pick **Guitar**, **Bass** or **Vocals** and a difficulty, and tap **Join**. The host adds a player for
+   that phone automatically (between songs; a phone that joins mid-song is added when the song ends).
+   Pick **Controller only** to have the host set the phone up by hand in Profiles. Turn the phone sideways.
    - **Play** tab: tap the colored **Lanes** (each tap strums, and chords work), or switch to **Frets** for frets + a strum
      pad + whammy.
    - **Menu** tab: D-pad, OK, Back and Start for moving around YARG's menus.
