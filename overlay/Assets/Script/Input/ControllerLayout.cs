@@ -22,10 +22,10 @@ namespace YARG.Input
     public enum GamepadGuitarLayout
     {
         // Frets on the same buttons as the menu colors: Cross green, Circle red, Triangle yellow,
-        // Square blue, L1 orange. Strum on the D-pad.
+        // Square blue, L1 orange.
         FaceButtons,
 
-        // Guitar Hero 2 on a DualShock: L2 green, L1 red, R1 yellow, R2 blue, Cross orange.
+        // The default. Guitar Hero 2 on a DualShock: L2 green, L1 red, R1 yellow, R2 blue, Cross orange.
         ShoulderButtons,
     }
 
@@ -50,9 +50,9 @@ namespace YARG.Input
         /// <summary>How an ordinary gamepad is set up for guitar: Settings > General > Gamepad Guitar Layout.</summary>
         public static GamepadBindingMode GuitarBindingMode =>
             SettingsManager.Settings != null &&
-            SettingsManager.Settings.GamepadGuitarLayout.Value == GamepadGuitarLayout.ShoulderButtons
-                ? GamepadBindingMode.Gamepad
-                : GamepadBindingMode.Gamepad_FaceButtons;
+            SettingsManager.Settings.GamepadGuitarLayout.Value == GamepadGuitarLayout.FaceButtons
+                ? GamepadBindingMode.Gamepad_FaceButtons
+                : GamepadBindingMode.Gamepad;
 
         private static GamepadGuitarLayout? _appliedGuitarLayout;
 
@@ -71,6 +71,12 @@ namespace YARG.Input
                 return;
             }
 
+            RebindGuitarLayout();
+        }
+
+        /// <summary>Gives the PlayStation / Xbox pads of the connected profiles the current guitar layout.</summary>
+        public static void RebindGuitarLayout()
+        {
             var mode = GuitarBindingMode;
             foreach (var player in YARG.Player.PlayerContainer.Players)
             {
@@ -86,6 +92,25 @@ namespace YARG.Input
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Build 25 set gamepads up with the face-button layout by default. The default is the Guitar
+        /// Hero 2 shoulder layout again, and the setting is moved back to it once when the game starts
+        /// (see SettingsManager.LoadSettings); this re-does the buttons of the gamepads that are
+        /// connected, the first time a song is chosen after that.
+        /// </summary>
+        public static void ApplyPendingGuitarLayout()
+        {
+            var settings = SettingsManager.Settings;
+            if (settings == null || !settings.GuitarLayoutRebindPending)
+            {
+                return;
+            }
+
+            RebindGuitarLayout();
+            settings.GuitarLayoutRebindPending = false;
+            SettingsManager.SaveSettings();
         }
 
         /// <summary>The menu action a face / shoulder / center button does in the current layout.</summary>

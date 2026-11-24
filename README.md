@@ -73,7 +73,20 @@ Guitar and bass on a gamepad have two layouts, chosen in **Settings > General > 
 Layout**. Changing it re-does the guitar buttons of PlayStation and Xbox controllers already in
 a profile.
 
-**Face buttons (default).** The frets are the same buttons as the colors in the menus:
+**Guitar Hero 2 (default).** The same as playing Guitar Hero 2 on a PlayStation controller:
+
+| Guitar | PS5 / PS4 | Xbox |
+|---|---|---|
+| Green / Red / Yellow / Blue | L2 / L1 / R1 / R2 | LT / LB / RB / RT |
+| Orange | Cross | A |
+| Strum | D-pad Up / Down | D-pad Up / Down |
+| Star Power | Create | View |
+| Whammy | Left stick left/right | Left stick left/right |
+| Pause | Options | Menu |
+
+Easy uses green, red and yellow only: L2, L1, R1.
+
+**Face buttons.** The frets are the same buttons as the colors in the menus:
 
 | Guitar | PS5 / PS4 | Xbox |
 |---|---|---|
@@ -87,24 +100,13 @@ a profile.
 | Whammy | R2 | RT |
 | Pause | Options | Menu |
 
-Easy uses green, red and yellow only: Cross, Circle, Triangle.
+With this layout Easy is Cross, Circle, Triangle.
 
 **No strumming.** On a gamepad, pressing the fret button plays the note: no strum needed. Hold
 the buttons of a chord together, and press again for a repeated note. This is **Settings >
 General > No Strumming On Gamepads** (on by default). It gives the profile the *All Taps*
 modifier and the *Casual* engine preset, both of which you can see and change on the screen
 before a song. Turn the setting off to play with strums (D-pad up / down) like on a guitar.
-
-**Shoulder buttons.** The Guitar Hero 2 controller layout:
-
-| Guitar | PS5 / PS4 | Xbox |
-|---|---|---|
-| Green / Red / Yellow / Blue | L2 / L1 / R1 / R2 | LT / LB / RB / RT |
-| Orange | Cross | A |
-| Strum | D-pad Up / Down | D-pad Up / Down |
-| Star Power | Create | View |
-| Whammy | Left stick left/right | Left stick left/right |
-| Pause | Options | Menu |
 
 **Difficulty and what the notes look like.** New profiles start on **Easy**: colored notes on
 three frets, like Guitar Hero and Rock Band. **Beginner** is different on purpose: every note is a
@@ -186,8 +188,8 @@ Notes:
 
 Guitar Hero songs come with the guitar on its own audio track: it plays while you hit notes and
 cuts out when you miss. Songs you add yourself (and everything from the converter) are one
-recording, so there is nothing to cut. With **Settings > Sound > Guitar Sound On Notes** on
-(the default), the game makes that track while the song loads:
+recording, so there is nothing to cut. This is off unless you turn it on: set **Settings > Sound >
+Guitar Sound On Notes** to Clean, Rock or Heavy, and the game makes that track while the song loads:
 
 1. **It listens to the song.** It works out the recording's tuning (many songs are not at
    exactly A = 440 Hz), its scale, and which note the music is on at each moment, separately
