@@ -94,6 +94,21 @@ public final class VocalCharter {
      *             sung note by note instead of as one or two long notes.
      */
     public static Chart build(List<Lrc.Line> lines, TempoMap map, double duration, VocalAnalyzer.Voice voice, boolean runs) {
+        return build(lines, map, duration, voice, runs, null);
+    }
+
+    /**
+     * @param onsets times (seconds, ascending) where a new sound starts in the full song, or
+     *               null. Without the separated voice, words are moved onto these, so they fall
+     *               on the rhythm of the song instead of drifting between its beats.
+     */
+    public static Chart build(List<Lrc.Line> lines, TempoMap map, double duration, VocalAnalyzer.Voice voice, boolean runs,
+                              double[] onsets) {
+        // Timing words from the lyric file's own pace and the song's sounds was tried and did not
+        // place words better than a plain speaking pace (see RnbTest.normalModeKeepsPace), so it
+        // is switched off: the code is kept for the next attempt.
+        double pace = PACE_FROM_SONG ? songPace(lines, duration) : 0;
+        if (!PACE_FROM_SONG) onsets = null;
         Chart chart = new Chart();
         if (lines == null) return chart;
         float gate = voice != null ? voice.gate() : 0f;
@@ -122,7 +137,8 @@ public final class VocalCharter {
                     wordEnd[k] = voice.timeOf(frameEnd[k]);
                 }
             } else {
-                timeByPace(start, limit, words, wordStart, wordEnd);
+                timeByPace(start, limit, words, wordStart, wordEnd, pace);
+                if (onsets != null) snapToOnsets(onsets, wordStart, wordEnd, limit);
             }
 
             // What is sung on each word, and is this line sung at all?
@@ -213,17 +229,97 @@ public final class VocalCharter {
     }
 
     /** Words spread over a natural pace: all that can be done when only the start of the line is known. */
-    private static void timeByPace(double start, double limit, List<String> words, double[] wordStart, double[] wordEnd) {
-        int chars = 0;
-        for (String w : words) chars += w.length() + 1;
-        double natural = 0.4 + chars * 0.075;
-        double end = Math.min(start + natural, limit);
+    /** Fastest and slowest a syllable is taken to be, in seconds, when the voice cannot be listened to. */
+    static final double MIN_SYLLABLE_SEC = 0.11, MAX_SYLLABLE_SEC = 0.5;
+    /** A word is moved onto a sound of the song that starts within this many seconds of it. */
+    static final double SNAP_SEC = 0.09;
+
+    /**
+     * How long this song takes over a syllable, worked out from the lyric file alone: where one
+     * line follows straight on from another, the singer filled the time between their stamps, so
+     * that time divided by the line's syllables is the pace. The middle value over such lines is
+     * used for the whole song: a rap comes out quick, a ballad slow.
+     */
+    static double songPace(List<Lrc.Line> lines, double duration) {
+        if (lines == null) return 0.19;
+        List<Double> paces = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            List<String> words = words(lines.get(i).text);
+            if (words.isEmpty()) continue;
+            int syllables = 0;
+            for (String w : words) syllables += syllables(w);
+            double next = i + 1 < lines.size() ? lines.get(i + 1).time : duration;
+            double per = (next - lines.get(i).time - 0.15) / syllables;
+            // A longer wait than this is a pause or an instrumental break, not singing
+            if (per >= MIN_SYLLABLE_SEC && per <= 0.6) paces.add(per);
+        }
+        if (paces.size() < 3) return 0.19;
+        java.util.Collections.sort(paces);
+        // The quicker side of the middle: stamps include the breath before the next line
+        double pace = paces.get(paces.size() * 1 / 10) * 0.9;
+        return Math.max(MIN_SYLLABLE_SEC, Math.min(MAX_SYLLABLE_SEC, pace));
+    }
+
+    /** Experiment, off: see {@link #build(List, TempoMap, double, VocalAnalyzer.Voice, boolean, double[])}. */
+    static final boolean PACE_FROM_SONG = false;
+
+    /** Spreads the words of a line from its time stamp at a speaking pace (or, in the experiment, the song's own). */
+    private static void timeByPace(double start, double limit, List<String> words, double[] wordStart, double[] wordEnd, double pace) {
+        if (pace <= 0) {
+            int chars = 0;
+            for (String w : words) chars += w.length() + 1;
+            double natural = 0.4 + chars * 0.075;
+            double end = Math.min(start + natural, limit);
+            if (end < start + 0.2) end = start + 0.2;
+            int seen = 0;
+            for (int k = 0; k < words.size(); k++) {
+                wordStart[k] = start + (end - start) * seen / chars;
+                seen += words.get(k).length() + 1;
+                wordEnd[k] = start + (end - start) * seen / chars;
+            }
+            return;
+        }
+        int total = 0;
+        for (String w : words) total += syllables(w);
+        double end = Math.min(start + total * pace, limit);
         if (end < start + 0.2) end = start + 0.2;
         int seen = 0;
         for (int k = 0; k < words.size(); k++) {
-            wordStart[k] = start + (end - start) * seen / chars;
-            seen += words.get(k).length() + 1;
-            wordEnd[k] = start + (end - start) * seen / chars;
+            wordStart[k] = start + (end - start) * seen / total;
+            seen += syllables(words.get(k));
+            // A short gap before the next word, so two words on one note are still two
+            wordEnd[k] = start + (end - start) * seen / total - Math.min(0.03, (end - start) / total * 0.2);
+        }
+    }
+
+    /**
+     * Moves each word onto the nearest sound of the song that starts close to it, keeping the
+     * words in order. Sung and rapped syllables land on the song's rhythm, so this pulls words
+     * placed by pace onto the beat they are really said on.
+     */
+    static void snapToOnsets(double[] onsets, double[] wordStart, double[] wordEnd, double limit) {
+        int n = wordStart.length;
+        double floor = Double.NEGATIVE_INFINITY;
+        for (int k = 0; k < n; k++) {
+            int at = java.util.Arrays.binarySearch(onsets, wordStart[k]);
+            if (at < 0) at = -at - 1;
+            double best = Double.NaN;
+            for (int j = Math.max(0, at - 1); j <= Math.min(onsets.length - 1, at); j++) {
+                double d = Math.abs(onsets[j] - wordStart[k]);
+                if (d <= SNAP_SEC && onsets[j] >= floor + 0.05 && (Double.isNaN(best) || d < Math.abs(best - wordStart[k]))) best = onsets[j];
+            }
+            if (!Double.isNaN(best)) {
+                double shift = best - wordStart[k];
+                wordStart[k] = best;
+                // The word before now ends where this one begins, less a breath
+                if (k > 0 && shift < 0) wordEnd[k - 1] = Math.min(wordEnd[k - 1], best - 0.02);
+            }
+            if (wordStart[k] < floor + 0.05) wordStart[k] = floor + 0.05;
+            floor = wordStart[k];
+        }
+        for (int k = 0; k < n; k++) {
+            double nextStart = k + 1 < n ? wordStart[k + 1] : limit;
+            wordEnd[k] = Math.max(wordStart[k] + 0.04, Math.min(wordEnd[k], nextStart - 0.02));
         }
     }
 

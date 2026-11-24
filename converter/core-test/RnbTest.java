@@ -32,6 +32,8 @@ final class RnbTest {
         followsTheSinger();
         runsInTheVocals();
         wholeSong();
+        // normalModeKeepsPace() measures an experiment that is switched off (VocalCharter.PACE_FROM_SONG);
+        // run it by hand when working on word timing without the separated voice.
         return failures;
     }
 
@@ -256,6 +258,62 @@ final class RnbTest {
         check(slides[1] >= slides[0] + changes / 5, "R&B mode follows clearly more of the runs");
         check(slides[1] >= 0.7 * changes, "R&B mode follows most note changes of the runs");
         check(slides[1] <= changes + 4, "R&B mode does not invent notes");
+    }
+
+    /**
+     * Normal mode has no separated voice to listen to. The words must still keep pace with the
+     * song: timed from the lyric file's own stamps and moved onto the sounds of the song.
+     */
+    private static void normalModeKeepsPace() {
+        System.out.println("Normal mode: words keep pace with the song");
+        int[] seeds = {51, 52, 53};
+        String[] plans = {"SSSSSSSSSS", "RRRRRRRRRR", "SSRRSSRRSS"};
+        for (int t = 0; t < plans.length; t++) {
+            SynthVoice song = new SynthVoice(44100, plans[t], seeds[t]);
+            // Lines that follow straight on, as in a real lyric file: each stamp is where the line starts
+            StringBuilder sb = new StringBuilder();
+            List<Double> starts = new ArrayList<>();
+            for (SynthVoice.Line l : song.lines) {
+                sb.append(Lrc.stamp(l.stamp)).append(l.text()).append('\n');
+                for (SynthVoice.Word w : l.words) starts.add(w.start);
+            }
+            List<Lrc.Line> lyrics = Lrc.parse(sb.toString());
+            // What the full song gives: a sound starting on every word, and as many again elsewhere (the band)
+            List<Double> all = new ArrayList<>(starts);
+            java.util.Random rnd = new java.util.Random(seeds[t]);
+            for (int i = 0; i < starts.size(); i++) all.add(rnd.nextDouble() * song.duration);
+            java.util.Collections.sort(all);
+            double[] onsets = new double[all.size()];
+            for (int i = 0; i < onsets.length; i++) onsets[i] = all.get(i);
+
+            TempoMap map = steadyMap(song.duration, 100);
+            int[] close = new int[2];
+            int[] lastInTime = new int[2];
+            int words = 0, lines = 0;
+            for (int mode = 0; mode < 2; mode++) {
+                VocalCharter.Chart chart = VocalCharter.build(lyrics, map, song.duration, null, false, mode == 0 ? null : onsets);
+                words = 0;
+                lines = 0;
+                int at = 0;
+                for (int i = 0; i < song.lines.size(); i++) {
+                    List<VocalCharter.Note> notes = new ArrayList<>();
+                    for (VocalCharter.Phrase p : chart.phrases) if (p.line == i) notes.addAll(p.notes);
+                    SynthVoice.Line line = song.lines.get(i);
+                    lines++;
+                    for (int k = 0; k < line.words.size() && k < notes.size(); k++) {
+                        words++;
+                        double placed = map.tickToTime(notes.get(k).tick);
+                        if (Math.abs(placed - line.words.get(k).start) <= 0.15) close[mode]++;
+                        if (k == line.words.size() - 1 && Math.abs(placed - line.words.get(k).start) <= 0.35) lastInTime[mode]++;
+                    }
+                }
+            }
+            System.out.printf(Locale.US, "  %s: %d words; within 0.15 s of where they are sung: %d by pace alone, %d moved onto the song; last word of a line in time on %d of %d lines%n",
+                    plans[t], words, close[0], close[1], lastInTime[1], lines);
+            check(close[1] >= close[0], "moving words onto the song's sounds does not make them worse");
+            check(close[1] >= 0.5 * words, "at least half the words land where they are sung");
+            check(lastInTime[1] >= 0.6 * lines, "a line's last word is still in time, so the words have not run ahead or behind");
+        }
     }
 
     /** Through the whole converter: R&B mode is used when there is singing, and explained when it cannot be. */

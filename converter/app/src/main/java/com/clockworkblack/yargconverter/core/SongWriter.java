@@ -104,7 +104,7 @@ public final class SongWriter {
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
-            r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb);
+            r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb, times);
             r.lyricLines = r.vocals.lines;
             r.lyricsOut = lyrics;
             boolean marked = false;
