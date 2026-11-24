@@ -210,22 +210,38 @@ namespace YARG.Story
             string path = Path.Combine(folder, name);
             string temp = Path.Combine(folder, Path.GetRandomFileName());
 
-            File.WriteAllText(temp, text);
-            if (StoryProgress.FromJsonText(File.ReadAllText(temp)) == null)
+            try
             {
-                YargLogger.LogError("Story: a save did not read back correctly, keeping the old one (" + path + ")");
-                DeleteIfThere(temp);
-                return false;
-            }
+                File.WriteAllText(temp, text);
+                if (StoryProgress.FromJsonText(File.ReadAllText(temp)) == null)
+                {
+                    YargLogger.LogError("Story: a save did not read back correctly, keeping the old one (" + path + ")");
+                    return false;
+                }
 
-            if (File.Exists(path))
+                if (File.Exists(path))
+                {
+                    File.Copy(path, path + ".bak", true);
+                    File.Delete(path);
+                }
+
+                File.Move(temp, path);
+                return true;
+            }
+            finally
             {
-                File.Copy(path, path + ".bak", true);
-                File.Delete(path);
+                // A step that failed (often on shared storage, where a file from an earlier install
+                // may not be ours to replace) must not leave a stray temporary file behind on every
+                // save: they would pile up in Internal storage/YARG/story
+                try
+                {
+                    DeleteIfThere(temp);
+                }
+                catch (Exception)
+                {
+                    // Nothing more to do; the next save tries again
+                }
             }
-
-            File.Move(temp, path);
-            return true;
         }
 
         private static void DeleteIfThere(string path)

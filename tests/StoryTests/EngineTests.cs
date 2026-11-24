@@ -19,7 +19,7 @@ namespace StoryTests
             Console.WriteLine("\n== Reading a campaign ==");
 
             var campaign = Sample.Load();
-            Program.Check(campaign.Id == "sample" && campaign.Version == 3 && campaign.Title == "Sample Story", "reads the campaign's id, version and title");
+            Program.Check(campaign.Id == "sample" && campaign.Version == 3 && campaign.Title == "Sample Story" && campaign.NarratorName == "The Voice", "reads the campaign's id, version, title and narrator name");
             Program.Check(campaign.Chapters.Count == 3 && campaign.AllGigs.Count == 8, "reads three chapters with eight gigs");
             Program.Check(campaign.Chapters[0].Number == 1 && campaign.Chapters[1].Number == 2, "numbers chapters that give no number");
             Program.Check(campaign.FindGig("g3").Number == 4 && campaign.FindGig("g3").Chapter.Id == "ch2", "numbers gigs through the whole story");

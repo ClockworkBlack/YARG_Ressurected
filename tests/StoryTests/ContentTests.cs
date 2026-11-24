@@ -79,6 +79,7 @@ namespace StoryTests
             });
 
             Program.Check(campaign.Title.Length > 0 && campaign.Id.Length > 0, $"the campaign loads: \"{campaign.Title}\"");
+            Program.Check(campaign.NarratorName.Length > 0, $"the narrator has a name: \"{campaign.NarratorName}\"");
 
             var problems = StoryCheck.Problems(campaign);
             foreach (string problem in problems)

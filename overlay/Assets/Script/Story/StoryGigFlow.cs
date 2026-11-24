@@ -415,8 +415,13 @@ namespace YARG.Story
 
             _phase = Phase.Returning;
 
-            // The main menu is about to appear underneath: cover it so it does not flash
-            Owner?.CoverForReturn();
+            // The main menu is about to appear underneath: cover it so it does not flash. Not after a
+            // failed load: the game then shows its own dialog over the main menu, and with a controller
+            // that dialog is driven through the main menu's controls, which the cover would hide.
+            if (!loadFailed)
+            {
+                Owner?.CoverForReturn();
+            }
 
             StartCoroutine(ReturnWhenReady(loadFailed));
         }

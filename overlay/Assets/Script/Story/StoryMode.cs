@@ -61,6 +61,9 @@ namespace YARG.Story
         private bool _reopenAfterMenu;
         private int  _mainMenuShowsAtLeave;
 
+        // Frames in a row the story was open with the main menu gone from under it
+        private int _menuGoneFrames;
+
         // What the title screen shows for each slot, read once (index 0 unused)
         private readonly StoryProgress[] _peek = new StoryProgress[StorySaves.SLOTS + 1];
         private readonly bool[]          _peeked = new bool[StorySaves.SLOTS + 1];
@@ -213,9 +216,10 @@ namespace YARG.Story
                 }
 
                 bool ready = GameReady;
-                if (ready && !GigUnderWay)
+                if (ready && !GigUnderWay && IsOpen)
                 {
-                    // Only a reference check unless the songs were rescanned
+                    // Only while the story is on screen, so a player who never opens it pays nothing
+                    // for it. Only a reference check unless the songs were rescanned.
                     StoryLibrary.Refresh();
                 }
 
@@ -224,6 +228,25 @@ namespace YARG.Story
                 {
                     _reopenAfterMenu = false;
                     Open();
+                }
+
+                // Something of the game's took the main menu away under the story (tapping the
+                // "Chart requires a rescan!" toast opens Settings, for one). That also popped the
+                // story's controls, and the story would push them again over the new menu. It
+                // steps aside instead. A few frames' grace: the main menu's state is read once a
+                // frame, so it can lag by one right after the story opens.
+                if (IsOpen && !GigUnderWay && StoryMenuEntry.MainMenuFound && !StoryMenuEntry.MainMenuVisible)
+                {
+                    if (++_menuGoneFrames > 3)
+                    {
+                        _menuGoneFrames = 0;
+                        YargLogger.LogInfo("Story: the main menu was replaced by another menu, closing the story");
+                        Close();
+                    }
+                }
+                else
+                {
+                    _menuGoneFrames = 0;
                 }
             }
             catch (Exception e)
@@ -243,9 +266,11 @@ namespace YARG.Story
                     return;
                 }
 
-                // Never over a song or a score screen
+                // Never over a song or a score screen. The screen can be up while the story is not
+                // "open" (the cover after a gig), and a screen left up would push its controls in
+                // the song and bring the help bar up over the highway.
                 _reopenAfterMenu = false;
-                if (IsOpen)
+                if (IsOpen || (_screen != null && _screen.Visible))
                 {
                     IsOpen = false;
                     HideScreen();
@@ -770,7 +795,18 @@ namespace YARG.Story
                 {
                     IsOpen = true;
                     _screen.Show();
-                    _screen.ShowGigReturn(result);
+
+                    // A screen that failed to show has already stepped aside (and closed the
+                    // story); showing the result would put it back up behind the story's back.
+                    // The result is in the save either way.
+                    if (_screen.Visible)
+                    {
+                        _screen.ShowGigReturn(result);
+                    }
+                    else
+                    {
+                        IsOpen = false;
+                    }
                 }
             }
             catch (Exception e)

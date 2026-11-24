@@ -191,8 +191,7 @@ namespace YARG.Story
             string name = you ? (Engine != null ? Engine.Progress.BandName : "") : character != null ? character.Name : "";
             if (narrator && campaign != null)
             {
-                var voice = campaign.FindCharacter(StoryLine.NARRATOR);
-                if (voice != null) name = voice.Name;
+                name = campaign.NarratorName;
             }
 
             string role = "";

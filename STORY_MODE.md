@@ -83,6 +83,13 @@ To check the script after editing it:
 
     dotnet run --project tests/StoryTests -- --check overlay/Assets/Resources/YargStory
 
+## Status
+
+Checked without Unity: the rules and the whole script by the automated tests, and the game-facing code
+by compiling it against the game's sources, both for this branch's base and for `combined-updates`.
+Not yet built into an APK or seen on a phone, so expect the first build to need fixes, most likely to
+how the screens are laid out.
+
 ## Dedication
 
 For the session players, house bands and background singers whose names never reached the label.

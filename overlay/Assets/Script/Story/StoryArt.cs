@@ -23,7 +23,6 @@ namespace YARG.Story
         private struct Pulse
         {
             public Graphic Graphic;
-            public Color Color;
             public float Low, High, Speed, Offset;
         }
 
@@ -64,7 +63,13 @@ namespace YARG.Story
 
         public void AddPulse(Graphic graphic, float low, float high, float speed, float offset)
         {
-            _pulses.Add(new Pulse { Graphic = graphic, Color = graphic.color, Low = low, High = high, Speed = speed, Offset = offset });
+            // The pulse goes through the renderer's alpha, not the color: a new color makes Unity
+            // rebuild the shape's mesh, and there are dozens of these pulsing every frame
+            var color = graphic.color;
+            color.a = 1f;
+            graphic.color = color;
+            graphic.canvasRenderer.SetAlpha(Mathf.Lerp(low, high, 0.5f));
+            _pulses.Add(new Pulse { Graphic = graphic, Low = low, High = high, Speed = speed, Offset = offset });
         }
 
         /// <summary>Swings (or with a zero range and a speed, spins) a rect about its pivot.</summary>
@@ -98,9 +103,7 @@ namespace YARG.Story
                 if (pulse.Graphic == null) continue;
 
                 float wave = 0.5f + 0.5f * Mathf.Sin((time * pulse.Speed + pulse.Offset) * Mathf.PI * 2f);
-                var color = pulse.Color;
-                color.a = Mathf.Lerp(pulse.Low, pulse.High, wave);
-                pulse.Graphic.color = color;
+                pulse.Graphic.canvasRenderer.SetAlpha(Mathf.Lerp(pulse.Low, pulse.High, wave));
             }
 
             for (int i = 0; i < _turns.Count; i++)

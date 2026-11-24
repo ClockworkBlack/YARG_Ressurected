@@ -507,6 +507,9 @@ namespace YARG.Story
         public string Title = "";
         public string Tagline = "";
 
+        /// <summary>The name shown over the narrator's lines, e.g. "The Break". May be empty.</summary>
+        public string NarratorName = "";
+
         /// <summary>A few paragraphs for the "About" page.</summary>
         public string About = "";
 
@@ -659,6 +662,7 @@ namespace YARG.Story
             campaign.Version = StoryJson.Int(index, "version", 1);
             campaign.Title = StoryJson.Str(index, "title");
             campaign.Tagline = StoryJson.Str(index, "tagline");
+            campaign.NarratorName = StoryJson.Str(index, "narratorName");
             campaign.About = StoryJson.Str(index, "about");
             campaign.KeepsakeName = StoryJson.Str(index, "keepsakeName", campaign.KeepsakeName);
             campaign.BandNames = StoryJson.Strings(index, "bandNames");

@@ -445,16 +445,17 @@ namespace YARG.Story
 
             var body = StoryUi.Area(_viewRoot, 0f, 0f, 1f, 1f, "Body");
             body.offsetMax = new Vector2(0f, -180f);
+            // Never "Songs": the game's font scaler resizes every text under an object of that name
             RectTransform songs, numbers, buttons;
             if (Wide)
             {
-                songs = StoryUi.Area(body, 0f, 0.16f, 0.5f, 1f, "Songs");
+                songs = StoryUi.Area(body, 0f, 0.16f, 0.5f, 1f, "Set Played");
                 numbers = StoryUi.Area(body, 0.5f, 0.16f, 1f, 1f, "Numbers");
                 buttons = StoryUi.Area(body, 0.2f, 0f, 0.8f, 0.13f, "Buttons");
             }
             else
             {
-                songs = StoryUi.Area(body, 0f, 0.55f, 1f, 1f, "Songs");
+                songs = StoryUi.Area(body, 0f, 0.55f, 1f, 1f, "Set Played");
                 numbers = StoryUi.Area(body, 0f, 0.13f, 1f, 0.54f, "Numbers");
                 buttons = StoryUi.Area(body, 0f, 0f, 1f, 0.11f, "Buttons");
             }

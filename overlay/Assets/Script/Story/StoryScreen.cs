@@ -110,6 +110,7 @@ namespace YARG.Story
         private NavigationScheme _scheme;
         private bool _onStack;
         private string _pushedLabels;
+        private Layer _labelsFor;
         private readonly List<Pressed> _pressed = new List<Pressed>();
 
         private int _dragBefore = -1;
@@ -429,7 +430,9 @@ namespace YARG.Story
                 layer.Index = focus;
             }
 
-            if (layer.Index < 0 && layer.Focus.Count > 0)
+            // Views with their own Green (scenes, the song picker) show no ring: on them Green does
+            // not press the ring's button, so a ring on Skip or Back would only mislead
+            if (layer.Index < 0 && layer.Focus.Count > 0 && layer.Confirm == null)
             {
                 layer.Index = 0;
             }
@@ -709,6 +712,9 @@ namespace YARG.Story
         private void Direction(Layer layer, int dx, int dy)
         {
             if (layer.Move != null && layer.Move(dx, dy)) return;
+
+            // Green does its own thing here, so the focus ring is not used (see Rebuild)
+            if (layer.Confirm != null) return;
             MoveFocus(layer, dx, dy);
         }
 
@@ -735,8 +741,18 @@ namespace YARG.Story
             // Nothing may be pushed or popped while a game dialog is open: it pops the top one when it closes
             if (DialogManager.Instance != null && DialogManager.Instance.IsDialogShowing) return;
 
+            // A layer's actions are all set while it is built, so its labels only need working out
+            // once per layer, not every frame (that made a new string every frame)
+            var top = Top;
+            if (_onStack && ReferenceEquals(top, _labelsFor)) return;
+
             string labels = Labels();
-            if (_onStack && labels == _pushedLabels) return;
+            if (_onStack && labels == _pushedLabels)
+            {
+                _labelsFor = top;
+                return;
+            }
+
             if (_onStack)
             {
                 if (!TopIsOurs()) return;
@@ -785,6 +801,7 @@ namespace YARG.Story
             navigator.PushScheme(scheme);
             _onStack = true;
             _pushedLabels = labels;
+            _labelsFor = top;
         }
 
         /// <summary>Pops our scheme, but only if it is the one on top (Navigator pops blindly).</summary>

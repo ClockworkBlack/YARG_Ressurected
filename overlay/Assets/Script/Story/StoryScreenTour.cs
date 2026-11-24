@@ -185,6 +185,7 @@ namespace YARG.Story
             float viewHeight = size.y;
             float cell = (size.x - 2f * M - (columns - 1) * gap) / columns;
             int count = names.Count + 1;
+            Focusable firstName = null;
             for (int i = 0; i < count; i++)
             {
                 int row = i / columns, column = i % columns;
@@ -195,7 +196,11 @@ namespace YARG.Story
                     ? AddButton(rect, StoryButtonStyle.Normal, name, 38, () => BeginStory(name))
                     : AddButton(rect, StoryButtonStyle.Primary, "Type my own", 38, TypeBandName);
                 InList(focus, scroll, rect, viewHeight);
+                firstName ??= focus;
             }
+
+            // Otherwise the pad starts on the header's Back, and the first Green leaves the screen
+            Prefer(firstName);
 
             StoryUi.SetHeight(items, 20f + ((count + columns - 1) / columns) * (rowHeight + gap));
         }

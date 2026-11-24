@@ -37,6 +37,9 @@ namespace YARG.Story
         /// <summary>The main menu is the menu on screen (the story may still be covering it).</summary>
         public static bool MainMenuVisible { get; private set; }
 
+        /// <summary>The main menu of the loaded menu scene was found, so MainMenuVisible means something.</summary>
+        public static bool MainMenuFound { get; private set; }
+
         // Both belong to the menu scene and are destroyed with it (Unity then reports them as null)
         private MainMenu      _mainMenu;
         private GameObject    _entry;
@@ -114,6 +117,7 @@ namespace YARG.Story
 
                 _wasVisible = visible;
                 MainMenuVisible = visible;
+                MainMenuFound = menuScene && _mainMenu != null;
 
                 UpdateFallback(visible);
             }

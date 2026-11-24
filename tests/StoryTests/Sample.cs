@@ -25,7 +25,7 @@ namespace StoryTests
         {
             var files = new Dictionary<string, string>();
             files["campaign"] = @"{
-              ""id"": ""sample"", ""version"": 3, ""title"": ""Sample Story"", ""tagline"": ""A test"",
+              ""id"": ""sample"", ""version"": 3, ""title"": ""Sample Story"", ""tagline"": ""A test"", ""narratorName"": ""The Voice"",
               ""keepsakeName"": ""Tapes"",
               ""bandNames"": [""The Testers"", ""Unit & The Asserts""],
               ""characters"": [
