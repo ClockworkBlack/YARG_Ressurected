@@ -35,10 +35,10 @@ can follow new YARG releases. GitHub Actions does the rest:
 | Red | L1 / LB |
 | Yellow | R1 / RB |
 | Blue | R2 / RT |
-| Orange | Square / X (left face button) |
-| Strum | D-pad Up/Down, or Cross / A for down-strum |
-| Star Power | Select / Back, or Triangle / Y |
-| Whammy | Right stick left/right |
+| Orange | Cross / A |
+| Strum | D-pad Down/Right, or Square / Circle (GH2 had no strum on a pad, but YARG needs one) |
+| Star Power | Select / Back or D-pad Up |
+| Whammy | Left stick left/right |
 
 YARG's normal "Gamepad as 5-fret guitar" layout (face buttons as frets) is still available. You can remap
 any button in the profile's binding menu.
@@ -59,7 +59,7 @@ any button in the profile's binding menu.
 |---|---|
 | `UNITY_LICENSE` | The entire contents of `Unity_lic.ulf` |
 | `UNITY_EMAIL` | Your Unity account email |
-| `UNITY_PASSWORD` | Your Unity account password |
+| `UNITY_PASSWORD` | Your Unity account password (if you sign in with Google, set one first at id.unity.com) |
 
 Optional, so new builds install over old ones without uninstalling first:
 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASS`, `ANDROID_KEYALIAS_NAME`, `ANDROID_KEYALIAS_PASS`.

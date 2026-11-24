@@ -88,6 +88,8 @@ namespace YARG.Editor.Android
             PlayerSettings.SetApiCompatibilityLevel(android, ApiCompatibilityLevel.NET_Standard);
 
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+            // Minis (MIDI) needs the classic Activity entry point, not Unity 6's default GameActivity.
+            PlayerSettings.Android.applicationEntry = AndroidApplicationEntry.Activity;
             PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel26;
             PlayerSettings.Android.targetSdkVersion = AndroidSdkVersions.AndroidApiLevelAuto;
             PlayerSettings.Android.forceInternetPermission = true;

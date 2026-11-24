@@ -274,10 +274,10 @@ index 932811a..26eafd3 100644
                      menu = GetPreferenceOrDefault(GameMode.Menu, ReusableBindingSetDefaults.DefaultCrkdMode1Menu);
 diff --git a/Assets/Script/Input/Bindings/Reusable/Defaults/ReusableBindingSetDefaults.Gamepad.GH2Style.cs b/Assets/Script/Input/Bindings/Reusable/Defaults/ReusableBindingSetDefaults.Gamepad.GH2Style.cs
 new file mode 100644
-index 0000000..e155920
+index 0000000..ca2219f
 --- /dev/null
 +++ b/Assets/Script/Input/Bindings/Reusable/Defaults/ReusableBindingSetDefaults.Gamepad.GH2Style.cs
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,67 @@
 +using System;
 +using System.Collections.Generic;
 +using YARG.Core;
@@ -286,16 +286,17 @@ index 0000000..e155920
 +
 +namespace YARG.Input.Bindings
 +{
-+    // YARG Resurrected: "Guitar Hero 2 style" layout for a regular gamepad.
-+    // Frets on the shoulder buttons/triggers like playing GH2 with a DualShock,
-+    // strum on the D-pad (or the bottom face button), so the right thumb stays free.
++    // YARG Resurrected: "Guitar Hero 2 style" layout for a regular gamepad, matching GH2's
++    // DualShock 2 defaults (StrategyWiki/GameFAQs): frets on L2/L1/R1/R2 + Cross.
++    // GH2 had no strum on a pad (pressing a fret played the note); YARG needs a strum input,
++    // so strum is on the D-pad (Down/Right) or Square/Circle, which GH2 left unused.
 +    //
 +    //   Green  = L2 / LT        Red    = L1 / LB
 +    //   Yellow = R1 / RB        Blue   = R2 / RT
-+    //   Orange = Square / X (west face button)
-+    //   Strum  = D-pad Up / Down, or Cross / A (south face button) for down-strum
-+    //   Star Power = Select / Back, or Triangle / Y (north face button)
-+    //   Whammy = Right stick X
++    //   Orange = Cross / A (south face button)
++    //   Strum  = D-pad Down/Right, or Square / Circle
++    //   Star Power = Select / Back or D-pad Up (as in GH2)
++    //   Whammy = Left stick X (as in GH2)
 +    //
 +    // Every binding can be changed in YARG's profile binding menu.
 +    public static partial class ReusableBindingSetDefaults
@@ -317,18 +318,18 @@ index 0000000..e155920
 +            { ActionStrings.FIVE_FRET_RED,    GH2Button(ActionStrings.FIVE_FRET_RED,    ControlStrings.GAMEPAD_LEFT_SHOULDER) },
 +            { ActionStrings.FIVE_FRET_YELLOW, GH2Button(ActionStrings.FIVE_FRET_YELLOW, ControlStrings.GAMEPAD_RIGHT_SHOULDER) },
 +            { ActionStrings.FIVE_FRET_BLUE,   GH2Button(ActionStrings.FIVE_FRET_BLUE,   ControlStrings.GAMEPAD_RIGHT_TRIGGER) },
-+            { ActionStrings.FIVE_FRET_ORANGE, GH2Button(ActionStrings.FIVE_FRET_ORANGE, ControlStrings.GAMEPAD_BUTTON_WEST) },
++            { ActionStrings.FIVE_FRET_ORANGE, GH2Button(ActionStrings.FIVE_FRET_ORANGE, ControlStrings.GAMEPAD_BUTTON_SOUTH) },
 +
-+            { ActionStrings.GUITAR_STRUM_DOWN, GH2Button(ActionStrings.GUITAR_STRUM_DOWN, ControlStrings.GAMEPAD_DPAD_DOWN, ControlStrings.GAMEPAD_BUTTON_SOUTH) },
-+            { ActionStrings.GUITAR_STRUM_UP,   GH2Button(ActionStrings.GUITAR_STRUM_UP,   ControlStrings.GAMEPAD_DPAD_UP) },
++            { ActionStrings.GUITAR_STRUM_DOWN, GH2Button(ActionStrings.GUITAR_STRUM_DOWN, ControlStrings.GAMEPAD_DPAD_DOWN, ControlStrings.GAMEPAD_BUTTON_WEST) },
++            { ActionStrings.GUITAR_STRUM_UP,   GH2Button(ActionStrings.GUITAR_STRUM_UP,   ControlStrings.GAMEPAD_DPAD_RIGHT, ControlStrings.GAMEPAD_BUTTON_EAST) },
 +
-+            { ActionStrings.GUITAR_STAR_POWER, GH2Button(ActionStrings.GUITAR_STAR_POWER, ControlStrings.GAMEPAD_SELECT, ControlStrings.GAMEPAD_BUTTON_NORTH) },
++            { ActionStrings.GUITAR_STAR_POWER, GH2Button(ActionStrings.GUITAR_STAR_POWER, ControlStrings.GAMEPAD_SELECT, ControlStrings.GAMEPAD_DPAD_UP) },
 +
 +            {
 +                ActionStrings.GUITAR_WHAMMY,
 +                new ReusableAxisBinding(
 +                    ReusableBindingSetTemplates.FIVE_FRET_GUITAR[ActionStrings.GUITAR_WHAMMY],
-+                    new ReusableSingleAxisBindingConfig(ControllerFamily.Gamepad, ControlStrings.GAMEPAD_RIGHT_STICK_X)
++                    new ReusableSingleAxisBindingConfig(ControllerFamily.Gamepad, ControlStrings.GAMEPAD_LEFT_STICK_X)
 +                )
 +            },
 +        };
@@ -340,7 +341,7 @@ index 0000000..e155920
 +            ControllerFamily.Gamepad,
 +            GUID_GAMEPAD_GH2_STYLE,
 +            _gamepadGH2StyleGameplay,
-+            "Frets on L2/L1/R1/R2 + Square, strum on D-pad or Cross, like playing Guitar Hero 2 on a controller."
++            "GH2 controller layout: frets L2/L1/R1/R2/Cross, strum D-pad Down/Right or Square/Circle, Star Power Select/D-pad Up, whammy left stick."
 +        );
 +    }
 +}
