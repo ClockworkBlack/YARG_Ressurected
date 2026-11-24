@@ -92,7 +92,7 @@
         {"s": "whitewall", "t": "Who parked a church van next to my baby?", "mood": "stern"},
         {"s": "narrator", "t": "Lady Whitewall. President of the Whitewall Ladies Car Club. Pearl-white Impala, matching nails, a clipboard for the parking."},
         {"s": "whitewall", "t": "Scratch my paint and I call your mother."},
-        {"s": "you", "t": "You don't know our mother."},
+        {"s": "you", "t": "You don't know whose mother to call."},
         {"s": "whitewall", "t": "I will by tonight.", "mood": "sly"},
         {"s": "ruth", "t": "Oh, I like her.", "mood": "laugh"},
         {"s": "narrator", "t": "On the stage, between two speaker stacks, a talkbox: a little amp, a plastic tube, a keyboard. It makes an instrument sound like a man trying to say something he can't quite get out."},

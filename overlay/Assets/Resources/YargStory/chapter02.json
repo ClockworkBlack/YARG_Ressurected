@@ -13,7 +13,7 @@
     {"s": "tuesday", "t": "No name. Just the address and the day.", "mood": "worried"},
     {"s": "cross", "t": "That's your grandmother. She don't give directions. She gives destinations."},
     {"s": "narrator", "t": "Philadelphia. I remember Philadelphia. They put strings on me there. Violins, a harp, a whole orchestra in tuxedos. I looked expensive."},
-    {"s": "cross", "t": "Listen. I got a cousin in Philly. Barber. Cuts hair like he's reading scripture.", "mood": "hype"},
+    {"s": "cross", "t": "Listen. My cousin in Philly? Barber. Cuts hair like he's reading scripture.", "mood": "hype"},
     {"s": "tuesday", "t": "Is that relevant?"},
     {"s": "cross", "t": "Every barber in North Philly knows every old man in North Philly. That ain't relevant. That's infrastructure.", "mood": "sly"},
     {"s": "narrator", "t": "The address turns out to be a soul hall with half its marquee bulbs out and every one of its chandeliers on.", "bg": "philly-uptown"},

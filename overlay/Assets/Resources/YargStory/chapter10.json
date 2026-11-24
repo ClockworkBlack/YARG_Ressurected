@@ -143,7 +143,7 @@
       "rewards": ["ln-g31"],
       "before": [
         {"s": "title", "t": "12:30 A.M.", "sub": "Harlem. The real Watch Night.", "bg": "black"},
-        {"s": "narrator", "t": "The marquee is lit. Somebody climbed a ladder at a quarter to midnight and changed the letters: {band}. And underneath, smaller, in careful capitals: (MT. NEBO YOUTH CHOIR).", "bg": "street"},
+        {"s": "narrator", "t": "The marquee is lit. Somebody climbed a ladder at a quarter to midnight and changed the letters: {band}. And underneath, smaller, in Mr. Broom's careful capitals: (MT. NEBO YOUTH CHOIR).", "bg": "street"},
         {"s": "cross", "t": "Well. That's what was parked out front.", "mood": "laugh"},
         {"s": "narrator", "t": "The line goes round the block, and it is three lines braided into one."},
         {"s": "narrator", "t": "The Greater Hope congregation from two blocks over, still in their church clothes, straight from the midnight shout. The park crowd from the Bronx, in coats that smell like the lamppost."},

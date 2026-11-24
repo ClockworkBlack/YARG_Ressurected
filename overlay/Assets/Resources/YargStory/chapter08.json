@@ -21,7 +21,7 @@
   ],
   "outro": [
     {"s": "narrator", "t": "She didn't hang up. She was waiting to see if you would. You didn't.", "bg": "johannesburg-festival"},
-    {"s": "odessa", "t": "Pocket. Where does that tour land next?", "mood": "neutral"},
+    {"s": "odessa", "t": "Pocket. Where do y'all land next?", "mood": "neutral"},
     {"s": "you", "t": "New Orleans. First weekend of December."},
     {"s": "odessa", "t": "Then tell that van to meet my train. I'm done pointing.", "mood": "proud"},
     {"s": "cross", "t": "Lady W? It's Cross. I need a favour, and it's about two thousand miles long.", "mood": "hype"},
