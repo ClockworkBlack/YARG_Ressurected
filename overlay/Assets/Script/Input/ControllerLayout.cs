@@ -247,6 +247,116 @@ namespace YARG.Input
             return false;
         }
 
+        // Gamepads the player said are ordinary gamepads when adding them (for pads IsStandardGamepad
+        // doesn't recognise by name). Only remembered until the game is closed.
+        private static readonly System.Collections.Generic.HashSet<int> _plainGamepads = new();
+
+        public static void MarkAsPlainGamepad(Gamepad gamepad)
+        {
+            if (gamepad != null)
+            {
+                _plainGamepads.Add(gamepad.deviceId);
+            }
+        }
+
+        private static bool PlaysOnPlainGamepad(YARG.Player.YargPlayer player)
+        {
+            if (player?.Bindings == null)
+            {
+                return false;
+            }
+
+            foreach (var device in player.Bindings.InputDevices)
+            {
+                if (device is Gamepad gamepad &&
+                    (IsStandardGamepad(gamepad) || _plainGamepads.Contains(gamepad.deviceId)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// "No Strumming On Gamepads": makes every note of a gamepad guitar player a tap note, so pressing
+        /// the fret button plays it, and uses the Casual engine preset, which doesn't punish a press that
+        /// comes a little early. Both are ordinary per-profile options (the All Taps modifier and the
+        /// engine preset), so they show in the menus and can be changed there; each profile is only
+        /// switched over once.
+        /// </summary>
+        public static void EnsureNoStrum(YARG.Player.YargPlayer player)
+        {
+            var settings = SettingsManager.Settings;
+            if (settings == null || !settings.GamepadNoStrum.Value || player == null)
+            {
+                return;
+            }
+
+            var profile = player.Profile;
+            if (profile == null || profile.IsBot || player.IsReplay ||
+                profile.GameMode != YARG.Core.GameMode.FiveFretGuitar || !PlaysOnPlainGamepad(player))
+            {
+                return;
+            }
+
+            string id = profile.Id.ToString();
+            if (settings.NoStrumProfiles.Contains(id))
+            {
+                return;
+            }
+
+            profile.AddSingleModifier(YARG.Core.Game.Modifier.AllTaps);
+            if (profile.EnginePreset == YARG.Core.Game.EnginePreset.Default.Id)
+            {
+                profile.EnginePreset = YARG.Core.Game.EnginePreset.Casual.Id;
+                player.RefreshPresets();
+            }
+
+            settings.NoStrumProfiles.Add(id);
+            SettingsManager.SaveSettings();
+        }
+
+        private static bool? _appliedNoStrum;
+
+        /// <summary>
+        /// Called when the No Strumming setting changes. Turning it off puts the profiles it switched
+        /// back to normal notes; turning it on takes effect the next time a song is chosen.
+        /// </summary>
+        public static void OnNoStrumChanged(bool enabled)
+        {
+            bool first = _appliedNoStrum == null;
+            bool changed = _appliedNoStrum != enabled;
+            _appliedNoStrum = enabled;
+            if (first || !changed || enabled)
+            {
+                return;
+            }
+
+            var settings = SettingsManager.Settings;
+            if (settings == null)
+            {
+                return;
+            }
+
+            foreach (var profile in YARG.Player.PlayerContainer.Profiles)
+            {
+                if (!settings.NoStrumProfiles.Contains(profile.Id.ToString()))
+                {
+                    continue;
+                }
+
+                profile.RemoveModifiers(YARG.Core.Game.Modifier.AllTaps);
+                if (profile.EnginePreset == YARG.Core.Game.EnginePreset.Casual.Id)
+                {
+                    profile.EnginePreset = YARG.Core.Game.EnginePreset.Default.Id;
+                    YARG.Player.PlayerContainer.GetPlayerFromProfile(profile)?.RefreshPresets();
+                }
+            }
+
+            settings.NoStrumProfiles.Clear();
+        }
+
         /// <summary>The face / shoulder button for a menu action in the current layout, if it has one.</summary>
         public static PadButton? ButtonFor(MenuAction action)
         {

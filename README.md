@@ -87,8 +87,13 @@ a profile.
 | Whammy | R2 | RT |
 | Pause | Options | Menu |
 
-Hold the fret, then strum with the D-pad, like holding a fret and hitting the strum bar. Easy
-uses green, red and yellow only: Cross, Circle, Triangle.
+Easy uses green, red and yellow only: Cross, Circle, Triangle.
+
+**No strumming.** On a gamepad, pressing the fret button plays the note: no strum needed. Hold
+the buttons of a chord together, and press again for a repeated note. This is **Settings >
+General > No Strumming On Gamepads** (on by default). It gives the profile the *All Taps*
+modifier and the *Casual* engine preset, both of which you can see and change on the screen
+before a song. Turn the setting off to play with strums (D-pad up / down) like on a guitar.
 
 **Shoulder buttons.** The Guitar Hero 2 controller layout:
 
