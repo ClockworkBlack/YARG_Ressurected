@@ -1,0 +1,52 @@
+plugins {
+    id 'com.android.application'
+}
+
+// CI passes a build number so newer APKs install over older ones.
+def buildNumber = (System.getenv("CONVERTER_BUILD_NUMBER") ?: "1").toInteger()
+// Optional shared keystore (same secrets the YARG build uses). Without it Gradle signs with a
+// throwaway debug key, and each new APK needs the old one uninstalled first.
+def keystorePath = System.getenv("CONVERTER_KEYSTORE_FILE")
+def hasKeystore = keystorePath != null && !keystorePath.isEmpty() && file(keystorePath).exists()
+
+android {
+    namespace 'com.clockworkblack.yargconverter'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.clockworkblack.yargconverter'
+        minSdk 26
+        targetSdk 34
+        versionCode buildNumber
+        versionName "0.1.${buildNumber}"
+    }
+
+    signingConfigs {
+        shared {
+            if (hasKeystore) {
+                storeFile file(keystorePath)
+                storePassword System.getenv("CONVERTER_KEYSTORE_PASS")
+                keyAlias System.getenv("CONVERTER_KEY_ALIAS")
+                keyPassword System.getenv("CONVERTER_KEY_PASS")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (hasKeystore) {
+                signingConfig signingConfigs.shared
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}

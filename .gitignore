@@ -2,3 +2,8 @@ project/
 native-out/
 *.keystore
 *.ulf
+converter/.gradle/
+converter/build/
+converter/app/build/
+converter/core-test/out/
+converter/local.properties

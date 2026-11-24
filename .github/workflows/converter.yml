@@ -1,0 +1,83 @@
+name: Build Converter APK
+
+# YARG Converter: the companion app that turns MP3/WAV/FLAC files into YARG songs.
+# Lives in converter/ and is completely separate from the game build (android.yml).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "converter/**"
+      - ".github/workflows/converter.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    name: Converter APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Check the chart engine (tempo, beat grid, chart files, lyrics)
+        working-directory: converter/core-test
+        run: |
+          javac -d out $(find ../app/src/main/java -path '*core*' -name '*.java') CoreTest.java
+          java -cp out CoreTest
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Use the shared signing key if one is set up
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/converter.keystore"
+            echo "CONVERTER_KEYSTORE_FILE=$RUNNER_TEMP/converter.keystore" >> "$GITHUB_ENV"
+          else
+            echo "No keystore secret: signing with a throwaway debug key."
+          fi
+
+      - name: Build APK
+        env:
+          CONVERTER_BUILD_NUMBER: ${{ github.run_number }}
+          CONVERTER_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          CONVERTER_KEY_ALIAS: ${{ secrets.ANDROID_KEYALIAS_NAME }}
+          CONVERTER_KEY_PASS: ${{ secrets.ANDROID_KEYALIAS_PASS }}
+        run: gradle -p converter --no-daemon --stacktrace assembleDebug
+
+      - name: Name the APK
+        id: apk
+        run: |
+          out="YARG-Converter-${{ github.run_number }}.apk"
+          cp converter/app/build/outputs/apk/debug/app-debug.apk "$out"
+          echo "file=$out" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YARG-Converter-apk
+          path: ${{ steps.apk.outputs.file }}
+          if-no-files-found: error
+
+      - name: Publish as a GitHub release (easy download on your phone)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: converter-${{ github.run_number }}
+          name: YARG Converter build ${{ github.run_number }}
+          prerelease: true
+          files: ${{ steps.apk.outputs.file }}
+          body: |
+            Companion app for YARG Resurrected: pick an MP3, WAV or FLAC and it writes a
+            ready-to-play song folder (guitar Easy-Expert, beat map, lyrics) into
+            `Internal storage/YARG/songs/Converted`.
+            Download the .apk on your phone and open it to install.
