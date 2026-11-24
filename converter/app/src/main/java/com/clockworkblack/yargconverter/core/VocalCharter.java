@@ -284,6 +284,56 @@ public final class VocalCharter {
         return true;
     }
 
+    /** Measurements of a stretch of voice, for judging sung against rapped (and for the build's logs). */
+    public static final class Delivery {
+        /** Share of the sounding time spent holding a note (see {@link #heldShare}). */
+        public double held;
+        /** Share of the sounding time with a clear note in it at all. */
+        public double voiced;
+        /** Share of the voiced time within a semitone of the local middle note: steady even with vibrato. */
+        public double steady;
+        /** Seconds of sound. */
+        public double seconds;
+
+        @Override
+        public String toString() {
+            return String.format(java.util.Locale.US, "held %.2f voiced %.2f steady %.2f over %.1fs", held, voiced, steady, seconds);
+        }
+    }
+
+    /** Measures the voice between two times. */
+    public static Delivery measure(VocalAnalyzer.Voice v, double fromSeconds, double toSeconds) {
+        return measure(v, v.gate(), v.frameAt(fromSeconds), Math.min(v.frames(), v.frameAt(toSeconds) + 1));
+    }
+
+    static Delivery measure(VocalAnalyzer.Voice v, float gate, int a, int b) {
+        Delivery d = new Delivery();
+        d.held = heldShare(v, gate, a, b);
+        int sounding = 0, voiced = 0, steady = 0;
+        float[] window = new float[21];
+        for (int f = a; f < b; f++) {
+            if (v.level[f] <= gate) continue;
+            sounding++;
+            if (Float.isNaN(v.midi[f])) continue;
+            voiced++;
+            int k = 0;
+            for (int g = Math.max(a, f - 10); g <= Math.min(b - 1, f + 10); g++) {
+                if (!Float.isNaN(v.midi[g]) && v.level[g] > gate) window[k++] = v.midi[g];
+            }
+            Arrays.sort(window, 0, k);
+            if (Math.abs(v.midi[f] - window[k / 2]) <= 1.0f) steady++;
+        }
+        d.voiced = sounding == 0 ? 0 : (double) voiced / sounding;
+        d.steady = voiced == 0 ? 0 : (double) steady / voiced;
+        d.seconds = sounding / v.fps;
+        return d;
+    }
+
+    /** The one rule for sung against rapped or spoken, from a stretch's measurements. */
+    public static boolean judgeSung(Delivery d) {
+        return d.held >= HELD_SHARE;
+    }
+
     /** A line is sung when at least this much of its sounding time is spent on held notes. */
     static final double HELD_SHARE = 0.30;
 
@@ -463,7 +513,7 @@ public final class VocalCharter {
                                      double[] wordStart, double[] wordEnd, List<Note> out) {
         int n = words.size();
         int from = frameStart[0], to = Math.min(frameEnd[n - 1], v.frames());
-        if (heldShare(v, gate, from, to) < HELD_SHARE) return false;
+        if (!judgeSung(measure(v, gate, from, to))) return false;
 
         float[] median = new float[n];
         float[] buf = new float[64];

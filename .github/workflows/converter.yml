@@ -149,6 +149,58 @@ jobs:
           dotnet run --project tests/GameReaderCheck -c Release \
             -p:YargCore="$GITHUB_WORKSPACE/yarg-core" -- "$RUNNER_TEMP/song"
 
+  voice-check:
+    name: Sung or rapped, measured on real a cappellas
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg jq > /dev/null
+          javac -d out $(find converter/app/src/main/java -path '*core*' -name '*.java') converter/model-test/VoiceCheck.java
+
+      # Vocals-only recordings shared under Creative Commons on ccMixter, found by their tags.
+      # Only measurements are printed; the recordings themselves are not kept.
+      - name: Measure rap and sung a cappellas
+        run: |
+          ua="YARGConverter-CI/0.2 (automated build check)"
+          check() { # $1 label, $2 url
+            rm -f clip.* clip.f32
+            curl -sSL --fail --max-time 120 -A "$ua" -o clip.in "$2" || { echo "could not download $2"; return; }
+            ffmpeg -loglevel error -i clip.in -t 240 -f f32le -ac 1 -ar 44100 clip.f32 || return
+            java -Xmx2g -cp out VoiceCheck clip.f32 "$1"
+          }
+          for kind in rap singing; do
+            if curl -sS --fail --max-time 60 -A "$ua" -o list.json \
+                "http://ccmixter.org/api/query?f=json&tags=acappella,$kind&sort=rank&limit=12"; then
+              echo "ccMixter $kind: $(jq length list.json 2>/dev/null) uploads"
+              jq -r '.[] | [(.upload_tags // ""), (.upload_name // "?"), (.user_name // "?"), (.license_name // "?"),
+                  ([.files[]? | select((.download_url // "") | test("\\.mp3$"))][0].download_url // "")] | @tsv' list.json > picks.tsv || head -c 600 list.json
+              n=0
+              while IFS=$'\t' read -r tags name user license url; do
+                [ -z "$url" ] && continue
+                # Sung set: leave out anything also tagged as rap, and the other way round
+                if [ "$kind" = singing ] && echo "$tags" | grep -qi "rap"; then continue; fi
+                if [ "$kind" = rap ] && echo "$tags" | grep -qiE "singing|sung"; then continue; fi
+                echo "== $kind: \"$name\" by $user ($license)"
+                check "$kind" "$url"
+                n=$((n+1)); [ $n -ge 6 ] && break
+              done < picks.tsv
+            else
+              echo "ccMixter $kind query failed"
+            fi
+          done
+          echo "== rap: Gully rap on a train (Wikimedia Commons, CC BY-SA 2.0)"
+          check rap "https://commons.wikimedia.org/wiki/Special:FilePath/Gully_rap_on_a_train.ogg"
+
   apk:
     name: Converter APK
     # No APK is built or published unless the game itself can read what the converter writes.

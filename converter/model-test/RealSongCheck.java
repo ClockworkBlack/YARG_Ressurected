@@ -143,6 +143,14 @@ public final class RealSongCheck {
                 v.lines, v.sungLines, v.spokenLines, v.words, v.phrases.size(), v.heard ? "heard" : "not heard at the lyric times", split.vocalTier,
                 split.singerGuess != null ? String.format(Locale.US, ", two singers guessed %d/%d lines", split.singerGuess.firstLines, split.singerGuess.secondLines)
                         : split.singersGuessTried ? String.format(Locale.US, ", singers not told apart (%.1f)", com.clockworkblack.yargconverter.core.VoiceSplitter.lastSeparation) : "");
+        // Every line, with what the sung-or-rapped decision was made on
+        int lastLine = -1;
+        for (VocalCharter.Phrase p : v.phrases) {
+            if (p.line == lastLine) continue;
+            lastLine = p.line;
+            System.out.printf(Locale.US, "  LINE %2d %6.2f s %s %s | %s%n", p.line, p.lineStart, p.spoken ? "SPOKEN" : "sung  ",
+                    VocalCharter.measure(voice, p.lineStart, p.lineEnd), lyrics.get(p.line).text);
+        }
         int shown = 0;
         for (VocalCharter.Phrase p : v.phrases) {
             if (shown++ >= 12) break;
