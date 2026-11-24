@@ -85,7 +85,7 @@ namespace YARG.Editor.Android
             PlayerSettings.SetIl2CppCompilerConfiguration(android, Il2CppCompilerConfiguration.Release);
             PlayerSettings.SetManagedStrippingLevel(android, ManagedStrippingLevel.Minimal);
             PlayerSettings.stripEngineCode = false;
-            PlayerSettings.SetApiCompatibilityLevel(android, ApiCompatibilityLevel.NET_Standard);
+            // Keep the project's own .NET Framework API level (YARG uses System.Drawing etc.).
 
             PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
             // Minis (MIDI) needs the classic Activity entry point, not Unity 6's default GameActivity.
