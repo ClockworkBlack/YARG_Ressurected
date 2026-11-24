@@ -211,7 +211,12 @@ each other, two different "voices", time stamps that come early. On those:
 | Two voices trading verses told apart | 51 of 53 lines; one voice alone is left as one |
 
 A made-up singer is far cleaner than a real one, so these numbers show the method works, not
-how well it does on a record: no real singing has been through it yet.
+how well it does on a record. One real recording goes through the whole chain on every build
+(below): "Swansong" by Josh Woodward, one man singing over a guitar, with the time-synced
+lyrics the app itself finds on LRCLIB. On it, 27 of the 29 lines come out as sung, the voice
+is on a clear note 90% of the time it sounds, the notes found stay in one key and move by steps
+the way a tune does, and the one singer is not split into two. Nobody has checked the result by
+ear or played it yet, and no rap record has been through it.
 
 Every song the checks write is also read back from `notes.mid` by a reader that follows the
 game's own rules (how it pairs notes, finds phrases, attaches lyrics, and decides a song has
@@ -237,7 +242,11 @@ For separation, three things are checked on every build:
      the guitar chart is made from the separated guitar; separation took between 0.45 and 0.75
      times the song's length on a 4-core build machine, depending on the run. There are no "right answers" for this song, so this shows
      the whole chain working on real music, not how good the chart feels to play. The resulting
-     song folder is attached to each build as the `sample-song` artifact.
+     song folder is attached to each build as the `sample-song` artifact;
+   - on a real recording with singing ("Swansong" by Josh Woodward, CC BY 3.0, 4 min 21 s):
+     separated in 0.71 times the song's length, the voice carries 46% of the separated sound,
+     and the lyrics (30 timed lines from LRCLIB) become 36 phrases with 214 words to sing. This
+     song folder is in the `sample-song` artifact too, vocals included.
 
 ## Building
 

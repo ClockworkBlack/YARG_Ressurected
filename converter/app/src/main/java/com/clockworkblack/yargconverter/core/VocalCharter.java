@@ -571,6 +571,12 @@ public final class VocalCharter {
             slide.start = at;
             slide.end = last.end;
             slide.pitch = clampPitch(Math.round(nearOctave(settled, startNote)) + shift);
+            // Within one word a voice moves by steps and small leaps. A jump of more than a fifth
+            // is the listening slipping (a breath, a creak at the end of a note), not the tune.
+            if (Math.abs(slide.pitch - last.pitch) > 7) {
+                run = 0;
+                continue;
+            }
             last.end = at - 0.03;
             if (slide.pitch != last.pitch) {
                 out.add(slide);

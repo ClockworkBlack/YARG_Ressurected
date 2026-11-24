@@ -12,7 +12,9 @@ BASS callbacks, `/storage/emulated/0/YARG/songs`, touch controls, the all-files-
 - arm64 native libraries (BASS, STB2CSharp, sqlite3) built with the NDK,
 - **working menu text**: YARG-DROID's extractor read the APK through JNI into a C# array that Java never filled,
   so language files never unpacked and menus showed raw keys like `MENU.MAIN.OPTIONS.QUICKPLAY`,
-- the **phone's own mic** for vocals, plus **other phones as controllers and mics** over Wi-Fi (see below),
+- the **phone's own mic** for vocals, a **USB mic and the built-in mic at the same time**, plus **other phones as
+  controllers and mics** over Wi-Fi (see below),
+- **vocals as a game of their own**: pick an artist's lines on two-singer songs, and a **sing-off** mode,
 - a controller-type prompt on Android (gamepad / CRKD guitar / other guitar),
 - CI that publishes the APK as a GitHub Release.
 
@@ -21,6 +23,7 @@ copies `overlay/` on top, builds the native libraries (`android/native/`), then 
 
 `patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 `tests/RemoteServerTests` checks the phone remote server on every build (runs before the Unity build).
+`tests/GameReaderCheck` runs a song written by the converter through YARG's own song scanner and chart loader.
 
 > Status: **experimental.** Expect the first CI runs to need fixes from the logs.
 
@@ -187,6 +190,85 @@ The menus play songs from your library in the background. You choose what plays:
 
 If the playlist is empty, deleted, or none of its songs are in the library, the whole library
 plays instead.
+
+## Vocals: sing or rap, pick an artist, sing-off
+
+Any song with a vocals part can be sung: Rock Band style charts, and every song made with
+[YARG Converter](converter/README.md) from lyrics (convert it again with the newest converter to
+get one; songs converted before only have a lyric bar).
+
+**Getting set up**
+
+1. **Profiles** > pick or make a profile > **Add Device** > choose a microphone (below).
+   A profile with a microphone becomes a vocals profile.
+2. Pick a song, then on the screen before it choose **Vocals** as the instrument and a level.
+3. Sing. Notes scroll along the top with the words under them; your needle shows where your
+   voice is. Words in italics over a shaded block, with no note line to follow, are **rapped or
+   spoken**: there, any sound in time with the words counts and the note does not matter.
+
+**Levels: how exact you have to be**
+
+The level sets two things: how close to the note counts, and how much of each line you have to
+sing right for the line to count. The screen where you pick the level says both for each one.
+
+| Level | The note | Of each line |
+|---|---|---|
+| Beginner | any note counts | 23% |
+| Easy | within 1.7 semitones | 33% |
+| Medium | within 1.4 semitones | 40% |
+| Hard | within 1.1 semitones | 45% |
+| Expert | within 0.8 semitones | 58% |
+
+(A semitone is one key on a piano. Octaves never matter: sing it high or low.) Being closer than
+the limit earns more of the line: full marks inside 60% of it, less towards the edge. Harder
+levels are also worth more points per line. These numbers are YARG's own and can be changed
+under **Settings > Presets**.
+
+**Two artists on one song**
+
+Songs with a part for each artist (two-singer songs from the converter, Rock Band harmonies)
+offer a second instrument, **Harmonies**. Choose it and a **Whose Lines** row appears: pick the
+artist. Each player then gets only that artist's lines to sing, in their own color, with the
+other artist's words on the second line. Lines marked for both go to both. All singers have to
+choose the same instrument, Vocals or Harmonies. **Vocals** is always the whole song as one part.
+
+**Sing-off**
+
+With two or more singers, the screen before a song has a **Sing-Off** row (also **Settings >
+General > Vocals**). Switch it on and the vocals become a battle:
+
+- On **Vocals**, the lines are dealt out in turns, two each by default (**Sing-Off Turn Length**:
+  one, two or four). Your lines come in your color; the board under the lyrics says whose turn
+  it is and counts down to the next singer. Each exchange is a round with a winner.
+- On **Harmonies**, nobody is dealt anything: each player sings the artist they picked, and the
+  two artists' singers face off.
+- Every line is marked out of 100 for how much of it was sung right (a harder level earns up to
+  a tenth more, an easier one less). The board shows each side's average and a bar that leans
+  towards whoever is ahead, calls each round, and names the winner at the end.
+- More than two singers play as two teams: players alternate between the sides in the order they
+  joined.
+- A sing-off with turns leaves no high score (each singer has half the song). It is off in
+  practice and replays.
+
+**Two microphones on one phone**
+
+"This phone's mic" is whichever microphone Android prefers at the moment, which is a USB
+microphone as soon as one is plugged in. So for two singers, **Add Device** also lists each
+microphone on its own:
+
+- **Built-in mic**: the phone's own microphone, even while a USB mic is plugged in
+- **USB mic: (name)**: a microphone on USB or a USB-C adapter (a controller with a mic on a USB
+  cable shows up here too)
+- **Headset mic (plug)**: a wired headset's microphone
+
+Give one profile **USB mic** and the other **Built-in mic**, and both are recorded at once. If
+this phone can only listen to one microphone at a time, a message says so when the song starts;
+then a second phone as a mic (next section) is the way. Hearing yourself through the speakers is
+only offered for "This phone's mic".
+
+Not tried on a phone yet: all of this builds and the song files are checked against the game's
+own reader, but the sing-off board, the artist names, the level hints and the two-microphone
+recording have not been seen running.
 
 ## Phone remote: friends' phones as guitars and mics
 
