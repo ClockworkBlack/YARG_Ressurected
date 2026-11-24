@@ -114,7 +114,7 @@ namespace YARG.Gameplay.HUD
             {
                 Sprite sprite = null;
                 if (show && bindings != null &&
-                    bindings.TryGetBindingByAction(GuitarAction.GreenFret + i) is ButtonBinding fret)
+                    bindings.TryGetBindingByAction((GuitarAction) ((int) GuitarAction.GreenFret + i)) is ButtonBinding fret)
                 {
                     foreach (var bound in fret.Bindings)
                     {
