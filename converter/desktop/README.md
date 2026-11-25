@@ -43,3 +43,9 @@ outros) by ear; `timed.lrc.heard` lists every word it heard with its time.
 and `--timing-report report.tsv` writes each line's heard time, final time and fit. `WordEval
 song.letters lyrics.lrc <bpm> [plain]` then times the lyrics again in a second or two, without
 splitting the song again: the way every change to `core/WordAligner` was measured on the test songs.
+
+**Songs with no lyrics anywhere.** `transcribe_lyrics.py` writes them from the separated voice with
+Whisper (large-v3-turbo): numbers spelled out, lines broken at pauses and sentence ends, words where
+the voice is silent dropped. Expect about 3 words in 10 to be wrong on English rap and R&B (more on
+other languages): good enough to sing along to and to time, not a lyric sheet. `lyrics_wer.py
+real.lrc heard.lrc` measures it on a song whose lyrics are known.
