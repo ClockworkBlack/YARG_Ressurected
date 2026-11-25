@@ -271,6 +271,15 @@ this phone can only listen to one microphone at a time, a message says so when t
 then a second phone as a mic (next section) is the way. Hearing yourself through the speakers is
 only offered for "This phone's mic".
 
+**Sound went quiet when the USB mic went in?** A USB microphone with a headphone jack (a Fifine
+AM8, for one) is also a sound card, and Android sends all sound to it the moment it is plugged
+in. Choose where the game plays in **Settings > Sound > Play Sound Through**: **Phone Speaker**,
+**TV (HDMI)** (through a USB-C hub's HDMI port), **USB Device**, **Bluetooth** or **Wired
+Headphones**. The microphone keeps working. A message says where the sound went, or that what
+you picked isn't connected (the sound then stays where Android puts it until it is plugged in).
+Playing somewhere other than Android's choice adds a few hundredths of a second of delay, so run
+**Settings > Calibration** once more for that setup.
+
 Not tried on a phone yet: all of this builds and the song files are checked against the game's
 own reader, but the sing-off board, the artist names, the level hints and the two-microphone
 recording have not been seen running.
