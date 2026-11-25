@@ -18,7 +18,7 @@ of them share. It made both songs worse with both models (up to 8 points): hooks
 NOVAD=1 (no silence filter) heard more words and scored better; the words the model makes up in
 silence are dropped by checking the separated voice under each word.
 """
-import re, subprocess, sys
+import os, re, subprocess, sys
 import numpy as np
 from faster_whisper import WhisperModel
 
@@ -28,17 +28,30 @@ size = sys.argv[3] if len(sys.argv) > 3 else "large-v3"
 lang = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "auto" else None
 pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", vocals, "-ac", "1", "-ar", "16000", "-f", "f32le", "-"], check=True, capture_output=True).stdout
 audio = np.frombuffer(pcm, dtype=np.float32)
-model = WhisperModel(size, device="cpu", compute_type="int8")
+DEVICE = __import__("os").environ.get("DEVICE", "cpu")
+import json as _json
+cache = out + ".heard.json"
+cached = _json.load(open(cache)) if os.environ.get("REUSE") and os.path.exists(cache) else None
+model = None if cached else WhisperModel(size, device=DEVICE, compute_type="float16" if DEVICE == "cuda" else "int8")
 import os
 HINT = os.environ.get("HINT")  # e.g. "Overthinking by Coi Leray and H.E.R." : names and words to expect
-segments, info = model.transcribe(audio, language=lang, initial_prompt=HINT, word_timestamps=True, vad_filter=VAD, beam_size=5,
-                                  condition_on_previous_text=False, no_speech_threshold=0.5)
-words = []
-for s in segments:
-    for w in s.words or []:
-        t = w.word.strip()
-        if t:
-            words.append((w.start, w.end, t, w.probability))
+if HINT and not HINT.rstrip().endswith((".", "!", "?")):
+    # A prompt ending in a full stop keeps the model writing punctuation
+    HINT = HINT.rstrip() + "."
+if cached:
+    words = [tuple(w) for w in cached["words"]]
+    language = cached["language"]
+else:
+    segments, info = model.transcribe(audio, language=lang, initial_prompt=HINT, word_timestamps=True, vad_filter=VAD, beam_size=5,
+                                      condition_on_previous_text=False, no_speech_threshold=0.5)
+    words = []
+    for s in segments:
+        for w in s.words or []:
+            t = w.word.strip()
+            if t:
+                words.append((w.start, w.end, t, w.probability))
+    language = info.language
+    _json.dump({"language": language, "words": words}, open(cache, "w"))
 # Words where the separated voice is silent are made up (the model fills silence with phrases
 # like "thanks for watching"): each word must have voice under at least a third of it
 hop = 160
@@ -51,7 +64,7 @@ for w in words:
     a, b = int(w[0] * 100), max(int(w[0] * 100) + 1, int(w[1] * 100))
     if a < frames and voiced[a:min(b, frames)].mean() >= 0.33:
         kept.append(w)
-print("language %s, %d words heard, %d where the voice is" % (info.language, len(words), len(kept)), file=sys.stderr)
+print("language %s, %d words heard, %d where the voice is" % (language, len(words), len(kept)), file=sys.stderr)
 words = kept
 
 # Numbers as words, as they are sung ("40,000" is "forty thousand"): a lyric needs letters
@@ -66,7 +79,7 @@ def spoken(t):
     def one(m):
         digits, tail = m.group(1).replace(",", ""), m.group(2)
         try:
-            w = num2words(int(digits), lang=(info.language or "en")) if not digits.startswith("0") else " ".join(num2words(int(c)) for c in digits)
+            w = num2words(int(digits), lang=(language or "en")) if not digits.startswith("0") else " ".join(num2words(int(c)) for c in digits)
         except Exception:
             return m.group(0)
         return w.replace("-", " ") + (tail or "")
@@ -88,8 +101,14 @@ for i, w in enumerate(words):
     if cur:
         gap = w[0] - cur[-1][1]
         last = cur[-1][2]
+        # Without punctuation the model still capitalises each new sentence ("...my phone I'm on
+        # my missed call shit You the type..."): a capital starts a new line, unless it is "I",
+        # or part of a name (the word before or after is capitalised too)
+        nxt = words[i + 1][2] if i + 1 < len(words) else ""
+        starts = (w[2][:1].isupper() and not re.match(r"^I('|$)", w[2]) and not last[:1].isupper()
+                  and not nxt[:1].isupper() and len(cur) >= 3)
         if (gap > 0.45 or len(cur) >= 12 or (re.search(r"[.!?]$", last) and len(cur) >= 2)
-                or (last.endswith(",") and len(cur) >= 7)):
+                or (last.endswith(",") and len(cur) >= 7) or starts):
             lines.append(cur); cur = []
     cur.append(w)
 if cur: lines.append(cur)
