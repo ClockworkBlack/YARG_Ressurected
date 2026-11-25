@@ -1,0 +1,23 @@
+diff --git a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+index 8457c06..9195839 100644
+--- a/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
++++ b/Assets/Script/Gameplay/Visuals/HighwayCameraRendering.cs
+@@ -105,7 +105,17 @@ namespace YARG.Gameplay.Visuals
+                 HighwaysOutputTexture.DiscardContents();
+             }
+ 
+-            var descriptor = new RenderTextureDescriptor(Screen.width, Screen.height, RenderTextureFormat.DefaultHDR, 32, 0);
++            // YARG Resurrected: the highways are drawn into this texture and laid over the background, so
++            // the texture must be see-through where there is no highway. "DefaultHDR" is a format without
++            // transparency on phones and tablets, which hid every venue, crowd, picture and video behind
++            // a black sheet; ask for one that has it.
++            var format = RenderTextureFormat.DefaultHDR;
++#if UNITY_ANDROID || UNITY_IOS
++            format = SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBHalf)
++                ? RenderTextureFormat.ARGBHalf
++                : RenderTextureFormat.ARGB32;
++#endif
++            var descriptor = new RenderTextureDescriptor(Screen.width, Screen.height, format, 32, 0);
+ 
+             HighwaysOutputTexture = new RenderTexture(descriptor);
+             if (_highwaysOutput != null)

@@ -1,0 +1,38 @@
+name: Story mode tests
+
+# Story Mode: checks the story's rules and its script files outside Unity.
+# A separate workflow on purpose: nothing in android.yml or converter.yml changes.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "overlay/Assets/Script/Story/**"
+      - "overlay/Assets/Resources/YargStory/**"
+      - "tests/StoryTests/**"
+      - "tests/StoryApiCheck/**"
+      - ".github/workflows/story-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: story-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  story-tests:
+    name: Story mode (rules, song suggestions, script files)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      # Unity compiles these files as C# 9 against .NET Standard 2.1 + .NET Framework.
+      # Building them for netstandard2.1 catches calls that exist only in newer .NET.
+      - name: Only use what Unity has (C# 9, .NET Standard 2.1)
+        run: dotnet build tests/StoryApiCheck -c Release
+      - name: Run tests
+        run: dotnet run --project tests/StoryTests -c Release -- overlay/Assets/Resources/YargStory

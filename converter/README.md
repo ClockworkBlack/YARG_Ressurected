@@ -21,7 +21,16 @@ the one-time download of the instrument-separation model.
 ## Using it
 
 1. Install the APK from this repo's **Releases** (`YARG Converter build N`).
-2. **Choose audio file** (or use *Share* / *Open with* from a file manager). Title and artist are filled in from the file's tags; fix them if needed.
+2. **Choose audio file** (or use *Share* / *Open with* from a file manager). Title, artist,
+   album, year and genre are filled in from the file's tags. With **Fill in missing details
+   online** ticked (the default), whatever the tags leave out is looked up on
+   [MusicBrainz](https://musicbrainz.org) by title and artist (or the file name) and put in the
+   empty boxes only; nothing you typed or the file had is replaced. Check them before converting.
+   The genre also helps the game's story mode suggest songs for each gig. The same happens for
+   every song in a list (below). **Find details online** (under the boxes, and on each listed
+   song's Edit page) looks the song up again from whatever is in the boxes, or the file name when
+   they are empty: it fills the empty boxes and, where MusicBrainz has something different from
+   what is there, asks before replacing it.
 3. Lyrics, any of:
    - **Find online** searches [LRCLIB](https://lrclib.net) for time-synced lyrics by title and artist.
    - **Open .lrc** loads a lyrics file you already have.
@@ -31,22 +40,141 @@ the one-time download of the instrument-separation model.
      under it to the same artist. The names come from the Artist box ("A feat. B", "A & B")
      and can be changed there. Pasted lyrics with headers such as `[Verse 2: Travis Scott]`
      are filled in for you.
-4. **Split into instruments** (optional, recommended). Press *Download the separation model*
-   once (136 MB, Wi-Fi recommended; it resumes if interrupted). With the box ticked, the app
-   first separates the song into guitar, bass, drums, vocals, piano and "other", makes the
-   guitar chart from the guitar alone, adds a bass chart, and listens to the voice on its own
-   to place every word where it is sung and find its note. Expect it to take a few minutes per
-   song (not yet timed on a phone).
-   With **Two artists: ... guess it from their voices** also ticked, lyrics that don't say who
-   sings a line are split between the two artists by the sound of their voices. It is a guess:
-   the lyrics box shows the result afterwards, so you can correct it with *Choose who sings
-   what* and convert again.
+4. **How to convert**: pick one.
+   - **Normal**: quick, about a minute, and needs no download. The guitar chart is made from
+     the whole song as it is. There is no bass chart, and with lyrics the words are spread at
+     speaking pace (any sound in time counts; the notes are not read).
+   - **Split into instruments**: the best charts. Press *Download the separation model* once
+     (136 MB, Wi-Fi recommended; it resumes if interrupted). The app first separates the song
+     into guitar, bass, drums, vocals, piano and "other", makes the guitar chart from the guitar
+     alone, adds a bass chart, and listens to the voice on its own to place every word where it
+     is sung and find its note. Expect a few minutes per song (not yet timed on a phone).
+   - **R&B mode**: the voice comes first. Like the split, but the guitar chart follows the lead
+     singer instead of the band: the notes come where the words and runs are sung, the frets
+     climb and fall with the tune, a held note is a sustain for as long as it is held, and
+     there are no chords. The vocals part follows runs and riffs note by note. The bass chart
+     still follows the bass. Made for R&B, soul and vocal-led pop. On a song with little
+     singing in it the guitar chart follows the band as usual, and the summary says so.
+
+   With **Two artists: ... guess it from their voices** also ticked (split modes only), lyrics
+   that don't say who sings a line are split between the two artists by the sound of their
+   voices. It is a guess: the lyrics box shows the result afterwards, so you can correct it with
+   *Choose who sings what* and convert again.
+
+   The split uses one thread for each of the phone's fast cores and listens to the separated
+   instruments side by side, so it finishes sooner than it used to with the same result.
 5. **Convert and add to YARG**. The first time, Android asks for "All files access" so the app can write into the YARG folder.
    Once it has started you can leave the app, switch to something else or turn the screen off:
    the conversion keeps going, with its progress in a notification, and a second notification
    tells you when the song is ready. (Allow notifications when Android asks, to see them.)
    Open the app again at any time to see where it is.
 6. Add the song to the game (next section).
+
+## Lyrics that start too early or too late
+
+Lyric files are timed against one recording of a song, usually the album version. If your audio
+is another cut (a music video with a scene or a few seconds of nothing before the song, a longer
+intro, a break in the middle) the words would come up while nobody is singing yet.
+
+- **Split and R&B mode** hear the voice on its own, so they line the lyrics up with it: the
+  pattern of sung lines and pauses is slid along the voice until the two agree. One later part of
+  the song may be moved by a different amount than the start (a break the album does not have).
+  Lyrics that already fit, and lyrics that fit nowhere (the wrong song), are left as they are.
+- **Normal mode** cannot hear the voice. It only moves the lyrics later by silence at the very
+  start of the file (two seconds or more).
+- **By hand:** **Words earlier** and **Words later**, under the lyrics (and on a batch song's
+  **Edit** page), move every line half a second per press. Lyrics moved this way are used exactly
+  as they are; so are lyrics carrying an `[offset:]` line.
+
+The summary says when lyrics were moved and by how much, and the `lyrics.lrc` saved with the song
+has the times that were used.
+
+## Lyrics in other languages
+
+Korean, Japanese, Chinese, Russian and other lyrics work like English ones. `.lrc` files in the
+older encodings (EUC-KR, Shift-JIS, GBK, Big5, Windows-1251) and in UTF-16 are recognised when
+opened. Chinese and Japanese lines, written without spaces, are cut into two-character pieces so
+each gets a note. The game needs build 37 or newer to draw these characters (older builds show
+boxes).
+
+## Finding the lyrics
+
+**Find online** (and the lookup for every song in a list) asks LRCLIB for the song several ways
+until its timed lyrics turn up: as tagged; with the title tidied (no "(Official Video)",
+"[Lyrics]", "(feat. X)", "- Remastered 2011", track number or file ending); with only the main
+artist; as free text; by title alone; and from the file name ("Artist - Title.mp3", either way
+round). Each result has to have the same title, and the same artist or the same length, so a
+different song that shares the name is not taken. When no timed lyrics exist, the words alone
+are looked for (in LRCLIB, then in Lyrics.ovh) so they can be timed with **Tap to sync**; the
+status line says where they came from.
+
+**Also search NetEase Cloud Music** (a box under the lyrics, off by default) adds a second
+catalogue of *timed* lyrics, asked only when LRCLIB has none. It is unofficial: the address its
+own web player uses, not a service offered to other apps, so it may stop working at any time.
+Only the title and artist are sent. If nothing is found, check the Title and
+Artist boxes: they are what is searched for.
+
+## Two artists, worked out for you
+
+The converter looks for a second singer by itself, in this order:
+
+1. **Who the singers are.** From how the artist is written in the file's tags ("A feat. B",
+   "A & B"), a "(feat. B)" in the title, how the lyric service and MusicBrainz credit the
+   song, and the names in the lyrics' own section headers.
+2. **Who sings which line, from the lyrics.** When the lyrics found online carry headers such
+   as `[Verse 2: Travis Scott]`, those are carried over to the timed lines: each line goes to
+   the singer its header names, "both" where it names both.
+3. **Fallback: their voices.** When there are two singers but the lyrics don't say who sings
+   what, and the song is converted with **Split** or **R&B mode**, the lines are split by the
+   sound of the two voices. This now happens by itself; the "guess it from their voices" box
+   is only needed to try it on a song where no second singer is named.
+
+When two artists are named, the voice guess knows there certainly are two singers, so it now
+splits the song even when their voices are fairly alike (it used to give up and leave one part).
+The voice guess happens while the song is converted, so the "who sings what" screen shows every
+line for the first artist until then. After a list is converted, its summary says how each
+song's lines came out ("Coi Leray 40 lines, H.E.R. 38"), or that the voices could not be told
+apart.
+
+**More than two artists.** The game has two parts to hand out, so a song with three or more
+names becomes the main artist against the guests together ("B & C"): a line under any guest's
+header goes to the guests' part, and a line shared with the main artist to both.
+
+The app says which of these happened, and the result is always shown as marks in the lyrics, so
+it can be checked and corrected with **Choose who sings what** (or the **Singers** button in a
+list). Normal mode cannot listen to voices: there, only the lyrics' own headers can split a song.
+
+## Several songs at once
+
+Under **Several songs at once**, press **Choose files (up to 33)** and pick as many songs as you
+like in the file picker (long-press the first, then tap the others). They are listed with the
+title and artist from each file's tags, or from a file name like `Artist - Title.mp3`; take any
+out with **Remove**. Each song also has a button with its way of converting: it starts as the
+one chosen in step 3, and tapping it goes **Normal > Split > R&B** and round again, so ballads
+can go through R&B mode and the rest Normal or Split in the same list (Split and R&B need the
+separation model). With **Find lyrics online for each song** ticked (the default), each song
+is looked up on LRCLIB by its title, artist and length, and gets a vocals part when timed lyrics
+are found there.
+
+**Convert all** converts them one after another, each its own way, with the number of notes
+chosen in step 3, in the background with a notification ("Song 7 of 33: ..."). A song that fails does not
+stop the rest. At the end a summary lists which songs were converted (and whether lyrics were
+found) and which were not, and why; those stay in the list to try again. Then scan songs in YARG
+once for all of them.
+
+**Two artists in the list.** Each song's **Singers** button finds its lyrics online (once) and
+opens the same "who sings what" screen as for a single song, with the two names from its artist
+("A feat. B", "A & B"). Mark the lines and go back: the button shows **Singers ✓**, and that song
+is converted with those lyrics and those marks. A song you don't mark is still split between two
+artists by the sound of their voices when it is set to Split or R&B and "Two artists: ... guess
+it from their voices" is ticked.
+
+**Everything the single-song steps offer, per song.** Each song's **Edit** button opens its own
+page: title, artist, album, year and genre; how many notes (or "as in step 3"); and its lyrics,
+which can be found online there and then, opened from a `.lrc` file, pasted, timed with **Tap to
+sync** (it plays that song), and marked with **Who sings what**. A song's row shows when its
+lyrics are ready or still need times. Lyrics without times give that song no vocals, and the
+summary says so.
 
 ## Adding a converted song to YARG
 

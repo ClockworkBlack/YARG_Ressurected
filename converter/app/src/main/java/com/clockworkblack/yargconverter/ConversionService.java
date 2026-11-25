@@ -44,6 +44,8 @@ public final class ConversionService extends Service {
     private static volatile boolean running;
     private static volatile String songTitle = "";
     private static volatile String text = "";
+    /** "Song 3 of 12: Title" while a list of songs is converted, put before the text; empty otherwise. */
+    private static volatile String batchLabel = "";
     /** 0 to 1000, or -1 while the length of the work isn't known yet. */
     private static volatile int progress = -1;
     private static volatile String result;
@@ -63,7 +65,14 @@ public final class ConversionService extends Service {
     }
 
     public static String text() {
-        return text;
+        String label = batchLabel;
+        return label.isEmpty() ? text : label + "\n" + text;
+    }
+
+    /** For a list of songs: which one is being converted. Empty for a single song. */
+    public static void setBatchLabel(String value) {
+        batchLabel = value == null ? "" : value;
+        changed(true);
     }
 
     public static int progress() {
@@ -115,6 +124,7 @@ public final class ConversionService extends Service {
         result = null;
         resultSeen = true;
         markedLyrics = null;
+        batchLabel = "";
         running = true;
 
         NotificationManager nm = appContext.getSystemService(NotificationManager.class);
@@ -287,8 +297,8 @@ public final class ConversionService extends Service {
         Notification.Builder b = builder(this, CHANNEL_PROGRESS)
                 .setSmallIcon(R.drawable.ic_launcher)
                 .setContentTitle(title)
-                .setContentText(text)
-                .setStyle(new Notification.BigTextStyle().bigText(text))
+                .setContentText(text())
+                .setStyle(new Notification.BigTextStyle().bigText(text()))
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(openApp(this));

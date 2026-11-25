@@ -24,6 +24,13 @@ public final class VoiceSplitter {
      */
     static final double MIN_SEPARATION = 6.5;
     /**
+     * The same when the song is known to have two singers (two artists are named): the question
+     * is then only which lines are whose, not whether there is a second voice, so a much smaller
+     * difference is enough. Below this the two halves are no more different than one voice.
+     */
+    static final double MIN_SEPARATION_KNOWN_TWO = 3.0;
+
+    /**
      * How much one semitone of difference in where the voice sits counts, against the colour
      * bands. Next to nothing: the same artist raps low and sings high, and must stay one person.
      */
@@ -55,6 +62,13 @@ public final class VoiceSplitter {
      * @return the guess, or null when the voices cannot be told apart (or there are too few lines)
      */
     public static Guess guess(VocalCharter.Chart chart, VocalAnalyzer.Voice voice, int lineCount) {
+        return guess(chart, voice, lineCount, false);
+    }
+
+    /**
+     * @param knownTwo the song names two artists, so there are two singers to tell apart for sure
+     */
+    public static Guess guess(VocalCharter.Chart chart, VocalAnalyzer.Voice voice, int lineCount, boolean knownTwo) {
         lastSeparation = 0;
         if (chart == null || voice == null || voice.frames() < 50) return null;
         final int dims = VocalAnalyzer.BANDS + 1;
@@ -183,7 +197,8 @@ public final class VoiceSplitter {
         double within = Math.sqrt((spread[0] / Math.max(1, members[0]) + spread[1] / Math.max(1, members[1])) / 2);
         double separation = (mean[1] - mean[0]) / (within + 1e-6);
         lastSeparation = separation;
-        if (separation < MIN_SEPARATION) return null;
+        if (separation < (knownTwo ? MIN_SEPARATION_KNOWN_TWO : MIN_SEPARATION)) return null;
+
 
         // Smooth: the cheapest path through the lines when changing singer has a price.
         double switchCost = meanLean;

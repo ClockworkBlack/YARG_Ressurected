@@ -8,7 +8,10 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
+import android.content.res.ColorStateList;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
@@ -21,9 +24,11 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -65,6 +70,54 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private static final int REQ_PERMISSION = 4;
     private static final int REQ_NOTIFICATIONS = 5;
     private static final int REQ_SINGERS = 6;
+    private static final int REQ_BATCH = 7;
+    private static final int REQ_BATCH_SINGERS = 8;
+    private static final int REQ_BATCH_LRC = 9;
+    private static final int REQ_BATCH_TAP = 10;
+    /** The song in the list being edited, and its dialog's lyrics box, while the dialog is open. */
+    private Queued editing;
+    private EditText editingLyrics;
+    private TextView editingStatus;
+    /** The song in the list whose singers are being chosen. */
+    private Queued singersFor;
+
+    /** Most songs converted in one go. */
+    static final int BATCH_MAX = 33;
+
+    /** One song waiting in the list. */
+    private static final class Queued {
+        Uri uri;
+        String fileName = "";
+        SongMeta meta = new SongMeta();
+        double seconds;
+        boolean read;
+        /** How MusicBrainz credits its artists, when looked up. */
+        String credit = "";
+        /** How this song is converted: MODE_NORMAL, MODE_SPLIT or MODE_RNB. */
+        int mode = MODE_NORMAL;
+        /** Lyrics found for it (with who sings each line, once marked), or null to look them up when it is converted. */
+        String lrcText;
+        /** The lines have been marked by hand with the Singers button. */
+        boolean singersMarked;
+        /** "How many notes" for this song alone (0 = as chosen in step 3). */
+        int density;
+    }
+
+    private static String modeName(int mode) {
+        return mode == MODE_RNB ? "R&B" : mode == MODE_SPLIT ? "Split" : "Normal";
+    }
+
+    /** The next way of converting for a song in the list: Normal, Split, R&B, and round again. */
+    private int nextMode(int mode) {
+        if (!ModelStore.installed(this)) return MODE_NORMAL;
+        return mode == MODE_NORMAL ? MODE_SPLIT : mode == MODE_SPLIT ? MODE_RNB : MODE_NORMAL;
+    }
+
+    private final List<Queued> batch = new ArrayList<>();
+    private LinearLayout batchList;
+    private TextView batchStatus;
+    private CheckBox batchLyricsCheck;
+    private Button batchPickButton, batchConvertButton, batchClearButton;
 
     /** Folder inside Internal storage/YARG/songs that converted songs go into. */
     private static final String SUBFOLDER = "Converted";
@@ -79,16 +132,34 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private boolean busy;
 
     private TextView fileLabel;
+    private CheckBox onlineDetailsCheck;
+    /** Read on other threads: whether to fill missing details from MusicBrainz. */
+    private volatile boolean onlineDetails = true;
     private EditText titleBox, artistBox, albumBox, yearBox, genreBox, lyricsBox;
     private TextView lyricsStatus, log;
     private Button pickButton, findButton, lrcButton, tapButton, convertButton;
     private ProgressBar progress;
     private RadioGroup densityGroup;
-    private CheckBox stemsCheck, guessCheck;
+    private CheckBox guessCheck;
+    private RadioGroup modeGroup;
+    private RadioButton modeNormal, modeSplit, modeRnb;
+    private static final int MODE_NORMAL = 11, MODE_SPLIT = 12, MODE_RNB = 13;
+
+    // Colours of the screen. Set by hand so every option reads clearly whatever the phone's theme.
+    private static final int INK = 0xFF0F1318, CARD = 0xFF1B222B, CARD_ON = 0xFF2B2410, LINE = 0xFF3A4654;
+    private static final int TEXT = 0xFFF4F6F8, SOFT = 0xFFC3CCD6, FAINT = 0xFF7D8894, GOLD = 0xFFFFC53D;
+
+    /** A copy of the chosen audio in the app's own storage, and the file it is a copy of. */
+    private volatile File audioCopy;
+    private volatile Uri audioCopyOf;
     private Button singersButton;
     private TextView singersStatus;
     /** The two artists' names as typed on the "Who sings what" screen; null until that has been used. */
     private String[] singerNames;
+    /** How MusicBrainz credits the chosen song's artists ("A feat. B"), when it was looked up. */
+    private volatile String creditArtist = "";
+    /** The last song's analysis, for the list's summary (how the singers were split). */
+    private volatile SongWriter.Result lastResult;
     private TextView modelStatus;
     private Button modelButton;
     private static final int DENSITY_FEWER = 1, DENSITY_STANDARD = 2, DENSITY_MORE = 3;
@@ -205,6 +276,16 @@ public final class MainActivity extends Activity implements ConversionService.Li
         fileLabel.setText("No file chosen yet.");
         fileLabel.setPadding(0, dp(4), 0, dp(8));
         root.addView(fileLabel);
+        onlineDetailsCheck = new CheckBox(this);
+        onlineDetailsCheck.setText("Fill in missing details online. Title, artist, album, year and genre come from the file's own tags; whatever they leave out is looked up on MusicBrainz (only the title and artist are sent). The genre also helps YARG's story mode pick songs for each gig.");
+        onlineDetailsCheck.setChecked(true);
+        onlineDetailsCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                onlineDetails = checked;
+            }
+        });
+        root.addView(onlineDetailsCheck);
 
         titleBox = field(root, "Title");
         artistBox = field(root, "Artist");
@@ -220,6 +301,20 @@ public final class MainActivity extends Activity implements ConversionService.Li
         genreBox.setSingleLine(true);
         row.addView(genreBox, weighted());
         root.addView(row);
+        root.addView(button("Find details online", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (busy) return;
+                findDetails(titleBox, artistBox, albumBox, yearBox, genreBox, audioName, fileLabel, new Runnable() {
+                    @Override
+                    public void run() {
+                        // A featured artist found: the names for "who sings what"
+                        List<String> names = Lrc.artists(artistBox.getText().toString(), titleBox.getText().toString());
+                        if (names.size() >= 2) singerNames = names.toArray(new String[0]);
+                    }
+                });
+            }
+        }));
 
         root.addView(section("2. Lyrics (optional)"));
         LinearLayout lyricButtons = row();
@@ -257,7 +352,37 @@ public final class MainActivity extends Activity implements ConversionService.Li
         lyricsStatus = new TextView(this);
         lyricsStatus.setPadding(0, dp(4), 0, dp(4));
         root.addView(lyricsStatus);
+        // For words that come up too early or too late in the game
+        LinearLayout nudgeButtons = row();
+        nudgeButtons.addView(button("Words earlier", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyricsBox, -NUDGE_SEC);
+                if (note != null) describeLyrics(note);
+            }
+        }), gapped());
+        nudgeButtons.addView(button("Words later", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyricsBox, NUDGE_SEC);
+                if (note != null) describeLyrics(note);
+            }
+        }), weighted());
+        root.addView(nudgeButtons);
 
+        final android.content.SharedPreferences prefs = getSharedPreferences("converter", MODE_PRIVATE);
+        CheckBox netEaseCheck = new CheckBox(this);
+        netEaseCheck.setText("Also search NetEase Cloud Music for timed lyrics when LRCLIB has none. Unofficial: it is not a service offered to other apps, and it may stop working at any time. Only the title and artist are sent.");
+        LrcLib.useNetEase = prefs.getBoolean("netease", false);
+        netEaseCheck.setChecked(LrcLib.useNetEase);
+        netEaseCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                LrcLib.useNetEase = checked;
+                prefs.edit().putBoolean("netease", checked).apply();
+            }
+        });
+        root.addView(netEaseCheck);
         singersButton = button("Two artists? Choose who sings what", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -271,21 +396,20 @@ public final class MainActivity extends Activity implements ConversionService.Li
         root.addView(singersStatus);
 
         root.addView(section("3. Convert"));
-        stemsCheck = new CheckBox(this);
-        stemsCheck.setText("Split the song into instruments first. The guitar chart is then made from the guitar alone, and a bass chart is added. Takes a few minutes per song.");
-        root.addView(stemsCheck);
-        modelStatus = new TextView(this);
-        modelStatus.setPadding(dp(32), 0, 0, dp(4));
-        root.addView(modelStatus);
-        modelButton = button("Download the separation model (136 MB)", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                downloadModel();
-            }
-        });
-        root.addView(modelButton);
+        TextView modeLabel = new TextView(this);
+        modeLabel.setText("How to convert");
+        modeLabel.setPadding(0, 0, 0, dp(4));
+        root.addView(modeLabel);
+        modeGroup = new RadioGroup(this);
+        modeGroup.setOrientation(RadioGroup.VERTICAL);
+        modeNormal = mode(MODE_NORMAL, "Normal", "Quick: about a minute. Charts the guitar from the whole song as it is. No download needed. No bass chart; with lyrics, the words are spread at speaking pace.");
+        modeSplit = mode(MODE_SPLIT, "Split into instruments", "Best charts. Separates the song first, so the guitar chart comes from the guitar alone, a bass chart is added, and every word is placed where it is sung. Takes a few minutes.");
+        modeRnb = mode(MODE_RNB, "R&B mode", "The voice comes first. Like the split, but the guitar chart follows the lead singer's melody and runs instead of the band. For R&B, soul and vocal-led pop.");
+        modeGroup.check(MODE_NORMAL);
+        root.addView(modeGroup, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        modeStatusHolder(root);
         guessCheck = new CheckBox(this);
-        guessCheck.setText("Two artists: where the lyrics don't say who sings a line, guess it from their voices. Needs the split above. It is a guess; check it afterwards with \"Choose who sings what\".");
+        guessCheck.setText("Two artists: where the lyrics don't say who sings a line, guess it from their voices. For the two split modes. It is a guess; check it afterwards with \"Choose who sings what\".");
         root.addView(guessCheck);
         refreshModelUi(true);
 
@@ -312,6 +436,45 @@ public final class MainActivity extends Activity implements ConversionService.Li
             }
         });
         root.addView(convertButton);
+
+        root.addView(section("Several songs at once"));
+        batchStatus = new TextView(this);
+        batchStatus.setText("Pick up to " + BATCH_MAX + " files and convert them all in one go, one after another, with the mode and number of notes chosen above. Each song's title and artist come from the file's tags (or its name).");
+        root.addView(batchStatus);
+        batchPickButton = button("Choose files (up to " + BATCH_MAX + ")", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickBatch();
+            }
+        });
+        root.addView(batchPickButton);
+        batchList = new LinearLayout(this);
+        batchList.setOrientation(LinearLayout.VERTICAL);
+        root.addView(batchList);
+        batchLyricsCheck = new CheckBox(this);
+        batchLyricsCheck.setText("Find lyrics online for each song (LRCLIB), so each one gets a vocals part to sing. Songs with no timed lyrics there are converted without vocals.");
+        batchLyricsCheck.setChecked(true);
+        root.addView(batchLyricsCheck);
+        LinearLayout batchRow = row();
+        batchConvertButton = button("Convert all", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onBatchPressed();
+            }
+        });
+        batchClearButton = button("Clear list", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (busy) return;
+                batch.clear();
+                showBatch();
+            }
+        });
+        batchRow.addView(batchConvertButton, weighted());
+        batchRow.addView(batchClearButton, weighted());
+        root.addView(batchRow);
+        showBatch();
+
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(1000);
         progress.setVisibility(View.GONE);
@@ -337,6 +500,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
             }
         }));
 
+        scroll.setBackgroundColor(INK);
+        getWindow().setStatusBarColor(INK);
+        getWindow().setNavigationBarColor(INK);
+        heading.setTextColor(GOLD);
+        style(root);
         setContentView(scroll);
     }
 
@@ -347,6 +515,99 @@ public final class MainActivity extends Activity implements ConversionService.Li
         t.setTypeface(Typeface.DEFAULT_BOLD);
         t.setPadding(0, dp(18), 0, dp(6));
         return t;
+    }
+
+    /** One way of converting: a name in bold with what it does underneath, as a card that lights up when chosen. */
+    private RadioButton mode(int id, String name, String what) {
+        RadioButton rb = new RadioButton(this);
+        rb.setId(id);
+        android.text.SpannableString text = new android.text.SpannableString(name + "\n" + what);
+        text.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), 0, name.length(), 0);
+        text.setSpan(new android.text.style.RelativeSizeSpan(1.15f), 0, name.length(), 0);
+        rb.setText(text);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(4), 0, dp(4));
+        modeGroup.addView(rb, lp);
+        return rb;
+    }
+
+    /** The line about the separation model and its download button, under the ways of converting. */
+    private void modeStatusHolder(LinearLayout root) {
+        modelStatus = new TextView(this);
+        modelStatus.setPadding(0, dp(2), 0, dp(4));
+        root.addView(modelStatus);
+        modelButton = button("Download the separation model (136 MB)", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                downloadModel();
+            }
+        });
+        root.addView(modelButton);
+    }
+
+    private GradientDrawable box(int fill, int stroke) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(10));
+        if (stroke != 0) d.setStroke(dp(1.5f), stroke);
+        return d;
+    }
+
+    /**
+     * Gives every control on the screen the same clear look: light text on a dark page, options
+     * as cards with a gold edge when chosen, gold buttons, and greyed-out things that still read.
+     */
+    private void style(View v) {
+        int[][] states = {{-android.R.attr.state_enabled}, {android.R.attr.state_checked}, {}};
+        if (v instanceof CompoundButton) {
+            CompoundButton c = (CompoundButton) v;
+            c.setTextColor(new ColorStateList(states, new int[] {FAINT, TEXT, TEXT}));
+            c.setButtonTintList(new ColorStateList(states, new int[] {FAINT, GOLD, SOFT}));
+            StateListDrawable bg = new StateListDrawable();
+            bg.addState(new int[] {android.R.attr.state_checked}, box(CARD_ON, GOLD));
+            bg.addState(new int[] {}, box(CARD, LINE));
+            c.setBackground(bg);
+            c.setPadding(dp(10), dp(10), dp(12), dp(10));
+            c.setLineSpacing(dp(2), 1f);
+        } else if (v instanceof Button) {
+            Button b = (Button) v;
+            StateListDrawable bg = new StateListDrawable();
+            bg.addState(new int[] {-android.R.attr.state_enabled}, box(CARD, LINE));
+            bg.addState(new int[] {android.R.attr.state_pressed}, box(0xFFE0A91F, 0));
+            bg.addState(new int[] {}, box(GOLD, 0));
+            b.setBackground(bg);
+            b.setTextColor(new ColorStateList(new int[][] {{-android.R.attr.state_enabled}, {}}, new int[] {FAINT, 0xFF14110A}));
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setMinHeight(dp(48));
+            ViewGroup.LayoutParams lp = b.getLayoutParams();
+            if (lp instanceof LinearLayout.LayoutParams && ((LinearLayout.LayoutParams) lp).topMargin == 0) {
+                ((LinearLayout.LayoutParams) lp).topMargin = dp(4);
+                ((LinearLayout.LayoutParams) lp).bottomMargin = dp(4);
+            }
+        } else if (v instanceof EditText) {
+            EditText e = (EditText) v;
+            e.setTextColor(TEXT);
+            e.setHintTextColor(FAINT);
+            e.setBackground(box(CARD, LINE));
+            e.setPadding(dp(12), dp(10), dp(12), dp(10));
+            ViewGroup.LayoutParams lp = e.getLayoutParams();
+            if (lp instanceof LinearLayout.LayoutParams) {
+                ((LinearLayout.LayoutParams) lp).topMargin = dp(4);
+                ((LinearLayout.LayoutParams) lp).bottomMargin = dp(4);
+                ((LinearLayout.LayoutParams) lp).rightMargin = dp(4);
+            }
+        } else if (v instanceof TextView) {
+            TextView t = (TextView) v;
+            // Headings are bold already: keep those bright, the explanations a little softer
+            if (t.getCurrentTextColor() != GOLD) t.setTextColor(t.getTypeface() != null && t.getTypeface().isBold() ? TEXT : SOFT);
+        } else if (v instanceof ProgressBar) {
+            ((ProgressBar) v).setProgressTintList(ColorStateList.valueOf(GOLD));
+            ((ProgressBar) v).setIndeterminateTintList(ColorStateList.valueOf(GOLD));
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) style(g.getChildAt(i));
+        }
     }
 
     private Button button(String text, View.OnClickListener l) {
@@ -361,6 +622,13 @@ public final class MainActivity extends Activity implements ConversionService.Li
         LinearLayout r = new LinearLayout(this);
         r.setOrientation(LinearLayout.HORIZONTAL);
         return r;
+    }
+
+    /** An equal share of a row, with a small gap on the right. */
+    private LinearLayout.LayoutParams gapped() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(0, 0, dp(6), 0);
+        return lp;
     }
 
     private LinearLayout.LayoutParams weighted() {
@@ -383,10 +651,19 @@ public final class MainActivity extends Activity implements ConversionService.Li
         lrcButton.setEnabled(!value);
         tapButton.setEnabled(!value);
         convertButton.setEnabled(!value);
+        if (batchPickButton != null) {
+            batchPickButton.setEnabled(!value);
+            batchConvertButton.setEnabled(!value && !batch.isEmpty());
+            batchClearButton.setEnabled(!value && !batch.isEmpty());
+            for (int i = 0; i < batchList.getChildCount(); i++) batchList.getChildAt(i).setEnabled(!value);
+        }
         modelButton.setEnabled(!value);
         singersButton.setEnabled(!value);
-        stemsCheck.setEnabled(!value && ModelStore.installed(this));
-        guessCheck.setEnabled(!value && ModelStore.installed(this));
+        boolean model = ModelStore.installed(this);
+        modeNormal.setEnabled(!value);
+        modeSplit.setEnabled(!value && model);
+        modeRnb.setEnabled(!value && model);
+        guessCheck.setEnabled(!value && model);
         if (value) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
@@ -397,15 +674,20 @@ public final class MainActivity extends Activity implements ConversionService.Li
     /** Shows whether the separation model is on the phone, and offers the download if not. */
     private void refreshModelUi(boolean tickIfInstalled) {
         boolean installed = ModelStore.installed(this);
-        stemsCheck.setEnabled(installed && !busy);
+        modeSplit.setEnabled(installed && !busy);
+        modeRnb.setEnabled(installed && !busy);
         guessCheck.setEnabled(installed && !busy);
-        if (!installed) guessCheck.setChecked(false);
-        if (!installed) stemsCheck.setChecked(false);
-        else if (tickIfInstalled) stemsCheck.setChecked(true);
+        if (!installed) {
+            guessCheck.setChecked(false);
+            modeGroup.check(MODE_NORMAL);
+        } else if (tickIfInstalled && modeGroup.getCheckedRadioButtonId() == MODE_NORMAL) {
+            // Just downloaded (or already there when the app opens): the split is what it is for
+            modeGroup.check(MODE_SPLIT);
+        }
         modelButton.setVisibility(installed ? View.GONE : View.VISIBLE);
         modelStatus.setText(installed
                 ? "Separation model installed (HT-Demucs, 6 instruments)."
-                : "Needs a one-time 136 MB download from Hugging Face (HT-Demucs). Wi-Fi recommended.");
+                : "The two split modes need a one-time 136 MB download from Hugging Face (HT-Demucs). Wi-Fi recommended. Normal works without it.");
     }
 
     private void downloadModel() {
@@ -491,12 +773,43 @@ public final class MainActivity extends Activity implements ConversionService.Li
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null) return;
-        if (requestCode == REQ_AUDIO && data.getData() != null) {
+        if (requestCode == REQ_BATCH) {
+            addToBatch(data);
+        } else if (requestCode == REQ_BATCH_LRC && data.getData() != null && editingLyrics != null) {
+            try {
+                String text = Lrc.decode(readAll(data.getData(), 2 * 1024 * 1024));
+                editingLyrics.setText(text);
+                if (editingStatus != null) describeEditLyrics(editingStatus, text);
+            } catch (IOException e) {
+                message("Could not read file", String.valueOf(e.getMessage()));
+            }
+        } else if (requestCode == REQ_BATCH_TAP && editingLyrics != null) {
+            String lrc = data.getStringExtra(TapSyncActivity.EXTRA_RESULT);
+            if (lrc != null && !lrc.isEmpty()) {
+                editingLyrics.setText(lrc);
+                if (editingStatus != null) describeEditLyrics(editingStatus, lrc);
+            }
+        } else if (requestCode == REQ_BATCH_SINGERS) {
+            Queued q = singersFor;
+            singersFor = null;
+            String text = data.getStringExtra(SingersActivity.EXTRA_TEXT);
+            String[] names = data.getStringArrayExtra(SingersActivity.EXTRA_NAMES);
+            if (q != null && batch.contains(q) && text != null) {
+                q.lrcText = text;
+                q.singersMarked = true;
+                if (names != null) q.meta.singers = names;
+                // Opened from the Edit dialog: show the marks there too
+                if (editingLyrics != null) {
+                    editingLyrics.setText(text);
+                    if (editingStatus != null) describeEditLyrics(editingStatus, text);
+                }
+                showBatch();
+            }
+        } else if (requestCode == REQ_AUDIO && data.getData() != null) {
             setAudio(data.getData());
         } else if (requestCode == REQ_LRC && data.getData() != null) {
             try {
-                String text = new String(readAll(data.getData(), 2 * 1024 * 1024), StandardCharsets.UTF_8);
-                if (text.startsWith("﻿")) text = text.substring(1);
+                String text = Lrc.decode(readAll(data.getData(), 2 * 1024 * 1024));
                 lyricsBox.setText(text);
                 describeLyrics("Loaded from file.");
             } catch (IOException e) {
@@ -536,6 +849,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private void setAudio(final Uri uri) {
         audioUri = uri;
         audioName = displayName(uri);
+        // A new song: its singers are worked out afresh
+        singerNames = null;
         audioSeconds = 0;
         fileLabel.setText(audioName + "\nReading song details…");
         log.setText("");
@@ -544,6 +859,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
             public void run() {
                 final String[] tags = new String[5];
                 double seconds = 0;
+                try {
+                    // While the permission to read it is fresh
+                    localCopy(uri);
+                } catch (IOException | RuntimeException e) {
+                    // Tried again, with a message, when the conversion starts
+                }
                 MediaMetadataRetriever r = new MediaMetadataRetriever();
                 try {
                     r.setDataSource(MainActivity.this, uri);
@@ -592,6 +913,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         genreBox.setText(clean(tags[4]));
                         String len = secondsFinal > 0 ? String.format(Locale.US, " (%d:%02d)", (int) secondsFinal / 60, (int) secondsFinal % 60) : "";
                         fileLabel.setText(audioName + len);
+                        fillFromOnline(uri, audioName + len);
                     }
                 });
             }
@@ -614,6 +936,27 @@ public final class MainActivity extends Activity implements ConversionService.Li
     }
 
     // ---------------------------------------------------------------- lyrics
+
+    /** How far one press of "Words earlier" or "Words later" moves the lyrics, in seconds. */
+    private static final double NUDGE_SEC = 0.5;
+
+    /**
+     * Moves every timed line in a lyrics box earlier or later, for a song whose words come up at
+     * the wrong moment in the game. Lyrics moved this way keep their times: the converter no
+     * longer lines them up with the voice by itself.
+     *
+     * @return what to tell the user, or null when a message was shown instead
+     */
+    private String nudgeLyrics(EditText box, double seconds) {
+        String text = box.getText().toString();
+        if (!Lrc.hasTimestamps(text)) {
+            message("Timed lyrics needed", "Find, open or tap in the lyrics first: only lines with times like [01:23.45] can be moved.");
+            return null;
+        }
+        box.setText(Lrc.shiftText(text, seconds));
+        return String.format(Locale.US, "All lines moved %.1f seconds %s. These times are now used as they are; convert the song again to hear the difference.",
+                Math.abs(seconds), seconds > 0 ? "later" : "earlier");
+    }
 
     private void describeLyrics(String prefix) {
         String text = lyricsBox.getText().toString();
@@ -685,6 +1028,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             return;
         }
         final double seconds = audioSeconds;
+        final String fileForLookup = audioName;
         lyricsStatus.setText("Searching lrclib.net…");
         findButton.setEnabled(false);
         new Thread(new Runnable() {
@@ -693,7 +1037,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 LrcLib.Found found = null;
                 String error = null;
                 try {
-                    found = LrcLib.find(title, artist, album, seconds);
+                    found = LrcLib.find(title, artist, album, seconds, fileForLookup);
                 } catch (IOException e) {
                     error = e.getMessage() == null ? "No connection." : e.getMessage();
                 }
@@ -708,8 +1052,17 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         } else if (f == null) {
                             lyricsStatus.setText("No lyrics found for that title and artist. Check the spelling, or paste them below.");
                         } else if (f.synced != null) {
-                            lyricsBox.setText(f.synced);
-                            String note = "Found timed lyrics for \"" + f.title + "\" by " + f.artist + ".";
+                            // Who sings what, from the lyrics themselves when they say
+                            List<String> names = findSingers(title, artist, creditArtist, f);
+                            if (singerNames == null && names.size() >= 2) singerNames = names.toArray(new String[0]);
+                            String lyricsText = markedLyrics(f, java.util.Arrays.asList(singers()));
+                            lyricsBox.setText(lyricsText);
+                            String note = "Found timed lyrics for \"" + f.title + "\" by " + f.artist + " (" + f.source + ").";
+                            if (hasMarks(lyricsText)) {
+                                note += " The lyrics say who sings what (" + singers()[0] + " / " + singers()[1] + "): check it with \"Choose who sings what\".";
+                            } else if (names.size() >= 2) {
+                                note += " Two artists (" + names.get(0) + " / " + names.get(1) + "), but the lyrics don't say who sings what: with a split mode their voices decide, or mark the lines yourself.";
+                            }
                             if (seconds > 1 && f.duration > 0 && Math.abs(f.duration - seconds) > 3) {
                                 note += String.format(Locale.US, " Their recording is %d s %s than your file, so the timing may drift.",
                                         Math.round(Math.abs(f.duration - seconds)), f.duration > seconds ? "longer" : "shorter");
@@ -717,7 +1070,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                             describeLyrics(note);
                         } else if (f.plain != null) {
                             lyricsBox.setText(f.plain);
-                            describeLyrics("Found lyrics without times.");
+                            describeLyrics("Found the words on " + f.source + ", but no times for them anywhere. Press \"Tap to sync\" to time them.");
                         } else {
                             lyricsStatus.setText("This song is listed as instrumental (no lyrics).");
                         }
@@ -831,9 +1184,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
         int choice = densityGroup.getCheckedRadioButtonId();
         // "Fewer" keeps only the stronger sounds; "More" lets weaker ones through.
         options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
-        final boolean useStems = stemsCheck.isChecked() && ModelStore.installed(this);
-        final boolean guessSingers = useStems && guessCheck.isChecked();
+        int mode = modeGroup.getCheckedRadioButtonId();
+        final boolean useStems = mode != MODE_NORMAL && ModelStore.installed(this);
         meta.singers = singers();
+        final boolean guessSingers = voicesDecide(useStems, guessCheck.isChecked(), singerNames != null ? singerNames
+                : Lrc.artists(meta.artist, meta.title).toArray(new String[0]));
+        final boolean rnb = useStems && mode == MODE_RNB;
 
         setBusy(true);
         progress.setIndeterminate(false);
@@ -852,7 +1208,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 String summary;
                 boolean ok = false;
                 try {
-                    summary = runConversion(uri, name, meta, lyrics, lrcText, options, useStems, guessSingers);
+                    summary = runConversion(uri, name, meta, lyrics, lrcText, options, useStems, guessSingers, rnb);
                     ok = true;
                 } catch (IOException e) {
                     summary = "Conversion failed: " + e.getMessage();
@@ -863,6 +1219,878 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 ConversionService.finish(ok, summary);
             }
         }, "convert").start();
+    }
+
+    /**
+     * Copies the chosen audio into the app's own storage, once. The permission to read a file
+     * picked or shared from another app only lasts while this screen is alive, and a conversion
+     * carries on long after that.
+     */
+    private synchronized File localCopy(Uri uri) throws IOException {
+        File copy = audioCopy;
+        if (copy != null && uri.equals(audioCopyOf) && copy.isFile() && copy.length() > 0) return copy;
+        File target = new File(app.getCacheDir(), "chosen-audio");
+        audioCopy = null;
+        audioCopyOf = null;
+        try (InputStream in = app.getContentResolver().openInputStream(uri);
+             OutputStream out = new FileOutputStream(target)) {
+            if (in == null) throw new IOException("The audio file could not be opened. Choose it again.");
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        } catch (SecurityException e) {
+            throw new IOException("Android no longer lets the app read that file. Tap \"Choose audio file\" and pick it again.");
+        }
+        audioCopy = target;
+        audioCopyOf = uri;
+        return target;
+    }
+
+    // ---------------------------------------------------------------- who sings what, automatically
+
+    /**
+     * The song's two singers from everything that names them: the artist as tagged, as the lyric
+     * service has it, as MusicBrainz credits it, a "(feat. B)" in the title, and the names in the
+     * lyrics' own section headers. One name (or none) when nothing names a second.
+     */
+    private static List<String> findSingers(String title, String artist, String credit, LrcLib.Found f) {
+        return Lrc.findSingers(title, f == null ? null : f.plain, artist, credit, f == null ? "" : f.artist,
+                f == null ? "" : f.title.matches("(?i).*[\\[(]\\s*(feat|ft|featuring|with)\\b.*") ? artist + " " + f.title : "");
+    }
+
+    /**
+     * The timed lyrics, with each line given to the singer the plain lyrics' headers name when
+     * they do ("[Verse 2: Travis Scott]"). Otherwise the timed lyrics as found: with two singers
+     * and a split, the voices then decide (see {@link #voicesDecide}).
+     */
+    private static String markedLyrics(LrcLib.Found f, List<String> names) {
+        String marked = Lrc.markFromHeaders(f.synced, f.plain, names);
+        return marked != null ? marked : f.synced;
+    }
+
+    /** Whether any line of timed lyrics says who sings it. */
+    private static boolean hasMarks(String lrcText) {
+        for (Lrc.Line l : Lrc.parse(lrcText)) if (l.singer != Lrc.UNMARKED) return true;
+        return false;
+    }
+
+    /**
+     * The fallback: a song with two named singers whose lyrics do not say who sings what is split
+     * by the sound of their voices, whenever the song is separated into instruments. With one
+     * named singer that only happens when the "guess it from their voices" box is ticked.
+     */
+    private static boolean voicesDecide(boolean useStems, boolean boxTicked, String[] names) {
+        boolean two = names != null && names.length >= 2 && !blank(names[0]) && !blank(names[1])
+                && !names[0].startsWith("Singer ") && !names[1].startsWith("Singer ");
+        return useStems && (boxTicked || two);
+    }
+
+    // ---------------------------------------------------------------- details from MusicBrainz
+
+    /**
+     * "Find details online": looks the song up on MusicBrainz from what is in the boxes (or the
+     * file name), fills the empty boxes, and when what it found differs from what is already
+     * there, asks before replacing it. Used by the single-song screen and each song's Edit page.
+     */
+    private void findDetails(final EditText title, final EditText artist, final EditText album, final EditText year,
+                             final EditText genre, final String fileName, final TextView status, final Runnable after) {
+        String t = title.getText().toString().trim();
+        final String a = artist.getText().toString().trim();
+        if (t.isEmpty() && fileName != null) {
+            // Nothing typed: the file name, "Artist - Title" or just the title
+            String base = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(fileName);
+            int dash = base.indexOf(" - ");
+            t = dash > 0 ? base.substring(dash + 3).trim() : base;
+        }
+        if (t.isEmpty()) {
+            status.setText("Type the title (and the artist if you know it) first.");
+            return;
+        }
+        final String askTitle = t;
+        status.setText("Looking the song up on MusicBrainz…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                MusicBrainz.Found f = null;
+                String error = null;
+                try {
+                    f = MusicBrainz.find(askTitle, a);
+                    // With the artist the search may be too narrow (a typo, a nickname): try the title alone
+                    if (f == null && !a.isEmpty()) f = MusicBrainz.find(askTitle, "");
+                } catch (IOException | RuntimeException e) {
+                    error = e.getMessage();
+                }
+                final MusicBrainz.Found found = f;
+                final String why = error;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (found == null) {
+                            status.setText(why != null ? "Could not reach MusicBrainz: " + why
+                                    : "No match found on MusicBrainz. Check the spelling of the title and artist.");
+                            return;
+                        }
+                        EditText[] boxes = {title, artist, album, year, genre};
+                        String[] values = {found.title, found.artist, found.album, found.year, found.genre};
+                        String[] names = {"title", "artist", "album", "year", "genre"};
+                        final List<Integer> different = new ArrayList<>();
+                        List<String> filled = new ArrayList<>();
+                        for (int i = 0; i < boxes.length; i++) {
+                            if (blank(values[i])) continue;
+                            String now = boxes[i].getText().toString().trim();
+                            if (now.isEmpty()) {
+                                boxes[i].setText(values[i]);
+                                filled.add(names[i]);
+                            } else if (!now.equalsIgnoreCase(values[i].trim())) {
+                                different.add(i);
+                            }
+                        }
+                        String found1 = "Found: " + found.artist + " - " + found.title
+                                + (blank(found.album) ? "" : ", " + found.album) + (blank(found.year) ? "" : " (" + found.year + ")")
+                                + (blank(found.genre) ? "" : ", " + found.genre) + ".";
+                        status.setText(found1 + (filled.isEmpty() ? "" : " Filled in: " + android.text.TextUtils.join(", ", filled) + "."));
+                        if (after != null) after.run();
+                        if (different.isEmpty()) return;
+                        StringBuilder sb = new StringBuilder("MusicBrainz has these differently. Use its versions?\n");
+                        for (int i : different) {
+                            sb.append("\n").append(names[i]).append(": \"").append(boxes[i].getText().toString().trim())
+                                    .append("\"  ->  \"").append(values[i]).append('"');
+                        }
+                        final EditText[] b = boxes;
+                        final String[] v = values;
+                        new AlertDialog.Builder(MainActivity.this)
+                                .setTitle("Replace details?")
+                                .setMessage(sb.toString())
+                                .setPositiveButton("Use these", new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface d, int which) {
+                                        for (int i : different) b[i].setText(v[i]);
+                                        if (after != null) after.run();
+                                    }
+                                })
+                                .setNegativeButton("Keep mine", null)
+                                .show();
+                    }
+                });
+            }
+        }, "find-details").start();
+    }
+
+
+    /** True when a box is empty, so an online detail may go in it. */
+    private static boolean blank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    /**
+     * Looks the chosen song up on MusicBrainz when its tags left something out, and puts what is
+     * found into the boxes that are still empty. Nothing typed or read from the file is replaced.
+     */
+    private void fillFromOnline(final Uri uri, final String label) {
+        final String title = titleBox.getText().toString();
+        final String artist = artistBox.getText().toString();
+        creditArtist = "";
+        boolean missing = blank(artist) || blank(albumBox.getText().toString()) || blank(yearBox.getText().toString())
+                || blank(genreBox.getText().toString()) || Lrc.artists(artist, title).size() < 2;
+        if (!onlineDetails || !missing || blank(title)) return;
+        fileLabel.setText(label + "\nLooking up missing details…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                MusicBrainz.Found found = null;
+                String error = null;
+                try {
+                    found = MusicBrainz.find(title, artist);
+                } catch (IOException | RuntimeException e) {
+                    error = e.getMessage();
+                }
+                final MusicBrainz.Found f = found;
+                final String why = error;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!uri.equals(audioUri)) return;
+                        if (f == null) {
+                            fileLabel.setText(label + (why != null ? "\nCould not look up details online." : "\nNo match found online; fill in anything missing by hand."));
+                            return;
+                        }
+                        List<String> filled = new ArrayList<>();
+                        creditArtist = f.artist;
+                        // A featured artist the tags left out: the names for "who sings what"
+                        List<String> credited = Lrc.artists(f.artist, f.title);
+                        if (singerNames == null && credited.size() >= 2 && Lrc.artists(artistBox.getText().toString(), title).size() < 2) {
+                            singerNames = credited.toArray(new String[0]);
+                            filled.add("featured artist (" + credited.get(1) + ")");
+                        }
+                        if (blank(artistBox.getText().toString()) && !blank(f.artist)) {
+                            artistBox.setText(f.artist);
+                            filled.add("artist");
+                        }
+                        if (blank(albumBox.getText().toString()) && !blank(f.album)) {
+                            albumBox.setText(f.album);
+                            filled.add("album");
+                        }
+                        if (blank(yearBox.getText().toString()) && !blank(f.year)) {
+                            yearBox.setText(f.year);
+                            filled.add("year");
+                        }
+                        if (blank(genreBox.getText().toString()) && !blank(f.genre)) {
+                            genreBox.setText(f.genre);
+                            filled.add("genre");
+                        }
+                        fileLabel.setText(label + (filled.isEmpty() ? "" : "\nFilled in from MusicBrainz: " + android.text.TextUtils.join(", ", filled) + ". Check them."));
+                    }
+                });
+            }
+        }, "details").start();
+    }
+
+    /** The same for a song in the list (on its own thread, so it waits for the answer). */
+    private void fillFromOnline(Queued q) {
+        SongMeta m = q.meta;
+        if (!onlineDetails || blank(m.title)) return;
+        if (!(blank(m.artist) || blank(m.album) || blank(m.year) || blank(m.genre) || m.singers.length < 2)) return;
+        try {
+            MusicBrainz.Found f = MusicBrainz.find(m.title, m.artist);
+            if (f == null) return;
+            q.credit = f.artist;
+            List<String> credited = Lrc.artists(f.artist, f.title);
+            if (m.singers.length < 2 && credited.size() >= 2) m.singers = credited.toArray(new String[0]);
+            if (blank(m.artist) && !blank(f.artist)) {
+                m.artist = f.artist;
+                m.singers = Lrc.artists(m.artist, m.title).toArray(new String[0]);
+            }
+            if (blank(m.album)) m.album = f.album;
+            if (blank(m.year)) m.year = f.year;
+            if (blank(m.genre)) m.genre = f.genre;
+        } catch (IOException | RuntimeException e) {
+            // The file's own details are used
+        }
+    }
+
+    // ---------------------------------------------------------------- several songs
+
+    private void pickBatch() {
+        if (busy) return;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("audio/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"audio/*", "application/ogg", "application/x-flac"});
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            startActivityForResult(i, REQ_BATCH);
+        } catch (RuntimeException e) {
+            message("No file picker", "This phone has no file picker app available.");
+        }
+    }
+
+    private void addToBatch(Intent data) {
+        List<Uri> picked = new ArrayList<>();
+        if (data.getClipData() != null) {
+            for (int i = 0; i < data.getClipData().getItemCount(); i++) picked.add(data.getClipData().getItemAt(i).getUri());
+        } else if (data.getData() != null) {
+            picked.add(data.getData());
+        }
+        int left = 0;
+        final List<Queued> added = new ArrayList<>();
+        for (Uri uri : picked) {
+            boolean already = false;
+            for (Queued q : batch) already |= q.uri.equals(uri);
+            if (already || uri == null) continue;
+            if (batch.size() >= BATCH_MAX) {
+                left++;
+                continue;
+            }
+            // Kept readable after this screen closes: the songs are read one at a time, much later
+            try {
+                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (RuntimeException e) {
+                // Not every file picker offers it; the song is still read while the app is open
+            }
+            Queued q = new Queued();
+            q.uri = uri;
+            // Starts as the way chosen above; tap its button in the list to change it for this song
+            q.mode = modeGroup.getCheckedRadioButtonId();
+            q.fileName = displayName(uri);
+            q.meta.title = q.fileName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
+            batch.add(q);
+            added.add(q);
+        }
+        if (left > 0) {
+            message("List is full", left + (left == 1 ? " file was" : " files were") + " left out: at most " + BATCH_MAX + " songs go in one list.");
+        }
+        showBatch();
+        // Title, artist and the rest from each file's tags, off the main thread
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                for (final Queued q : added) {
+                    readTags(q);
+                    main.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showBatch();
+                        }
+                    });
+                }
+            }
+        }, "batch-tags").start();
+    }
+
+    /** Fills in a queued song's details from its tags, falling back to "Artist - Title" in the file name. */
+    private void readTags(Queued q) {
+        String[] tags = new String[5];
+        MediaMetadataRetriever r = new MediaMetadataRetriever();
+        try {
+            r.setDataSource(app, q.uri);
+            tags[0] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
+            tags[1] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+            if (tags[1] == null) tags[1] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST);
+            tags[2] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
+            tags[3] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR);
+            if (tags[3] == null) tags[3] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE);
+            tags[4] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE);
+            String d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if (d != null) q.seconds = Long.parseLong(d) / 1000.0;
+        } catch (RuntimeException e) {
+            // Tags are optional; the file name is used instead
+        } finally {
+            try {
+                r.release();
+            } catch (Exception ignored) {
+                // Nothing useful to do if releasing fails
+            }
+        }
+        String base = q.fileName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
+        String title = clean(tags[0]);
+        String artist = clean(tags[1]);
+        if (title.isEmpty()) {
+            int dash = base.indexOf(" - ");
+            if (dash > 0 && artist.isEmpty()) {
+                artist = base.substring(0, dash).trim();
+                title = base.substring(dash + 3).trim();
+            } else {
+                title = base.trim();
+            }
+        }
+        SongMeta m = new SongMeta();
+        m.title = title;
+        m.artist = artist;
+        m.album = clean(tags[2]);
+        String year = clean(tags[3]).replaceAll("[^0-9]", "");
+        m.year = year.length() >= 4 ? year.substring(0, 4) : "";
+        m.genre = clean(tags[4]);
+        m.singers = Lrc.artists(artist, title).toArray(new String[0]);
+        q.meta = m;
+        fillFromOnline(q);
+        q.read = true;
+    }
+
+    /** Redraws the list: one row a song, with a button to take it out. */
+    private void showBatch() {
+        batchList.removeAllViews();
+        for (int i = 0; i < batch.size(); i++) {
+            final Queued q = batch.get(i);
+            // The song on one line, its buttons on the line under it, so they fit a phone held upright
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.VERTICAL);
+            r.setPadding(0, dp(4), 0, dp(8));
+            LinearLayout buttons = row();
+            TextView t = new TextView(this);
+            String who = q.meta.artist == null || q.meta.artist.isEmpty() ? "" : q.meta.artist + " - ";
+            String len = q.seconds > 0 ? String.format(Locale.US, "  (%d:%02d)", (int) q.seconds / 60, (int) q.seconds % 60) : "";
+            String extra = "";
+            if (q.lrcText != null) extra += Lrc.hasTimestamps(q.lrcText) ? "  · lyrics ready" : "  · lyrics need times";
+            if (q.density != 0) extra += q.density == DENSITY_FEWER ? "  · fewer notes" : q.density == DENSITY_MORE ? "  · more notes" : "  · standard notes";
+            t.setText((i + 1) + ". " + who + q.meta.titleOrDefault() + len + (q.read ? "" : "  (reading…)") + extra);
+            t.setPadding(0, dp(6), 0, dp(2));
+            r.addView(t);
+            r.addView(buttons);
+            final Button way = button(modeName(q.mode), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    if (!ModelStore.installed(MainActivity.this)) {
+                        message("Normal only for now", "Split and R&B mode need the separation model. Download it in step 3 first.");
+                        return;
+                    }
+                    q.mode = nextMode(q.mode);
+                    ((Button) v).setText(modeName(q.mode));
+                }
+            });
+            buttons.addView(way, gapped());
+            Button singersButton = button(q.singersMarked ? "Singers ✓" : "Singers", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    chooseSingers(q);
+                }
+            });
+            buttons.addView(singersButton, gapped());
+            Button edit = button("Edit", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    editSong(q);
+                }
+            });
+            buttons.addView(edit, gapped());
+            Button remove = button("Remove", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    batch.remove(q);
+                    showBatch();
+                }
+            });
+            buttons.addView(remove, gapped());
+            batchList.addView(r);
+            style(r);
+        }
+        batchConvertButton.setText(batch.isEmpty() ? "Convert all" : "Convert all " + batch.size());
+        batchConvertButton.setEnabled(!busy && !batch.isEmpty());
+        batchClearButton.setEnabled(!busy && !batch.isEmpty());
+    }
+
+    /** The way a song was really converted: Split and R&B fall back to Normal without the model. */
+    private static int useStemsNote(Queued q, boolean model) {
+        return model ? q.mode : MODE_NORMAL;
+    }
+
+    /**
+     * Opens "who sings what" for one song of the list. Its lyrics are looked up first (once), so
+     * the lines can be marked before the list is converted.
+     */
+    private void chooseSingers(final Queued q) {
+        if (q.lrcText != null) {
+            openBatchSingers(q);
+            return;
+        }
+        batchStatus.setText("Looking up the lyrics of \"" + q.meta.titleOrDefault() + "\"…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                if (!q.read) readTags(q);
+                String text = null;
+                String why = "No timed lyrics were found online for this song.";
+                try {
+                    LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds, q.fileName);
+                    if (found != null && found.synced != null) {
+                        List<String> names = findSingers(q.meta.title, q.meta.artist, q.credit, found);
+                        if (names.size() >= 2) q.meta.singers = names.toArray(new String[0]);
+                        text = markedLyrics(found, names);
+                    }
+                } catch (IOException e) {
+                    why = "The lyrics could not be looked up: " + e.getMessage();
+                }
+                final String lyrics = text;
+                final String reason = why;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        batchStatus.setText("");
+                        if (lyrics == null) {
+                            message("No lyrics to mark", reason + " Convert this song on its own to paste or tap in its lyrics.");
+                            return;
+                        }
+                        q.lrcText = lyrics;
+                        openBatchSingers(q);
+                    }
+                });
+            }
+        }, "batch-lyrics").start();
+    }
+
+    private void openBatchSingers(Queued q) {
+        String[] names = q.meta.singers;
+        String first = names.length > 0 && !blank(names[0]) ? names[0].trim() : "Singer 1";
+        String second = names.length > 1 && !blank(names[1]) ? names[1].trim() : "Singer 2";
+        singersFor = q;
+        Intent i = new Intent(this, SingersActivity.class);
+        i.putExtra(SingersActivity.EXTRA_TEXT, q.lrcText);
+        i.putExtra(SingersActivity.EXTRA_NAMES, new String[] {first, second});
+        startActivityForResult(i, REQ_BATCH_SINGERS);
+    }
+
+    // ---------------------------------------------------------------- editing one song of the list
+
+    /**
+     * Everything the single-song screen offers, for one song of the list: its details, how many
+     * notes, its lyrics (found online, opened from a .lrc file, pasted, or tapped in time), and
+     * who sings what.
+     */
+    private void editSong(final Queued q) {
+        if (!q.read) {
+            message("One moment", "The song's details are still being read. Try again in a second.");
+            return;
+        }
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(8), dp(18), dp(8));
+        // The screen's own dark colours, so its light text reads whatever the dialog's theme is
+        scroll.setBackgroundColor(INK);
+        scroll.addView(box);
+
+        final EditText title = field(box, "Title");
+        title.setText(q.meta.title);
+        final EditText artist = field(box, "Artist (e.g. \"A feat. B\")");
+        artist.setText(q.meta.artist);
+        final EditText album = field(box, "Album (optional)");
+        album.setText(q.meta.album);
+        LinearLayout r = row();
+        final EditText year = new EditText(this);
+        year.setHint("Year");
+        year.setSingleLine(true);
+        year.setInputType(InputType.TYPE_CLASS_NUMBER);
+        year.setText(q.meta.year);
+        r.addView(year, weighted());
+        final EditText genre = new EditText(this);
+        genre.setHint("Genre");
+        genre.setSingleLine(true);
+        genre.setText(q.meta.genre);
+        r.addView(genre, weighted());
+        box.addView(r);
+        final TextView detailsStatus = new TextView(this);
+        box.addView(button("Find details online", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                findDetails(title, artist, album, year, genre, q.fileName, detailsStatus, null);
+            }
+        }));
+        detailsStatus.setPadding(0, dp(2), 0, dp(4));
+        box.addView(detailsStatus);
+
+        // One button that steps through the choices: four side by side do not fit a phone
+        final int[] density = {q.density};
+        final String[] densityNames = {"As in step 3", "Fewer", "Standard", "More"};
+        final Button notesButton = button("Notes: " + densityNames[density[0]], null);
+        notesButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                density[0] = (density[0] + 1) % 4;
+                notesButton.setText("Notes: " + densityNames[density[0]] + "   (tap to change)");
+            }
+        });
+        notesButton.setText("Notes: " + densityNames[density[0]] + "   (tap to change)");
+        box.addView(notesButton);
+
+        TextView lyricsLabel = new TextView(this);
+        lyricsLabel.setText("Lyrics");
+        lyricsLabel.setPadding(0, dp(10), 0, 0);
+        box.addView(lyricsLabel);
+        final EditText lyrics = new EditText(this);
+        lyrics.setHint("Empty: found online when converting. Or paste them here, open a .lrc file, or find them now.");
+        lyrics.setMinLines(4);
+        lyrics.setMaxLines(10);
+        lyrics.setGravity(Gravity.TOP);
+        lyrics.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        lyrics.setText(q.lrcText == null ? "" : q.lrcText);
+        box.addView(lyrics, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        final TextView status = new TextView(this);
+        status.setPadding(0, dp(2), 0, dp(4));
+        box.addView(status);
+        describeEditLyrics(status, lyrics.getText().toString());
+
+        LinearLayout lr1 = row();
+        lr1.addView(button("Find online", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                findForEdit(q, title.getText().toString(), artist.getText().toString(), album.getText().toString(), lyrics, status);
+            }
+        }), gapped());
+        lr1.addView(button("Open .lrc", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startEditActivity(q, lyrics, status, REQ_BATCH_LRC);
+            }
+        }), gapped());
+        box.addView(lr1);
+        LinearLayout lr2 = row();
+        lr2.addView(button("Tap to sync", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startEditActivity(q, lyrics, status, REQ_BATCH_TAP);
+            }
+        }), gapped());
+        lr2.addView(button("Who sings what", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                q.meta.artist = artist.getText().toString().trim();
+                q.meta.singers = Lrc.artists(q.meta.artist, title.getText().toString()).toArray(new String[0]);
+                String text = lyrics.getText().toString();
+                if (text.trim().isEmpty()) {
+                    message("Lyrics needed", "Find, open or paste the lyrics first.");
+                    return;
+                }
+                q.lrcText = text;
+                editingLyrics = lyrics;
+                editingStatus = status;
+                openBatchSingers(q);
+            }
+        }), gapped());
+        box.addView(lr2);
+        LinearLayout lr3 = row();
+        lr3.addView(button("Words earlier", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyrics, -NUDGE_SEC);
+                if (note != null) status.setText(note);
+            }
+        }), gapped());
+        lr3.addView(button("Words later", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyrics, NUDGE_SEC);
+                if (note != null) status.setText(note);
+            }
+        }), gapped());
+        box.addView(lr3);
+        style(box);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Edit song " + (batch.indexOf(q) + 1))
+                .setView(scroll)
+                .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        String oldArtist = q.meta.artist;
+                        q.meta.title = title.getText().toString().trim();
+                        q.meta.artist = artist.getText().toString().trim();
+                        q.meta.album = album.getText().toString().trim();
+                        q.meta.year = year.getText().toString().trim();
+                        q.meta.genre = genre.getText().toString().trim();
+                        if (!q.singersMarked || !q.meta.artist.equals(oldArtist)) {
+                            q.meta.singers = Lrc.artists(q.meta.artist, q.meta.title).toArray(new String[0]);
+                        }
+                        q.density = density[0];
+                        String text = lyrics.getText().toString();
+                        if (!text.equals(q.lrcText == null ? "" : q.lrcText)) {
+                            q.lrcText = text.trim().isEmpty() ? null : text;
+                            q.singersMarked = q.lrcText != null && hasMarks(q.lrcText);
+                        }
+                        editing = null;
+                        editingLyrics = null;
+                        editingStatus = null;
+                        showBatch();
+                    }
+                })
+                .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        editing = null;
+                        editingLyrics = null;
+                        editingStatus = null;
+                    }
+                })
+                .show();
+    }
+
+    private void describeEditLyrics(TextView status, String text) {
+        if (text.trim().isEmpty()) {
+            status.setText("No lyrics yet: they are looked up online when the list is converted.");
+        } else if (!Lrc.hasTimestamps(text)) {
+            status.setText(Lrc.plainLines(text).size() + " lines without times. Press \"Tap to sync\" to time them; without times the song gets no vocals.");
+        } else {
+            int lines = 0;
+            for (Lrc.Line l : Lrc.parse(text)) if (!l.text.isEmpty()) lines++;
+            status.setText(lines + " timed lines" + (hasMarks(text) ? ", with who sings what." : "."));
+        }
+    }
+
+    private void findForEdit(final Queued q, final String title, final String artist, final String album, final EditText lyrics, final TextView status) {
+        status.setText("Searching…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                LrcLib.Found f = null;
+                String error = null;
+                try {
+                    f = LrcLib.find(title, artist, album, q.seconds, q.fileName);
+                } catch (IOException e) {
+                    error = e.getMessage();
+                }
+                final LrcLib.Found found = f;
+                final String why = error;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (found == null) {
+                            status.setText(why != null ? "Lookup failed: " + why : "Nothing found. Check the title and artist, or paste the lyrics.");
+                            return;
+                        }
+                        if (found.synced != null) {
+                            List<String> names = findSingers(title, artist, q.credit, found);
+                            lyrics.setText(markedLyrics(found, names));
+                        } else if (found.plain != null) {
+                            lyrics.setText(found.plain);
+                        } else {
+                            status.setText("Listed as instrumental (no lyrics).");
+                            return;
+                        }
+                        describeEditLyrics(status, lyrics.getText().toString());
+                        status.setText(status.getText() + " From " + found.source + ".");
+                    }
+                });
+            }
+        }, "edit-lyrics").start();
+    }
+
+    /** Opens a .lrc file or the tap-in-time screen for the song being edited; the result goes back into its box. */
+    private void startEditActivity(Queued q, EditText lyrics, TextView status, int request) {
+        editing = q;
+        editingLyrics = lyrics;
+        editingStatus = status;
+        if (request == REQ_BATCH_LRC) {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            try {
+                startActivityForResult(i, REQ_BATCH_LRC);
+            } catch (RuntimeException e) {
+                message("No file picker", "This phone has no file picker app available.");
+            }
+            return;
+        }
+        String text = lyrics.getText().toString();
+        ArrayList<String> lines = new ArrayList<>();
+        List<String> names = java.util.Arrays.asList(q.meta.singers);
+        if (Lrc.hasTimestamps(text)) {
+            for (Lrc.Line l : Lrc.parse(text)) if (!l.text.isEmpty()) lines.add(Lrc.mark(l.singer) + l.text);
+        } else {
+            lines.addAll(Lrc.plainLines(text, names));
+        }
+        if (lines.isEmpty()) {
+            message("Lyrics needed", "Paste or find the lyrics first, one sung line per line.");
+            return;
+        }
+        Intent i = new Intent(this, TapSyncActivity.class);
+        i.setData(q.uri);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        i.putStringArrayListExtra(TapSyncActivity.EXTRA_LINES, lines);
+        startActivityForResult(i, REQ_BATCH_TAP);
+    }
+
+    private void onBatchPressed() {
+        if (busy || batch.isEmpty()) return;
+        if (!hasStorageAccess()) {
+            requestStorageAccess();
+            return;
+        }
+        final List<Queued> songs = new ArrayList<>(batch);
+        final GuitarCharter.Options options = new GuitarCharter.Options();
+        int choice = densityGroup.getCheckedRadioButtonId();
+        options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
+        final boolean model = ModelStore.installed(this);
+        final boolean guessWanted = guessCheck.isChecked();
+        final boolean findLyrics = batchLyricsCheck.isChecked();
+
+        setBusy(true);
+        progress.setIndeterminate(false);
+        progress.setProgress(0);
+        progress.setVisibility(View.VISIBLE);
+        log.setText("Converting " + songs.size() + " songs…");
+        askForNotifications();
+        ConversionService.begin(this, songs.size() + " songs");
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                StringBuilder done = new StringBuilder();
+                StringBuilder failed = new StringBuilder();
+                final List<Queued> notDone = new ArrayList<>();
+                int ok = 0;
+                for (int i = 0; i < songs.size(); i++) {
+                    Queued q = songs.get(i);
+                    if (!q.read) readTags(q);
+                    String name = q.meta.titleOrDefault();
+                    ConversionService.setBatchLabel("Song " + (i + 1) + " of " + songs.size() + ": " + name);
+                    try {
+                        List<Lrc.Line> lyrics = new ArrayList<>();
+                        String lrcText = "";
+                        String lyricsNote = "no lyrics";
+                        if (q.lrcText != null && !Lrc.hasTimestamps(q.lrcText)) {
+                            // Words without times cannot be placed: the song gets no vocals
+                            lyricsNote = "its lyrics have no times, so no vocals (tap them in with Edit > Tap to sync)";
+                        } else if (q.lrcText != null) {
+                            // Found, opened, tapped or marked already, with Edit or the Singers button
+                            lrcText = q.lrcText;
+                            lyrics = Lrc.parse(lrcText);
+                            lyricsNote = q.singersMarked ? "with lyrics, singers marked" : "with lyrics";
+                        } else if (findLyrics) {
+                            ConversionService.setTextAndProgress("Looking for lyrics…", -1);
+                            try {
+                                LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds, q.fileName);
+                                if (found != null && found.synced != null) {
+                                    List<String> names = findSingers(q.meta.title, q.meta.artist, q.credit, found);
+                                    if (names.size() >= 2) q.meta.singers = names.toArray(new String[0]);
+                                    lrcText = markedLyrics(found, names);
+                                    lyrics = Lrc.parse(lrcText);
+                                    lyricsNote = hasMarks(lrcText) ? "with lyrics, singers from the lyrics"
+                                            : names.size() < 2 ? "with lyrics"
+                                            : q.mode != MODE_NORMAL && model ? "with lyrics, singers by their voices"
+                                            : "with lyrics; " + names.get(0) + " and " + names.get(1) + " not told apart: that needs Split or R&B, or the Singers button";
+                                } else {
+                                    lyricsNote = "no timed lyrics found";
+                                }
+                            } catch (IOException e) {
+                                lyricsNote = "lyrics lookup failed";
+                            }
+                        }
+                        // Each song its own way: Normal, Split or R&B, as set in the list
+                        boolean useStems = q.mode != MODE_NORMAL && model;
+                        boolean rnb = useStems && q.mode == MODE_RNB;
+                        boolean guessSingers = voicesDecide(useStems, guessWanted, q.meta.singers);
+                        GuitarCharter.Options own = options.copy();
+                        if (q.density != 0) {
+                            own.threshold = q.density == DENSITY_FEWER ? 1.5 : q.density == DENSITY_MORE ? 0.65 : 1.0;
+                        }
+                        lastResult = null;
+                        runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, own, useStems, guessSingers, rnb);
+                        ok++;
+                        // How the singers came out, now that the song has been listened to
+                        SongWriter.Result res = lastResult;
+                        if (res != null && res.lyricLines > 0 && q.meta.singers.length >= 2) {
+                            if (res.vocals.twoParts()) {
+                                lyricsNote += String.format(Locale.US, "; %s %d lines, %s %d%s", q.meta.singerName(0),
+                                        res.vocals.partLines[VocalCharter.PART_FIRST], q.meta.singerName(1),
+                                        res.vocals.partLines[VocalCharter.PART_SECOND],
+                                        res.vocals.partLines[VocalCharter.PART_BOTH] > 0 ? ", both " + res.vocals.partLines[VocalCharter.PART_BOTH] : "");
+                                if (res.singerGuess != null) lyricsNote += " (guessed from their voices: check it in the song's lyrics.lrc or convert it alone)";
+                            } else if (res.singersGuessTried) {
+                                lyricsNote += "; the two voices could not be told apart, so one part for everybody";
+                            }
+                        }
+                        if (res != null && res.lyricsMoved) lyricsNote += "; lyrics re-timed to fit this audio";
+                        done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(modeName(useStemsNote(q, model)))
+                                .append(", ").append(lyricsNote).append(")\n");
+                    } catch (IOException e) {
+                        notDone.add(q);
+                        failed.append("  ").append(i + 1).append(". ").append(name).append(": ").append(e.getMessage()).append('\n');
+                    } catch (RuntimeException | OutOfMemoryError e) {
+                        notDone.add(q);
+                        failed.append("  ").append(i + 1).append(". ").append(name).append(": ").append(e).append('\n');
+                    }
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.append("Done: ").append(ok).append(" of ").append(songs.size()).append(" songs converted into\nInternal storage/YARG/songs/")
+                        .append(SUBFOLDER).append("\n\n");
+                if (done.length() > 0) sb.append("Converted:\n").append(done);
+                if (failed.length() > 0) sb.append("\nNot converted:\n").append(failed);
+                sb.append("\nTo play them: open YARG, then Settings > Songs > Scan Songs.");
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        // Converted songs leave the list; any that failed stay, to try again
+                        batch.removeAll(songs);
+                        batch.addAll(0, notDone);
+                        showBatch();
+                    }
+                });
+                ConversionService.setBatchLabel("");
+                ConversionService.finish(ok > 0, sb.toString());
+            }
+        }, "convert-batch").start();
     }
 
     private void askForNotifications() {
@@ -877,7 +2105,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
     }
 
     private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options,
-                                 boolean useStems, boolean guessSingers) throws IOException {
+                                 boolean useStems, boolean guessSingers, boolean rnb) throws IOException {
+        // Everything below reads the app's own copy: Android can take back the right to read the
+        // original at any moment (it did, with "Permission Denial", once the screen had been left)
+        uri = Uri.fromFile(localCopy(uri));
         File songs = new File(new File(Environment.getExternalStorageDirectory(), "YARG"), "songs");
         File dir = new File(new File(songs, SUBFOLDER), meta.folderName());
         if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -947,7 +2178,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             if (useStems) {
                 long started = System.currentTimeMillis();
                 try {
-                    stems = separate(pcmFile, pcmFrames[0]);
+                    stems = separate(pcmFile, pcmFrames[0], rnb);
                     separationMs = System.currentTimeMillis() - started;
                 } catch (Exception | LinkageError | OutOfMemoryError e) {
                     // The charts can still be made the old way, from the full mix.
@@ -961,12 +2192,26 @@ public final class MainActivity extends Activity implements ConversionService.Li
         }
 
         status("Finding the beat and writing the charts…");
-        if (stems != null) stems.guessSingers = guessSingers;
-        SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems);
+        if (stems != null) {
+            stems.guessSingers = guessSingers;
+            stems.rnb = rnb;
+            String[] named = meta.singers;
+            boolean two = named != null && named.length >= 2 && !blank(named[0]) && !blank(named[1])
+                    && !named[0].startsWith("Singer ") && !named[1].startsWith("Singer ");
+            stems.singerNames = two ? named : null;
+        }
+        // Lyrics timed for another cut of the song are lined up with this audio, unless their
+        // times were set by hand ("Words earlier" / "Words later", or an [offset:] line)
+        boolean timesSetByHand = Lrc.keepsTiming(lrcText);
+        SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems, timesSetByHand);
+        lastResult = result;
         if (result.singerGuess != null) {
             // Saved with the song and shown back in the app, where the guess can be corrected.
             lrcText = Lrc.format(result.lyricsOut);
             ConversionService.setMarkedLyrics(lrcText);
+        } else if (result.lyricsMoved) {
+            // Saved with the song as they were used
+            lrcText = Lrc.format(result.lyricsOut);
         }
         if (result.noteCount(GuitarCharter.EXPERT) == 0) {
             throw new IOException("No notes could be found in this audio. Is it silent, or speech only?");
@@ -1004,6 +2249,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             sb.append(String.format(Locale.US, "Split into instruments in %d min %02d s\n", separationMs / 60000, (separationMs / 1000) % 60));
         }
         sb.append("Guitar chart made from ").append(result.guitarSource).append("\n");
+        if (result.rnbNote != null) sb.append(result.rnbNote).append("\n");
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 result.noteCount(GuitarCharter.EASY), result.noteCount(GuitarCharter.MEDIUM),
                 result.noteCount(GuitarCharter.HARD), result.noteCount(GuitarCharter.EXPERT)));
@@ -1039,6 +2285,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
         }
         sb.append("Vocals: ").append(v.lines).append(" lines, ").append(v.sungLines).append(" sung (the note counts), ")
                 .append(v.spokenLines).append(" rapped or spoken (any sound in time counts)\n");
+        if (result.lyricTimingNote != null) {
+            sb.append("  ").append(result.lyricTimingNote).append(" If the words now come too early or too late, use \"Words earlier\" or \"Words later\" under the lyrics and convert again.\n");
+        }
         if (!listened) {
             sb.append("  The words were spread at speaking pace. Tick \"Split the song into instruments\" to place them where they are sung and get the real notes.\n");
         } else if (!v.heard) {
@@ -1059,8 +2308,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
      * instruments together, the bass and the voice as they come out. Only the measurements are
      * kept; the separated audio itself is not stored.
      */
-    private SongWriter.Stems separate(File pcmFile, long frames) throws Exception {
+    private SongWriter.Stems separate(File pcmFile, long frames, boolean rnb) throws Exception {
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        // R&B mode charts the guitar from the voice, so the vocals are measured like an instrument too
+        final AudioAnalyzer vocals = rnb ? new AudioAnalyzer(StemSplitter.SAMPLE_RATE) : null;
         final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer bass = new AudioAnalyzer(StemSplitter.SAMPLE_RATE, true);
         final VocalAnalyzer voice = new VocalAnalyzer(StemSplitter.SAMPLE_RATE);
@@ -1069,8 +2320,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
         final float[] g = new float[StemSplitter.SEGMENT];
         final float[] m = new float[StemSplitter.SEGMENT];
         final float[] b = new float[StemSplitter.SEGMENT];
-        int cores = Runtime.getRuntime().availableProcessors();
-        int threads = Math.max(2, Math.min(6, cores - 2));
+        int threads = modelThreads();
+        // The four or five listeners each take a separated instrument; they run side by side on
+        // cores the model is not using at that moment, instead of one after another
+        final java.util.concurrent.ExecutorService listeners = java.util.concurrent.Executors.newFixedThreadPool(4);
         final long started = System.currentTimeMillis();
         ConversionService.setTextAndProgress("Loading the separation model…", 0);
 
@@ -1116,10 +2369,24 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         energy[2] += bv * bv;
                         energy[3] += xv * xv;
                     }
-                    guitar.feed(g, 0, count);
-                    melodic.feed(m, 0, count);
-                    bass.feed(b, 0, count);
-                    voice.feed(vox, 0, count);
+                    final int n = count;
+                    List<java.util.concurrent.Callable<Void>> jobs = new ArrayList<>();
+                    jobs.add(listen(new Runnable() { @Override public void run() { guitar.feed(g, 0, n); } }));
+                    jobs.add(listen(new Runnable() { @Override public void run() { melodic.feed(m, 0, n); } }));
+                    jobs.add(listen(new Runnable() { @Override public void run() { bass.feed(b, 0, n); } }));
+                    jobs.add(listen(new Runnable() { @Override public void run() {
+                        voice.feed(vox, 0, n);
+                        if (vocals != null) vocals.feed(vox, 0, n);
+                    } }));
+                    try {
+                        // Waits for all of them, and passes on anything one of them threw
+                        for (java.util.concurrent.Future<Void> done : listeners.invokeAll(jobs)) done.get();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("Interrupted while listening to the instruments");
+                    } catch (java.util.concurrent.ExecutionException e) {
+                        throw new IllegalStateException(e.getCause());
+                    }
                 }
             };
             StemSplitter.Progress report = new StemSplitter.Progress() {
@@ -1135,17 +2402,59 @@ public final class MainActivity extends Activity implements ConversionService.Li
             };
             status("Splitting into instruments… You can leave the app; it keeps going.");
             StemSplitter.split(source, frames, model, sink, report);
+        } finally {
+            listeners.shutdown();
         }
         SongWriter.Stems out = new SongWriter.Stems();
         out.guitar = guitar.finish();
         out.melodic = melodic.finish();
         out.bass = bass.finish();
         out.voice = voice.finish();
+        if (vocals != null) out.vocals = vocals.finish();
         out.guitarEnergy = energy[0];
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];
         out.mixEnergy = energy[3];
         return out;
+    }
+
+    private static java.util.concurrent.Callable<Void> listen(final Runnable work) {
+        return new java.util.concurrent.Callable<Void>() {
+            @Override
+            public Void call() {
+                work.run();
+                return null;
+            }
+        };
+    }
+
+    /**
+     * How many threads the separation model gets: one for each of the phone's fast cores. Phones
+     * mix fast and slow cores, and a model spread over both runs at the pace of the slow ones, so
+     * the slow ones are left out. A core counts as fast when its top speed is at least 70% of the
+     * fastest core's. When the phone will not say, the old rule is used (all but two, at most 6).
+     */
+    static int modelThreads() {
+        int cores = Runtime.getRuntime().availableProcessors();
+        int fallback = Math.max(2, Math.min(6, cores - 2));
+        try {
+            long[] top = new long[cores];
+            long best = 0;
+            for (int i = 0; i < cores; i++) {
+                File f = new File("/sys/devices/system/cpu/cpu" + i + "/cpufreq/cpuinfo_max_freq");
+                try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+                    top[i] = Long.parseLong(r.readLine().trim());
+                }
+                best = Math.max(best, top[i]);
+            }
+            int fast = 0;
+            for (long t : top) if (t >= 0.7 * best) fast++;
+            // Leave one fast core for the rest of the phone when all of them are fast
+            if (fast == cores) fast = cores - 1;
+            return Math.max(2, Math.min(8, fast));
+        } catch (IOException | RuntimeException e) {
+            return fallback;
+        }
     }
 
     /** Saves the picture embedded in the audio file, if any, so YARG shows it as album art. */

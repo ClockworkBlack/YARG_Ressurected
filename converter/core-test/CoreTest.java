@@ -48,6 +48,8 @@ public final class CoreTest {
         lyrics();
         failures += VocalTest.run();
         failures += EditTest.run(forEditor);
+        failures += RnbTest.run();
+        failures += AlignTest.run();
         if (failures > 0) {
             System.out.println("FAILED: " + failures + " check(s)");
             System.exit(1);
