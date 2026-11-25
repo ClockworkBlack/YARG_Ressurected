@@ -12,6 +12,10 @@ and `notes.mid` is read back by the game's rules (`core-test/MidiCheck`) before 
         --title "Title" --artist "Artist" --album "Album" --year 1996 --genre "R&B" \
         --model htdemucs_6s.onnx --lyrics lyrics.lrc
 
+Add `--words-model wav2vec2-base-960h.onnx` (the `onnx/model.onnx` of Xenova/wav2vec2-base-960h on
+Hugging Face) to time the lyrics word by word against the voice and check them against the song's
+repeats: the most accurate way there is here, and it needs no times in the lyrics at all.
+
 `--mode` is normal, split or rnb; `--notes` fewer, standard or more; `--two-singers` guesses who sings
 which line from their voices. The folder appears in `songs/Artist - Title/`; copy it into
 `Internal storage/YARG/songs/` on the phone.

@@ -37,6 +37,8 @@ public final class LyricAligner {
         public double laterShift;
         /** What was done, for the user; null when the lyrics were left alone. */
         public String note;
+        /** Lines the song's repeats corrected, one note each (word-by-word alignment only); may be null. */
+        public List<String> repeatNotes;
 
         public boolean moved() {
             return note != null;

@@ -35,6 +35,10 @@ public final class SongWriter {
         public List<Lrc.Line> lyricsOut = new ArrayList<>();
         /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
         public boolean lyricsMoved;
+        /** Lines the song's repeats corrected, for the user; null when none. */
+        public List<String> repeatNotes;
+        /** True when the lyrics were timed word by word with the speech model. */
+        public boolean lyricsByWord;
         /** What was done to the lyrics' timing, for the user; null when nothing. */
         public String lyricTimingNote;
         /** True when the app was asked to tell two singers apart by voice. */
@@ -68,6 +72,12 @@ public final class SongWriter {
         public Features bass;
         /** The voice on its own: where each word is sung and on what note. Null when not listened to. */
         public VocalAnalyzer.Voice voice;
+        /**
+         * What a speech model heard in the voice: for every {@link WordAligner#FRAME_SEC}, the log
+         * likelihood of each letter. Null when that model was not run; then lyrics are timed from
+         * the voice's entries alone.
+         */
+        public float[][] letters;
         /** For a song with two singers whose lines are not marked: work out who sings what from their voices. */
         public boolean guessSingers;
         /** The two singers' names when the song names two artists (makes the guess surer), or null. */
@@ -120,7 +130,19 @@ public final class SongWriter {
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
-            if (!keepLyricTimes) {
+            // Best of all: the letters of the lyrics matched to the voice by a speech model
+            LyricAligner.Result byWord = null;
+            if (!keepLyricTimes && stems != null && stems.letters != null) {
+                byWord = WordAligner.place(lyrics, stems.letters, r.tempo, r.beatsPerMeasure, r.bpm);
+                if (byWord.moved()) {
+                    lyrics = byWord.lines;
+                    r.lyricsMoved = true;
+                    r.lyricTimingNote = byWord.note;
+                    r.lyricsByWord = true;
+                    r.repeatNotes = byWord.repeatNotes;
+                }
+            }
+            if (!keepLyricTimes && (byWord == null || !byWord.moved())) {
                 LyricAligner.Result placed = voice != null ? LyricAligner.align(lyrics, voice) : LyricAligner.alignToStart(lyrics, f);
                 if (placed.moved()) {
                     lyrics = placed.lines;

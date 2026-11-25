@@ -29,6 +29,7 @@ final class AlignTest {
         silentStartWithoutTheVoice();
         otherLanguages();
         lineByLine();
+        wordByWord();
         System.out.println(failures == 0 ? "All lyric timing checks passed" : "FAILED: " + failures + " lyric timing check(s)");
         return failures;
     }
@@ -256,5 +257,111 @@ final class AlignTest {
         }
         check(fixedIn >= triedIn * 0.8, "lines stamped into their singing start where it starts (" + fixedIn + " of " + triedIn + ")");
         System.out.println("  line by line: late lines fixed " + fixedLate + "/" + triedLate + ", stamped into singing fixed " + fixedIn + "/" + triedIn);
+    }
+
+    /** What a speech model would say for these lines sung at these times: each letter likely for a moment, silence between. */
+    private static float[][] heard(List<Lrc.Line> lines, double[] start, double seconds, java.util.Random rnd) {
+        int frames = (int) (seconds / WordAligner.FRAME_SEC);
+        float[][] e = new float[frames][WordAligner.SYMBOLS];
+        for (float[] row : e) {
+            java.util.Arrays.fill(row, -9f);
+            row[0] = -0.01f;
+        }
+        for (int i = 0; i < lines.size(); i++) {
+            int f = (int) Math.round(start[i] / WordAligner.FRAME_SEC);
+            for (int symbol : WordAligner.symbols(lines.get(i).text)) {
+                int hold = 1 + rnd.nextInt(3);
+                for (int h = 0; h < hold && f < frames; h++, f++) {
+                    java.util.Arrays.fill(e[f], -9f);
+                    e[f][symbol] = -0.05f;
+                }
+                // Between letters: mostly nothing, now and then straight on
+                f += rnd.nextInt(4);
+            }
+        }
+        return e;
+    }
+
+    /** Letters matched to the voice, and the song's repeats used to catch lines that were misheard. */
+    private static void wordByWord() {
+        java.util.Random rnd = new java.util.Random(9);
+        String[] hook = {"round and round we go", "nobody knows where", "keep it turning now", "till the morning light"};
+        String[] verse = {"walking down the avenue", "nothing left to lose tonight", "all the windows shining", "a hundred miles of road"};
+        List<Lrc.Line> lines = new ArrayList<>();
+        List<Double> when = new ArrayList<>();
+        double bar = 2.0;
+        double[] hookAt = {0.1, 3.6, 7.8, 11.5};
+        for (int pass = 0; pass < 3; pass++) {
+            double base = 8 + pass * 48;
+            for (int k = 0; k < 4; k++) {
+                // Lyric files are a little off, sometimes a lot
+                lines.add(new Lrc.Line(base + hookAt[k] + (k == 2 ? 3.0 : 0.2), hook[k]));
+                when.add(base + hookAt[k]);
+            }
+            for (int k = 0; k < 4; k++) {
+                lines.add(new Lrc.Line(base + 16 + 4 * k + 0.4, verse[k] + (pass == 0 ? "" : " again")));
+                when.add(base + 16 + 4 * k);
+            }
+            for (int k = 0; k < 4; k++) {
+                lines.add(new Lrc.Line(base + 32 + hookAt[k] + 0.2, hook[k] + (k == 3 ? " (oh yeah)" : "")));
+                when.add(base + 32 + hookAt[k]);
+            }
+        }
+        double[] truth = new double[when.size()];
+        for (int i = 0; i < truth.length; i++) truth[i] = when.get(i);
+        float[][] e = heard(lines, truth, 160, rnd);
+
+        check(WordAligner.canAlign(lines), "English lyrics can be aligned");
+        List<Lrc.Line> korean = new ArrayList<>();
+        for (int i = 0; i < 8; i++) korean.add(new Lrc.Line(i * 3, "\uC0AC\uB791\uD574\uC694 \uADF8\uB300\uB97C"));
+        check(!WordAligner.canAlign(korean), "lyrics in another script are left to the voice-only check");
+
+        WordAligner.Aligned a = WordAligner.align(lines, e);
+        int right = 0;
+        for (int i = 0; i < truth.length; i++) if (Math.abs(a.start[i] - truth[i]) <= 0.05) right++;
+        check(right == truth.length, "every line found where its letters are (" + right + " of " + truth.length + ")");
+
+        // The same with the last hook misheard: its third line lands 1.7 s early, its fourth late
+        String[] keys = new String[lines.size()];
+        double[] beat = new double[lines.size()];
+        for (int i = 0; i < keys.length; i++) {
+            keys[i] = lines.get(i).text.replaceAll("\\([^)]*\\)", "").replaceAll("[^a-z]", "");
+            beat[i] = truth[i] / 0.5;
+        }
+        int last = keys.length - 4;
+        beat[last] -= 3.3;
+        beat[last + 2] -= 3.4;
+        beat[last + 3] += 1.9;
+        List<String> log = new ArrayList<>();
+        int moved = WordAligner.repeats(keys, beat, 4, 0.5, log);
+        int back = 0;
+        for (int i = 0; i < keys.length; i++) if (Math.abs(beat[i] * 0.5 - truth[i]) <= 0.1) back++;
+        check(moved == 3 && back == keys.length, "lines that break the repeats are put back (" + moved + " moved, " + back + " of " + keys.length + " right): " + log);
+
+        // An outro of two lines going round eight times; after the third pass the letters were laid anyhow
+        String[] round = new String[16];
+        double[] laid = new double[16], sung = new double[16];
+        for (int q = 0; q < 8; q++) {
+            round[2 * q] = "x";
+            round[2 * q + 1] = "y";
+            sung[2 * q] = 400 + 16 * q;
+            sung[2 * q + 1] = 410.7 + 16 * q;
+        }
+        double[] wrong = {0, 0, 0.3, 0, -0.2, 0.1, 14.5, 20.2, 14.8, 27.0, 18.0, 0.2, 30.4, 39.0, 28.0, 43.1};
+        for (int i = 0; i < 16; i++) laid[i] = sung[i] + wrong[i];
+        log.clear();
+        WordAligner.repeats(round, laid, 4, 0.5, log);
+        int inPlace = 0;
+        for (int i = 0; i < 16; i++) if (Math.abs(laid[i] - sung[i]) <= 0.5) inPlace++;
+        check(inPlace == 16, "an outro going round follows on at the pace of its first passes (" + inPlace + " of 16): " + log);
+
+        // Nothing repeats often enough to judge by: nothing is touched
+        String[] once = {"a", "b", "a", "c", "b", "d"};
+        double[] t = {0, 7.3, 16.2, 23, 31.9, 40};
+        double[] before = t.clone();
+        check(WordAligner.repeats(once, t, 4, 0.5, null) == 0 && java.util.Arrays.equals(t, before), "two repeats are not enough to move anything");
+
+        check(WordAligner.symbols("Don't (hey) stop").length == 11, "letters and apostrophes, asides left out");
+        check(WordAligner.symbols("(la la)").length == 6, "a line that is only an aside is still sung");
     }
 }

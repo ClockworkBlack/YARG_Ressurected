@@ -30,7 +30,7 @@ import java.util.Map;
  *
  *   java -cp out:onnxruntime.jar ConvertSong --audio song.mp3 --out songs/ --mode split --notes more \
  *       --title "..." --artist "..." [--album --year --genre] [--lyrics lyrics.lrc] \
- *       [--model htdemucs_6s.onnx] [--two-singers] [--vocals-out vocals.wav --wait-for-lyrics lyrics.lrc]
+ *       [--model htdemucs_6s.onnx] [--words-model wav2vec2-base-960h.onnx] [--two-singers] [--vocals-out vocals.wav --wait-for-lyrics lyrics.lrc]
  *
  * --vocals-out writes the separated voice to a WAV file; with --wait-for-lyrics the run then waits
  * until that lyrics file exists (made from the voice, for instance) and uses it.
@@ -83,7 +83,7 @@ public final class ConvertSong {
         long separationMs = 0;
         if (useStems) {
             long t0 = System.currentTimeMillis();
-            stems = separate(audio, req(a, "model"), rnb, a.get("vocals-out"));
+            stems = separate(audio, req(a, "model"), rnb, a.get("vocals-out"), a.get("words-model"));
             separationMs = System.currentTimeMillis() - t0;
             log(String.format(Locale.US, "  split into instruments in %d min %02d s", separationMs / 60000, (separationMs / 1000) % 60));
             stems.guessSingers = a.containsKey("two-singers");
@@ -143,6 +143,7 @@ public final class ConvertSong {
             sb.append("Vocals: ").append(v.lines).append(" lines, ").append(v.sungLines).append(" sung, ")
                     .append(v.spokenLines).append(" rapped or spoken").append(v.heard ? "" : " (voice not heard: spread at speaking pace)").append('\n');
             if (r.lyricTimingNote != null) sb.append(r.lyricTimingNote).append('\n');
+            if (r.repeatNotes != null) for (String note : r.repeatNotes) sb.append("  ").append(note).append('\n');
             if (v.twoParts()) {
                 sb.append(String.format(Locale.US, "Singers: %s %d lines, %s %d lines, both %d%s\n", meta.singerName(0), v.partLines[VocalCharter.PART_FIRST],
                         meta.singerName(1), v.partLines[VocalCharter.PART_SECOND], v.partLines[VocalCharter.PART_BOTH],
@@ -154,7 +155,14 @@ public final class ConvertSong {
         System.out.print(sb);
     }
 
-    private static SongWriter.Stems separate(File audio, String modelPath, boolean rnb, String vocalsOut) throws Exception {
+    private static SongWriter.Stems separate(File audio, String modelPath, boolean rnb, String vocalsOut, String wordsModel) throws Exception {
+        // The voice at 16 kHz, kept for the speech model that times the lyrics word by word
+        final com.clockworkblack.yargconverter.core.Resampler to16k = wordsModel == null ? null
+                : new com.clockworkblack.yargconverter.core.Resampler(StemSplitter.SAMPLE_RATE, com.clockworkblack.yargconverter.core.WordAligner.SAMPLE_RATE);
+        final float[][] voice16k = {new float[1 << 20]};
+        final int[] voice16kLength = {0};
+        final float[] rsL = to16k == null ? null : new float[to16k.capacityFor(StemSplitter.SEGMENT)];
+        final float[] rsR = to16k == null ? null : new float[to16k.capacityFor(StemSplitter.SEGMENT)];
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer vocals = rnb ? new AudioAnalyzer(StemSplitter.SAMPLE_RATE) : null;
         final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
@@ -213,6 +221,14 @@ public final class ConvertSong {
                 bass.feed(b, 0, count);
                 voice.feed(vox, 0, count);
                 if (vocals != null) vocals.feed(vox, 0, count);
+                if (to16k != null) {
+                    int made = to16k.process(vox, vox, count, rsL, rsR);
+                    if (voice16kLength[0] + made > voice16k[0].length) {
+                        voice16k[0] = java.util.Arrays.copyOf(voice16k[0], Math.max(voice16k[0].length * 2, voice16kLength[0] + made));
+                    }
+                    System.arraycopy(rsL, 0, voice16k[0], voice16kLength[0], made);
+                    voice16kLength[0] += made;
+                }
                 if (wav != null) {
                     try {
                         wav.write(vox, count);
@@ -241,6 +257,13 @@ public final class ConvertSong {
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];
         out.mixEnergy = energy[3];
+        if (wordsModel != null) {
+            log("Hearing the words in the voice…");
+            try (com.clockworkblack.yargconverter.stems.OrtWordModel words =
+                         new com.clockworkblack.yargconverter.stems.OrtWordModel(wordsModel, Runtime.getRuntime().availableProcessors())) {
+                out.letters = words.letters(voice16k[0], voice16kLength[0], null);
+            }
+        }
         if (vocalsOut != null) log("Separated voice written to " + vocalsOut);
         return out;
     }

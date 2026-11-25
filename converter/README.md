@@ -122,7 +122,20 @@ From converting real songs and checking every line by ear and by speech recognit
 4. **The fix must never make right lyrics worse.** Every rule is measured on lyrics already
    checked to be right as well as on wrong ones (`core-test/LineEval`, `AlignTest`). A longer
    reach-back (1.6 s) fixed more NetEase lines but pulled correct hook lines into the line before.
-5. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
+5. **A speech recogniser's word times are not a yardstick.** Its word starts stretch back over
+   the held note before them; lines it "confirmed" were up to 1.5 s early. The song itself is the
+   yardstick: a hook's lines must come back a whole number of bars later, every time.
+6. **Forced alignment is the accurate method.** With the words known, a speech model
+   (wav2vec2) only has to say where each letter is (`core/WordAligner`, `stems/OrtWordModel`).
+   On the test song its hook lines repeat within 0.05 s in 22 of 24 cases; lyric sites' times and
+   the recogniser's were off by 0.5 to 3 s on a third of them.
+7. **Repeats catch what was misheard.** Over ad-libs and a fading outro the letters can be laid
+   many ways; lines that break the pattern most passes keep are put where the pattern says, and
+   an outro going round follows on at the pace of its first passes.
+8. **The small (quantized, 95 MB) speech model is not good enough:** it agreed with the full
+   one (378 MB) on only 20 of 36 lines. The phone app does not carry the speech model yet; it
+   uses the voice-only check above. The desktop runner uses the full model (`--words-model`).
+9. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
    much closer (average 0.23 s on the same song); the phone has no speech recogniser for files.
 
 ## Finding the lyrics
