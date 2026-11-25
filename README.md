@@ -159,8 +159,13 @@ Songs are played in a venue, with a crowd in front of the stage dancing in time 
 - **The crowd** is seen from behind, three rows deep, with mixed skin tones, hair and clothes and
   a strong Black presence; dressed up in the high-class rooms. Groups of neighbors dance simplified
   versions of party dances from the mid-2000s on (Lean wit It, Crank That, Walk It Out, the Jerk,
-  the Dougie, Cat Daddy, the Nae Nae, the Whip, the Dab, Hit the Quan, the Milly Rock, the Woah),
-  change every sixteen beats, and now and then the whole room swag surfs or puts its hands up.
+  the Dougie, Cat Daddy, the Nae Nae, the Whip, the Dab, Hit the Quan, the Milly Rock, the Woah,
+  Shmoney, the Griddy, Hit Dem Folks, the Wobble, the Stanky Leg, the Running Man, the Shimmy, the
+  Shoot, the Tootsie Slide, the Renegade), plus nodding, fist pumps and jumping. Each group
+  changes dance every sixteen beats on its own bar, blending into the new move, and now and then
+  the whole room swag surfs, jumps or puts its hands up. In slow songs people sway and hold their
+  phones up as lights. Every part of the body moves on a spring, so the head and forearms follow
+  the body a moment later and swing through, instead of snapping from pose to pose.
   Turn it off with **Settings > General > Dancing Crowd**.
 
 Everything here is drawn by code from simple shapes, so it is cartoon-like rather than realistic.
