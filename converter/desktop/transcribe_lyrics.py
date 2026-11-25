@@ -1,16 +1,22 @@
 """Writes lyrics for a song that has none: speech-to-text on the separated voice.
 
-    NOVAD=1 python transcribe_lyrics.py vocals.wav out.lrc large-v3-turbo [en|ko|...|auto]
+    NOVAD=1 HINT="Title, a genre song by Artist" python transcribe_lyrics.py vocals.wav out.lrc [large-v3] [en|ko|...|auto]
 
 Needs faster-whisper and num2words (pip). Then convert with --lyrics out.lrc and --words-model:
 the word aligner times the written lines against the voice like any other lyrics.
 
-Measured with lyrics_wer.py on songs whose real lyrics are known (share of words wrong):
-  Overthinking (rap/R&B)  large-v3-turbo 29%, medium 33%, small 39%; phone word model 82%
-  Body Knockin' (R&B)     large-v3-turbo 29%
-  Gee (Korean/English)    about 60% of characters wrong
-NOVAD=1 (no silence filter) heard more words and scored better on every English song; the words it
-makes up in silence are dropped by checking the separated voice under each word.
+Measured with lyrics_wer.py on two songs whose real lyrics are known (share of words wrong):
+                               Overthinking   Body Knockin'
+  large-v3, with HINT              27%            20%      <- the default
+  large-v3, plain                  27%            24%
+  large-v3-turbo, with HINT        29%            28%      (4 times faster on a CPU)
+  large-v3-turbo, plain            29%            29%
+  medium / small                   33% / 39%
+  the phone's word-timing model    82%
+Tried and switched off (REPEATS=1 turns it on): rewording near-identical lines to the wording most
+of them share. It made both songs worse with both models (up to 8 points): hooks vary on purpose.
+NOVAD=1 (no silence filter) heard more words and scored better; the words the model makes up in
+silence are dropped by checking the separated voice under each word.
 """
 import re, subprocess, sys
 import numpy as np
@@ -18,12 +24,14 @@ from faster_whisper import WhisperModel
 
 vocals, out = sys.argv[1], sys.argv[2]
 VAD = __import__("os").environ.get("NOVAD") is None
-size = sys.argv[3] if len(sys.argv) > 3 else "medium"
+size = sys.argv[3] if len(sys.argv) > 3 else "large-v3"
 lang = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "auto" else None
 pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", vocals, "-ac", "1", "-ar", "16000", "-f", "f32le", "-"], check=True, capture_output=True).stdout
 audio = np.frombuffer(pcm, dtype=np.float32)
 model = WhisperModel(size, device="cpu", compute_type="int8")
-segments, info = model.transcribe(audio, language=lang, word_timestamps=True, vad_filter=VAD, beam_size=5,
+import os
+HINT = os.environ.get("HINT")  # e.g. "Overthinking by Coi Leray and H.E.R." : names and words to expect
+segments, info = model.transcribe(audio, language=lang, initial_prompt=HINT, word_timestamps=True, vad_filter=VAD, beam_size=5,
                                   condition_on_previous_text=False, no_speech_threshold=0.5)
 words = []
 for s in segments:
@@ -85,6 +93,33 @@ for i, w in enumerate(words):
             lines.append(cur); cur = []
     cur.append(w)
 if cur: lines.append(cur)
+
+# The song's own repeats: a hook is sung several times and heard a little differently each time.
+# Lines that are nearly the same are one line; each takes the wording most of them agree on.
+import difflib
+def norm(ws):
+    return [re.sub(r"[^a-z0-9']", "", w[2].lower()) for w in ws]
+def same(a, b):
+    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+fixed = 0
+if os.environ.get("REPEATS") is not None:  # off: it made every test song worse (see the notes at the top)
+    keys = [norm(l) for l in lines]
+    done = [False] * len(lines)
+    for i in range(len(lines)):
+        if done[i] or len(keys[i]) < 3: continue
+        group = [j for j in range(len(lines)) if not done[j] and len(keys[j]) >= 3 and same(keys[i], keys[j]) >= 0.7]
+        if len(group) < 3: continue
+        # the wording closest to all the others
+        best = max(group, key=lambda j: sum(same(keys[j], keys[k]) for k in group))
+        for j in group:
+            done[j] = True
+            if j != best and keys[j] != keys[best] and abs(len(keys[j]) - len(keys[best])) <= 2:
+                a, b = lines[j][0][0], lines[j][-1][1]
+                n = len(lines[best])
+                # the agreed words, spread over this line's own time
+                lines[j] = [(a + (b - a) * k / n, a + (b - a) * (k + 1) / n, lines[best][k][2], 1.0) for k in range(n)]
+                fixed += 1
+print("%d lines reworded from the song's repeats" % fixed, file=sys.stderr)
 
 def stamp(t):
     cs = int(round(max(0, t) * 100)); return "[%02d:%02d.%02d]" % (cs // 6000, (cs // 100) % 60, cs % 100)
