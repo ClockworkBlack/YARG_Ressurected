@@ -35,6 +35,11 @@ public final class YargMicCapture {
     private final short[] ring;
     private int writeAt;
     private int filled;
+    // A running count of the samples recorded, and where in that count the chunk last handed
+    // out began. Sound is sometimes thrown away (see pump() and flush()); with these the game
+    // can tell how much, and still knows exactly when each sound it does get was made.
+    private long written;
+    private long lastTakeFirst = -1;
     private final Object lock = new Object();
     private volatile boolean running = true;
     private volatile boolean dead;
@@ -223,6 +228,7 @@ public final class YargMicCapture {
                     if (writeAt == ring.length) writeAt = 0;
                 }
                 filled = Math.min(ring.length, filled + got);
+                written += got;
                 // If the game has stopped taking sound, keep only the newest bit: singing must
                 // never be judged on something sung a moment ago.
                 int most = chunk * 4;
@@ -252,6 +258,7 @@ public final class YargMicCapture {
         short[] out = new short[chunk];
         synchronized (lock) {
             if (filled < chunk) return out;
+            lastTakeFirst = written - filled;
             int from = writeAt - filled;
             if (from < 0) from += ring.length;
             for (int i = 0; i < chunk; i++) {
@@ -262,6 +269,17 @@ public final class YargMicCapture {
             filled -= chunk;
         }
         return out;
+    }
+
+    /**
+     * Where the chunk last returned by {@link #take} began, counted in samples since recording
+     * started (-1 before the first chunk). A jump from the end of one chunk to the start of the
+     * next is sound that was thrown away in between.
+     */
+    public long getLastTakeFirst() {
+        synchronized (lock) {
+            return lastTakeFirst;
+        }
     }
 
     /** Forgets the sound that is waiting (at the start of a song). */

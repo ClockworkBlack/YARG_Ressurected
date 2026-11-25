@@ -346,10 +346,10 @@ index bb249e1..c0c41e6 100644
          {
              if (!GameManager.Paused && !GameManager.IsSeekingReplay)
 diff --git a/Assets/Script/Gameplay/Player/VocalsPlayer.cs b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
-index 2db2e0e..83ecc15 100644
+index 2db2e0e..ed7a60a 100644
 --- a/Assets/Script/Gameplay/Player/VocalsPlayer.cs
 +++ b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
-@@ -68,6 +68,30 @@ namespace YARG.Gameplay.Player
+@@ -68,6 +68,31 @@ namespace YARG.Gameplay.Player
  
          private SongChart _chart;
  
@@ -370,6 +370,7 @@ index 2db2e0e..83ecc15 100644
 +        // that the engine gets it in step with what was sung at that moment.
 +        private double _buttonHold;
 +        private bool   _feedingMic;
++        private int    _lastMicVideoFrame = -10;
 +        private readonly List<GameInput> _heldButtons = new();
 +
 +        // Semitones the song was moved by on the Song Setup screen
@@ -380,7 +381,7 @@ index 2db2e0e..83ecc15 100644
          public void Initialize(int index, int vocalIndex, YargPlayer player, SongChart chart,
              VocalsPlayerHUD hud, VocalPercussionTrack percussionTrack, int? lastHighScore, float trackSpeed)
          {
-@@ -128,14 +152,47 @@ namespace YARG.Gameplay.Player
+@@ -128,14 +153,47 @@ namespace YARG.Gameplay.Player
  
              _hud.ShowPlayerName(player, needleIndex);
  
@@ -428,7 +429,7 @@ index 2db2e0e..83ecc15 100644
  
              if (GameManager.IsPractice)
              {
-@@ -158,10 +215,16 @@ namespace YARG.Gameplay.Player
+@@ -158,10 +216,16 @@ namespace YARG.Gameplay.Player
              if (!Player.IsReplay)
              {
                  var singToActivateStarPower = SettingsManager.Settings.VoiceActivatedVocalStarPower.Value;
@@ -446,7 +447,7 @@ index 2db2e0e..83ecc15 100644
              }
              else
              {
-@@ -190,8 +253,8 @@ namespace YARG.Gameplay.Player
+@@ -190,8 +254,8 @@ namespace YARG.Gameplay.Player
              engine.OnPhraseHit += (percent, fullPoints, isLastPhrase) =>
              {
                  // The engine reports the line against the level's pass mark; a sing-off marks it on
@@ -457,7 +458,7 @@ index 2db2e0e..83ecc15 100644
                      Player.Profile.CurrentDifficulty, GameManager.SongTime);
  
                  if (!fullPoints)
-@@ -204,7 +267,7 @@ namespace YARG.Gameplay.Player
+@@ -204,7 +268,7 @@ namespace YARG.Gameplay.Player
                  ShowTextNotifications(isLastPhrase);
  
                  // Order is important here. ShowVocalPhraseResult() will skip showing AWESOME! if other, more important notifications are already showing.
@@ -466,7 +467,7 @@ index 2db2e0e..83ecc15 100644
              };
  
              engine.OnNoteHit += (_, note) =>
-@@ -215,9 +278,11 @@ namespace YARG.Gameplay.Player
+@@ -215,9 +279,11 @@ namespace YARG.Gameplay.Player
                  }
              };
  
@@ -480,7 +481,7 @@ index 2db2e0e..83ecc15 100644
                  {
                      GlobalAudioHandler.PlaySoundEffect(SfxSample.NoteMiss);
                  }
-@@ -278,6 +343,9 @@ namespace YARG.Gameplay.Player
+@@ -278,6 +344,9 @@ namespace YARG.Gameplay.Player
              _phraseIndex = -1;
              _percussionTrack.Initialize(NoteTrack.Notes);
  
@@ -490,7 +491,7 @@ index 2db2e0e..83ecc15 100644
              base.ResetPracticeSection();
          }
  
-@@ -294,19 +362,88 @@ namespace YARG.Gameplay.Player
+@@ -294,19 +363,99 @@ namespace YARG.Gameplay.Player
  
          protected override void UpdateInputs(double time)
          {
@@ -514,6 +515,17 @@ index 2db2e0e..83ecc15 100644
              // Push all inputs from mic
              if (!Player.IsReplay && _inputContext != null)
              {
++                // Whatever the microphone heard while the game was not taking it (before the
++                // song started, during a pause or a rewind) is not singing: forget it, or it
++                // would all arrive at once. A stutter is different: the song played on and
++                // the singer sang on, so what was heard during it is kept and judged.
++                int videoFrame = Time.frameCount;
++                if (videoFrame - _lastMicVideoFrame > 1)
++                {
++                    _inputContext.Device.ClearOutputQueue();
++                }
++                _lastMicVideoFrame = videoFrame;
++
 +                _feedingMic = true;
                  foreach (var input in _inputContext.GetInputsFromMic())
                  {
@@ -579,7 +591,7 @@ index 2db2e0e..83ecc15 100644
          private bool IsInThreshold(double currentTime, double? lastTime)
          {
              if (lastTime is null)
-@@ -327,7 +464,31 @@ namespace YARG.Gameplay.Player
+@@ -327,7 +476,31 @@ namespace YARG.Gameplay.Player
              if (Engine.PhraseTicksTotal != null && Engine.PhraseTicksTotal.Value != 0)
              {
                  fill = (float) (Engine.PhraseTicksHit / Engine.PhraseTicksTotal.Value);
@@ -612,7 +624,7 @@ index 2db2e0e..83ecc15 100644
              }
  
              // In multiplayer, don't double the score multiplier in the strikeline element
-@@ -391,7 +552,8 @@ namespace YARG.Gameplay.Player
+@@ -391,7 +564,8 @@ namespace YARG.Gameplay.Player
              const float NEEDLE_ROT_MAX = 12f;
  
              // Reduce the provided distance by applying a dead zone. This will prevent oversteer if the player's current pitch is well within the "Perfect" window.
@@ -622,7 +634,7 @@ index 2db2e0e..83ecc15 100644
              var adjustedPitchDist = ApplyPitchDeadZone(pitchDist, deadzoneInSemitones);
  
              // Determine how off that is compared to the hit window
-@@ -424,7 +586,11 @@ namespace YARG.Gameplay.Player
+@@ -424,7 +598,11 @@ namespace YARG.Gameplay.Player
              // Get whether or not the player has sang within the time threshold.
              // We gotta use a threshold here because microphone inputs are passed every X seconds,
              // not in a constant stream.
@@ -635,7 +647,7 @@ index 2db2e0e..83ecc15 100644
              {
                  // Hide the needle if there's no singing
                  if (_needleVisualContainer.activeSelf)
-@@ -469,6 +635,13 @@ namespace YARG.Gameplay.Player
+@@ -469,6 +647,13 @@ namespace YARG.Gameplay.Player
                          // Get how off the player is
                          (float pitchDist, _) = GetPitchDistanceIgnoringOctave(lastNotePitch, Engine.PitchSang);
                          targetRotation = GetNeedleRotation(pitchDist);
@@ -649,7 +661,7 @@ index 2db2e0e..83ecc15 100644
                      }
                      else
                      {
-@@ -630,6 +803,16 @@ namespace YARG.Gameplay.Player
+@@ -630,6 +815,16 @@ namespace YARG.Gameplay.Player
  
          protected override bool InterceptInput(ref GameInput input)
          {
@@ -667,36 +679,10 @@ index 2db2e0e..83ecc15 100644
          }
  
 diff --git a/Assets/Script/Input/MicInputContext.cs b/Assets/Script/Input/MicInputContext.cs
-index 7044e29..492048e 100644
+index 7044e29..2bcdba4 100644
 --- a/Assets/Script/Input/MicInputContext.cs
 +++ b/Assets/Script/Input/MicInputContext.cs
-@@ -8,6 +8,9 @@ namespace YARG.Input
- {
-     public class MicInputContext
-     {
-+        // Seconds. Longer than any delay a microphone can have, far shorter than a pause.
-+        private const double MAX_FRAME_AGE = 0.25;
-+
-         public readonly MicDevice Device;
- 
-         private readonly GameManager _gameManager;
-@@ -34,15 +37,27 @@ namespace YARG.Input
-         /// </summary>
-         public IEnumerable<GameInput> GetInputsFromMic()
-         {
-+            // YARG Resurrected: anything the mic heard while the game was not listening (a
-+            // pause, a rewind) is too old to judge; without this it would all arrive at once.
-+            double oldest = InputManager.CurrentInputTime - MAX_FRAME_AGE;
-+
-             while (Device.DequeueOutputFrame(out var frame))
-             {
--                // frame.VoiceDetected will ALWAYS be true here, as it wouldn't be queued otherwise
-+                if (frame.Time < oldest)
-+                {
-+                    continue;
-+                }
- 
-                 // Queue it up!
+@@ -42,7 +42,12 @@ namespace YARG.Input
                  GameInput gameInput;
                  if (!frame.IsHit)
                  {

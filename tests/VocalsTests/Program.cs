@@ -493,6 +493,40 @@ namespace VocalsTests
             return inputs;
         }
 
+        /// <summary>
+        /// Inputs chosen one by one: <paramref name="offsetAt"/> is given the phrase, the note,
+        /// and how far into the note the input is (seconds), and answers how far off the note
+        /// the voice is (semitones), or null for no sound at all.
+        /// </summary>
+        private static List<SimInput> SingBy(SimSong song, Func<int, int, double, float?> offsetAt, double step = 0.02)
+        {
+            var inputs = new List<SimInput>();
+            int steps = (int) (song.Length / step);
+            for (int s = 0; s < steps; s++)
+            {
+                double time = s * step;
+                for (int p = 0; p < song.Phrases.Count; p++)
+                {
+                    var phrase = song.Phrases[p];
+                    for (int n = 0; n < phrase.Notes.Count; n++)
+                    {
+                        var note = phrase.Notes[n];
+                        if (time < note.Start || time >= note.TotalEnd)
+                        {
+                            continue;
+                        }
+
+                        float? offset = offsetAt(p, n, time - note.Start);
+                        if (offset.HasValue)
+                        {
+                            inputs.Add(new SimInput { Time = time, Midi = note.PitchAt(time) + offset.Value });
+                        }
+                    }
+                }
+            }
+            return inputs;
+        }
+
         public static void Run()
         {
             var song = SmallSong();
@@ -579,6 +613,55 @@ namespace VocalsTests
             Program.Check(cutShort.MeanFill < 0.6, $"leaving each note 200 ms early does not ({cutShort.MeanFill:P0} credited)");
             var veryLate = SimGame.Play(song, Sing(song, lateStart: 0.2), expert);
             Program.Check(veryLate.MeanFill < 0.6, $"200 ms late does not ({veryLate.MeanFill:P0} credited)");
+
+            // An input that is only just on the note must never earn less than one that misses.
+            // (Notes are 0.4 s; on Expert Challenge 0.69 semitones off is just on, 0.75 is off.)
+            {
+                // Sliding up into each note: far off, then nearly there, then on it
+                Func<float, List<SimInput>> scoop = nearly => SingBy(song, (p, n, into) =>
+                    into < 0.03 ? 3f : into < 0.05 ? nearly : 0f);
+                var scoopOn = SimGame.Play(song, scoop(0.69f), expert);
+                var scoopOff = SimGame.Play(song, scoop(0.75f), expert);
+                Program.Check(scoopOn.MeanFill >= scoopOff.MeanFill - 0.001 && scoopOn.MeanFill >= 0.97,
+                    $"sliding up into a note costs nothing, however close the slide passes ({scoopOn.MeanFill:P0} and {scoopOff.MeanFill:P0})");
+
+                // Letting each note sag as it is left 60 ms early
+                Func<float, List<SimInput>> sag = last => SingBy(song, (p, n, into) =>
+                    into < 0.33 ? 0f : into < 0.35 ? last : (float?) null);
+                var sagOn = SimGame.Play(song, sag(0.69f), expert);
+                var sagOff = SimGame.Play(song, sag(0.75f), expert);
+                Program.Check(sagOn.MeanFill >= sagOff.MeanFill - 0.001 && sagOn.MeanFill >= 0.97,
+                    $"nor does a note that sags as it is let go ({sagOn.MeanFill:P0} and {sagOff.MeanFill:P0})");
+            }
+
+            // What is forgiven is limited by what was sung: one lucky reading is not a whole note
+            {
+                var quick = SmallSong();
+                foreach (var phrase in quick.Phrases)
+                {
+                    foreach (var note in phrase.Notes)
+                    {
+                        note.Length = 0.18;
+                    }
+                }
+
+                // Off the note the whole time, but for one reading in the middle of each
+                var lucky = SimGame.Play(quick, SingBy(quick, (p, n, into) => Math.Abs(into - 0.08) < 0.005 ? 0f : 3f), expert);
+                Program.Check(lucky.PhrasesHit == 0 && lucky.MeanFill < 0.4,
+                    $"one reading on pitch does not stand for a whole short note ({lucky.MeanFill:P0} credited)");
+
+                // Really sung, a little late and let go a little early
+                var sung = SimGame.Play(quick, SingBy(quick, (p, n, into) => into >= 0.05 && into < 0.15 ? 0f : (float?) null), expert);
+                Program.Check(sung.PhrasesHit == 3 && sung.Fills.Min() >= 0.95,
+                    $"short notes that are sung still count in full ({sung.Fills.Min():P0})");
+            }
+
+            // A computer singer is not at the mercy of the frame rate
+            {
+                var bot = SimGame.Play(song, new List<SimInput>(), expert, 12, 0.003, bot: true);
+                Program.Check(bot.PhrasesHit == 3 && bot.Fills.Min() >= 0.999,
+                    $"a computer singer clears Expert Challenge at 12 frames a second ({bot.Fills.Min():P0})");
+            }
 
             // Sound without a tone
             Program.Check(SimGame.Play(song, Sing(song, toneless: true), expertNormal).MeanFill == 0 &&
@@ -693,6 +776,14 @@ namespace VocalsTests
                 var carried = SimGame.Play(carry, Sing(carry), expert);
                 Program.Check(carried.PhrasesHit == 3 && carried.Fills.Min() >= 0.95,
                     $"a note that runs on into the next phrase is counted in both, without trouble ({carried.Fills.Min():P0})");
+
+                // Let go where the first phrase ends: the rest of the note, in the next phrase,
+                // is not a note of its own that was skipped
+                double letGo = carry.Phrases[0].End - carry.Phrases[0].Notes[4].Start;
+                var heldPart = SimGame.Play(carry, SingBy(carry, (p, n, into) =>
+                    p == 0 && n == 4 && into >= letGo ? (float?) null : 0f), expert);
+                Program.Check(heldPart.PhrasesHit == 3,
+                    $"and letting it go at the phrase's end does not lose the next phrase ({heldPart.PhrasesHit} of 3)");
             }
 
             // Replays

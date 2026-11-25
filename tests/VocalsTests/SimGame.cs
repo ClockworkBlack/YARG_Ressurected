@@ -60,9 +60,9 @@ namespace VocalsTests
         }
 
         public static GameResult Play(SimSong song, List<SimInput> inputs, VocalsEngineParameters parameters,
-            double framesPerSecond = 60.0, double frameOffset = 0.0)
+            double framesPerSecond = 60.0, double frameOffset = 0.0, bool bot = false)
         {
-            var engine = new YargVocalsEngine(song.BuildChart(), song.BuildSyncTrack(), parameters, false);
+            var engine = new YargVocalsEngine(song.BuildChart(), song.BuildSyncTrack(), parameters, bot);
             engine.SetSpeed(1.0);
             return Run(engine, song, inputs, parameters, framesPerSecond, frameOffset);
         }

@@ -196,6 +196,11 @@ namespace YARG.Audio
         private bool _strict;
         private double _holdSeconds;
 
+        // The recorder's count of the sample the next chunk should begin at (below 0: not known).
+        // The recorder throws sound away when the game was too busy to fetch it; a jump in the
+        // count says how much, so the timing of everything after it stays right.
+        private long _nextSample = -1;
+
         internal AndroidMicDevice(string displayName, int kind, string name) : base(displayName)
         {
             _kind = kind;
@@ -224,6 +229,7 @@ namespace YARG.Audio
                 _voiceInput.Strict = strict;
                 _voiceInput.HoldSeconds = _holdSeconds;
             }
+            _nextSample = -1;
 
             return _holdSeconds + VoiceMicTiming.DEVICE_CAPTURE_SECONDS + extra;
         }
@@ -286,6 +292,7 @@ namespace YARG.Audio
                 _voiceInput = sampleRate >= 8000
                     ? new VoiceInput(sampleRate) { Strict = _strict, HoldSeconds = _holdSeconds }
                     : null;
+                _nextSample = -1;
                 _openedAt = Time.unscaledTime;
                 _warnedOpen = false;
                 _lastPitch = null;
@@ -360,7 +367,7 @@ namespace YARG.Audio
 
                     if (_useVoiceInput && _voiceInput != null)
                     {
-                        ListenWithVoiceInput(samples);
+                        ListenWithVoiceInput(samples, _capture.Call<long>("getLastTakeFirst"));
                         continue;
                     }
 
@@ -399,8 +406,22 @@ namespace YARG.Audio
 
         // The new analysis: every result is stamped with the moment its sound arrived, counted
         // in samples, so it does not matter that the sound is fetched a video frame at a time.
-        private void ListenWithVoiceInput(short[] samples)
+        private void ListenWithVoiceInput(short[] samples, long firstSample)
         {
+            // Sound the recorder threw away since the last chunk (the game stuttered, or was
+            // not listening for a moment) is counted as silence. Below zero: the count started
+            // again, and so does the timing.
+            long missing = 0;
+            if (firstSample >= 0)
+            {
+                if (_nextSample >= 0)
+                {
+                    missing = firstSample >= _nextSample ? firstSample - _nextSample : -1;
+                }
+
+                _nextSample = firstSample + samples.Length;
+            }
+
             if (_voiceSamples.Length < samples.Length)
             {
                 _voiceSamples = new float[samples.Length];
@@ -413,7 +434,7 @@ namespace YARG.Audio
 
             _voiceFrames.Clear();
             _voiceInput.Feed(new ReadOnlySpan<float>(_voiceSamples, 0, samples.Length), InputManager.CurrentInputTime,
-                SettingsManager.Settings.MicrophoneSensitivity.Value, _voiceFrames);
+                SettingsManager.Settings.MicrophoneSensitivity.Value, _voiceFrames, missing);
 
             for (int i = 0; i < _voiceFrames.Count; i++)
             {
@@ -488,6 +509,7 @@ namespace YARG.Audio
             _lastAmplitude = null;
             _pitchDetector?.Reset();
             _voiceInput?.Reset();
+            _nextSample = -1;
             // Have the microphone running before the first line, not after it
             EnsureOpen();
             Flush();

@@ -395,9 +395,12 @@ held about 25 cents off. [1](https://livelab.mcmaster.ca/app/uploads/2021/07/Dem
   too many and the line is lost, however well the rest went. (Notes shorter than about a tenth
   of a second are too quick to judge alone; they still count towards the line.)
 - **The start and end of a note are forgiven** (a tenth of a second each): the time a consonant
-  takes, finding the pitch, leaving a moment early to breathe.
+  takes, finding the pitch, leaving a moment early to breathe. Each edge is scored by the best you
+  reach inside it, so sliding up into a note, or letting it sag as you let go, costs nothing. What
+  is forgiven is limited by what you sang, though: one stray moment on pitch is not a whole note.
 - **Only a voice counts.** Breath and noise never hold a note, and spoken parts need you to speak
-  every word.
+  every word. (The syllable check for spoken lines, which normally starts at Medium, is also on
+  for Easy in Challenge Mode.)
 - **Any octave is fine**, as always: low voices can sing high songs.
 - **The original singer steps back.** On songs with a separate vocal track, the recorded singer
   drops to 35% volume (**Settings > Sound > Lead Singer Volume In Challenge Mode**), so you carry
@@ -422,9 +425,9 @@ pitch detector and the real scoring. Lines cleared, from the automated tests:
 | Singer | Expert | Easy Challenge | Medium Challenge | Hard Challenge | Expert Challenge |
 |---|---|---|---|---|---|
 | Trained (within 8 cents, on time) | 100% | 100% | 100% | 100% | 100% |
-| Good amateur (within 22 cents, a wrong note now and then) | 98% | 98% | 98% | 98% | 82% |
-| Average karaoke singer (within 42 cents, some wrong and missed notes) | 40% | 82% | 50% | 22% | 6% |
-| Trained, but sings only 70% of each line | 100% | 100% | 62% | 6% | 0% |
+| Good amateur (within 22 cents, a wrong note now and then) | 98% | 98% | 98% | 98% | 88% |
+| Average karaoke singer (within 42 cents, some wrong and missed notes) | 40% | 88% | 60% | 34% | 6% |
+| Trained, but sings only 70% of each line | 100% | 100% | 66% | 10% | 0% |
 | Trained, but leaves out the highest note of each line | 98% | 96% | 88% | 86% | 8% |
 | Hums one note | 2% | 4% | 2% | 2% | 0% |
 | Makes noise | 0% | 0% | 0% | 0% | 0% |
