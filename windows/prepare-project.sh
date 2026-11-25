@@ -84,6 +84,23 @@ for f in "${NATIVE_FILES[@]}"; do
     log "  $f ($(wc -c < "$f") bytes)"
 done
 
+# HIDrogen (extra input backends) has a Windows-only part (raw Xbox One pads through GameInput)
+# that needs its SharpGameInput.v0.dll. That DLL is marked "Windows editor only", so a Linux or
+# macOS editor building for Windows (like CI) leaves it out and the scripts fail to compile.
+# Embed the same HIDrogen version in Packages/ (which overrides the registry copy) with the DLL
+# allowed in any editor. It's a managed DLL, and HIDrogen doesn't start its backends in an
+# editor whose OS doesn't match the build target, so nothing native is loaded there.
+HIDROGEN_VERSION="$(sed -n 's/.*"com\.thenathannator\.hidrogen": *"\([^"]*\)".*/\1/p' Packages/manifest.json)"
+if [ -n "$HIDROGEN_VERSION" ] && [ ! -d Packages/com.thenathannator.hidrogen ]; then
+    log "Embedding HIDrogen $HIDROGEN_VERSION with SharpGameInput usable in any editor"
+    HID_TMP="$NATIVES_TMP/hidrogen"
+    git clone -q --depth 1 --branch "v$HIDROGEN_VERSION" https://github.com/TheNathannator/HIDrogen "$HID_TMP"
+    cp -r "$HID_TMP/Packages/com.thenathannator.hidrogen" Packages/
+    meta=Packages/com.thenathannator.hidrogen/HIDrogen/Plugins/SharpGameInput.v0.dll.meta
+    sed -i.bak 's/^\( *OS: \)Windows$/\1AnyOS/' "$meta" && rm -f "$meta.bak"
+    grep -q 'OS: AnyOS' "$meta" || { echo "[windows] Could not change $meta" >&2; exit 1; }
+fi
+
 # Self-signed certificate for the phone remote's https page (phone mics need a secure page)
 log "Making the phone remote certificate"
 mkdir -p Assets/Resources/YargRemote
