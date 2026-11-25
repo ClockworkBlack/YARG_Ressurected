@@ -127,6 +127,15 @@ public final class SongWriter {
                     r.lyricsMoved = true;
                     r.lyricTimingNote = placed.note;
                 }
+                // Then line by line: lyric sites often have single lines stamped late or early
+                if (voice != null) {
+                    LyricAligner.Result checked = LyricAligner.checkLines(lyrics, voice);
+                    if (checked.moved()) {
+                        lyrics = checked.lines;
+                        r.lyricsMoved = true;
+                        r.lyricTimingNote = r.lyricTimingNote == null ? checked.note : r.lyricTimingNote + " " + checked.note;
+                    }
+                }
             }
             r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb, times);
             r.lyricLines = r.vocals.lines;

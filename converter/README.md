@@ -86,6 +86,19 @@ intro, a break in the middle) the words would come up while nobody is singing ye
   **Edit** page), move every line half a second per press. Lyrics moved this way are used exactly
   as they are; so are lyrics carrying an `[offset:]` line.
 
+- **Line by line (Split and R&B):** lyric sites get most lines right but not all. NetEase in
+  particular often stamps a line seconds late, crammed against the next, or part-way into its
+  own singing. Each line is checked against where the voice comes in after a silence:
+  - two lines crammed together: the wrong one moves to the nearest place the voice comes in,
+    picking whichever move leaves the lines around it with the song's usual room;
+  - a line stamped while its singing is already going: back to where that singing began, up to
+    1 second.
+
+  Measured on a real song with NetEase lyrics, against line starts checked by speech
+  recognition: average error 1.20 s before, 0.92 s after; no line got worse, and lyrics that
+  were already right came through unchanged. Lines sung straight on from the one before (no
+  breath between) cannot be told apart by the voice alone and keep their times.
+
 The summary says when lyrics were moved and by how much, and the `lyrics.lrc` saved with the song
 has the times that were used.
 
@@ -96,6 +109,21 @@ older encodings (EUC-KR, Shift-JIS, GBK, Big5, Windows-1251) and in UTF-16 are r
 opened. Chinese and Japanese lines, written without spaces, are cut into two-character pieces so
 each gets a note. The game needs build 37 or newer to draw these characters (older builds show
 boxes).
+
+## What we learned about lyric timing
+
+From converting real songs and checking every line by ear and by speech recognition:
+
+1. **Section labels are not lyrics.** NetEase writes `[00:12.09][Hook]`; such lines are gaps.
+2. **Timed lyrics online are mostly right, never all right.** Keep the file's times and fix only
+   lines the voice clearly contradicts; re-timing whole runs of lines moved good lines too.
+3. **A line starts where the voice comes in after a silence,** not where a word recogniser says
+   (it often counts the silence before a word as part of it).
+4. **The fix must never make right lyrics worse.** Every rule is measured on lyrics already
+   checked to be right as well as on wrong ones (`core-test/LineEval`, `AlignTest`). A longer
+   reach-back (1.6 s) fixed more NetEase lines but pulled correct hook lines into the line before.
+5. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
+   much closer (average 0.23 s on the same song); the phone has no speech recogniser for files.
 
 ## Finding the lyrics
 

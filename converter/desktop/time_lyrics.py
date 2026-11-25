@@ -124,6 +124,13 @@ def main():
                 sure[i] = pos <= 1 and k + 1 < len(words) and line_of[k + 1] == i and time_of[k + 1] is not None
                 break
 
+    import os as _os
+    if _os.environ.get("TRUTH_OUT"):
+        # Where each line was heard starting, for measuring other ways of timing ("" when not sure)
+        with open(_os.environ["TRUTH_OUT"], "w") as tf:
+            for i in range(len(lines)):
+                tf.write(("%.2f" % start[i] if start[i] is not None and sure[i] else "") + "\t" + lines[i] + "\n")
+
     if timed:
         # Where each line should be: where it was heard (when that is sure), else as given
         want = [start[i] if start[i] is not None and sure[i] and abs(start[i] - given[i]) > 0.8 else given[i]

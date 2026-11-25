@@ -28,6 +28,7 @@ final class AlignTest {
         wrongLyricsLeftAlone();
         silentStartWithoutTheVoice();
         otherLanguages();
+        lineByLine();
         System.out.println(failures == 0 ? "All lyric timing checks passed" : "FAILED: " + failures + " lyric timing check(s)");
         return failures;
     }
@@ -205,5 +206,55 @@ final class AlignTest {
         List<String> c = VocalCharter.words("\u6211\u7231\u4F60\uFF0C\u4E2D\u56FD");
         check(c.toString().equals("[\u6211\u7231-, \u4F60\uFF0C\u4E2D-, \u56FD]"), "punctuation stays with the character before it: " + c);
         check(VocalCharter.words("Hello world").toString().equals("[Hello, world]"), "English as before");
+    }
+
+    /** Single lines stamped wrong, as lyric sites often have them; and lyrics that are right left alone. */
+    private static void lineByLine() {
+        int sr = 22050;
+        int moved = 0, lines = 0;
+        for (long seed = 60; seed < 66; seed++) {
+            SynthVoice song = new SynthVoice(sr, PLAN, seed);
+            VocalAnalyzer.Voice voice = VocalTest.listen(song.audio, sr);
+            List<Lrc.Line> right = lyricsOf(song);
+            LyricAligner.Result r = LyricAligner.checkLines(right, voice);
+            for (int i = 0; i < right.size(); i++) {
+                lines++;
+                if (Math.abs(r.lines.get(i).time - right.get(i).time) > 0.15) moved++;
+            }
+        }
+        check(moved == 0, "lyrics that are right stay where they are (" + moved + " of " + lines + " lines moved)");
+
+        // One line stamped seconds late, crammed against the next: back to where it is sung
+        int fixedLate = 0, triedLate = 0;
+        for (long seed = 70; seed < 76; seed++) {
+            SynthVoice song = new SynthVoice(sr, PLAN, seed);
+            VocalAnalyzer.Voice voice = VocalTest.listen(song.audio, sr);
+            for (int k = 3; k < song.lines.size() - 2; k += 4) {
+                List<Lrc.Line> lyr = lyricsOf(song);
+                double next = lyr.get(k + 1).time;
+                lyr.set(k, new Lrc.Line(next - 0.45, lyr.get(k).text));
+                LyricAligner.Result r = LyricAligner.checkLines(lyr, voice);
+                triedLate++;
+                if (Math.abs(r.lines.get(k).time - song.lines.get(k).start) <= 0.3) fixedLate++;
+                check(Math.abs(r.lines.get(k + 1).time - next) < 0.15, "the line after a late one stays (seed " + seed + ", line " + k + ")");
+            }
+        }
+        check(fixedLate >= triedLate * 0.75, "late lines crammed against the next are put back (" + fixedLate + " of " + triedLate + ")");
+
+        // Stamped part-way into its own singing: back to where the singing began
+        int fixedIn = 0, triedIn = 0;
+        for (long seed = 80; seed < 84; seed++) {
+            SynthVoice song = new SynthVoice(sr, PLAN, seed);
+            VocalAnalyzer.Voice voice = VocalTest.listen(song.audio, sr);
+            List<Lrc.Line> lyr = lyricsOf(song);
+            for (int k = 1; k < lyr.size(); k += 3) lyr.set(k, new Lrc.Line(song.lines.get(k).start + 0.6, lyr.get(k).text));
+            LyricAligner.Result r = LyricAligner.checkLines(lyr, voice);
+            for (int k = 1; k < lyr.size(); k += 3) {
+                triedIn++;
+                if (Math.abs(r.lines.get(k).time - song.lines.get(k).start) <= 0.15) fixedIn++;
+            }
+        }
+        check(fixedIn >= triedIn * 0.8, "lines stamped into their singing start where it starts (" + fixedIn + " of " + triedIn + ")");
+        System.out.println("  line by line: late lines fixed " + fixedLate + "/" + triedLate + ", stamped into singing fixed " + fixedIn + "/" + triedIn);
     }
 }
