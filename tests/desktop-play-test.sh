@@ -104,5 +104,11 @@ if [ -f "$log" ] && ! grep -q "BASS Successfully Initialized" "$log"; then
     fail=1
 fi
 
+if [ "$fail" != 0 ] && [ -f "$log" ]; then
+    echo
+    echo "===== Last 120 lines of the game's log ====="
+    tail -n 120 "$log"
+fi
+
 [ "$fail" = 0 ] && echo "Play test passed on $OS"
 exit "$fail"

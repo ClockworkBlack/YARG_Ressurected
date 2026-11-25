@@ -98,7 +98,11 @@ namespace YARG.Testing
                 {
                     SettingsManager.Settings.SongFolders.Add(songs);
                 }
-                await SongContainer.RunRefresh(false);
+                using (var context = new LoadingContext())
+                {
+                    // Same call as Settings > Songs > Scan Songs
+                    await SongContainer.RunRefresh(false, context);
+                }
                 Note($"Songs found: {SongContainer.Count}");
                 var song = SongContainer.Songs.FirstOrDefault();
                 if (song == null)

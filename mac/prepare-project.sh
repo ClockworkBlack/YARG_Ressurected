@@ -82,6 +82,26 @@ for f in Assets/Plugins/BassNative/Mac/libbass.dylib Assets/Plugins/STB2CSharp/M
     [ -s "$f" ] || { echo "[mac] $f is missing from the base project" >&2; exit 1; }
 done
 
+# HIDrogen (extra controller support) ships its Mac libusb as an arm64-only file, although its
+# settings mark it as x86_64. In this Intel app it can't load ("incompatible architecture"), so
+# USB devices that go through libusb wouldn't work. Embed the same HIDrogen version in Packages/
+# (which overrides the registry copy) with an x86_64 libusb from the libusb-package wheel on PyPI
+# (libusb 1.0.30, depends only on macOS system frameworks), checked against its published SHA-256.
+LIBUSB_WHEEL_URL="https://files.pythonhosted.org/packages/fa/96/9a8ee916d1503b4137a5684faacf02c3452c8c3d66959ebceb85ea54ad0b/libusb_package-1.0.30.1-py3-none-macosx_10_9_x86_64.whl"
+LIBUSB_WHEEL_SHA256="7ee86d9e1092f22239be28ae45e12cd47d65f4fa19f71e83f1f1036b97295cdc"
+HIDROGEN_VERSION="$(sed -n 's/.*"com\.thenathannator\.hidrogen": *"\([^"]*\)".*/\1/p' Packages/manifest.json)"
+if [ -n "$HIDROGEN_VERSION" ] && [ ! -d Packages/com.thenathannator.hidrogen ]; then
+    log "Embedding HIDrogen $HIDROGEN_VERSION with an x86_64 libusb"
+    git clone -q --depth 1 --branch "v$HIDROGEN_VERSION" https://github.com/TheNathannator/HIDrogen "$NATIVES_TMP/hidrogen"
+    cp -r "$NATIVES_TMP/hidrogen/Packages/com.thenathannator.hidrogen" Packages/
+    curl -fsSL -o "$NATIVES_TMP/libusb.whl" "$LIBUSB_WHEEL_URL"
+    echo "$LIBUSB_WHEEL_SHA256  $NATIVES_TMP/libusb.whl" | (sha256sum -c - 2>/dev/null || shasum -a 256 -c -) >/dev/null \
+        || { echo "[mac] libusb wheel checksum mismatch" >&2; exit 1; }
+    python3 -I -c 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1]); open(sys.argv[2], "wb").write(z.read("libusb_package/libusb-1.0.dylib"))' \
+        "$NATIVES_TMP/libusb.whl" Packages/com.thenathannator.hidrogen/HIDrogen/Plugins/Mac/libusb-1.0.dylib
+    log "  HIDrogen/Plugins/Mac/libusb-1.0.dylib replaced ($(wc -c < Packages/com.thenathannator.hidrogen/HIDrogen/Plugins/Mac/libusb-1.0.dylib) bytes)"
+fi
+
 # Self-signed certificate for the phone remote's https page (phone mics need a secure page)
 log "Making the phone remote certificate"
 mkdir -p Assets/Resources/YargRemote

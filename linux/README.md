@@ -119,8 +119,8 @@ tar xzf YARG-Resurrected-Linux-<n>.tar.gz
 bash YARG-Resurrected/install.sh
 ```
 On Debian / Ubuntu / Mint the script installs the system libraries it needs. On other distributions
-it skips that step: install ALSA (libasound), OpenGL, X11 and libudev with your package manager if
-the game won't start. Or run `YARG-Resurrected/YARG.x86_64` directly without installing.
+it skips that step: install ALSA (libasound), OpenGL, X11, libudev and hidapi (`hidapi`, for controllers)
+with your package manager if the game won't start or controllers aren't seen. Or run `YARG-Resurrected/YARG.x86_64` directly without installing.
 
 Controllers work through the usual Linux input system. If a guitar or drum kit isn't detected, your
 user may need permission for `/dev/hidraw*` (a udev rule, as for Clone Hero).

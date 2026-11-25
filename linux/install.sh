@@ -42,7 +42,7 @@ if command -v apt-get >/dev/null 2>&1; then
     # Names differ between Debian versions (e.g. libasound2 vs libasound2t64), so try each one
     for pkg in libasound2t64 libasound2 libasound2-plugins libpulse0 libgl1 libegl1 libglu1-mesa \
                libx11-6 libxcursor1 libxrandr2 libxi6 libxinerama1 libxkbcommon0 \
-               libudev1 libusb-1.0-0 ca-certificates; do
+               libudev1 libusb-1.0-0 libhidapi-hidraw0 libhidapi-libusb0 ca-certificates; do
         if apt-cache show "$pkg" >/dev/null 2>&1; then
             sudo apt-get install -y -qq "$pkg" >/dev/null 2>&1 || echo "  (couldn't install $pkg, skipping)"
         fi
@@ -54,7 +54,7 @@ if command -v apt-get >/dev/null 2>&1; then
     fi
 else
     say "No apt-get here, so system libraries were not installed."
-    echo "Install ALSA (libasound), OpenGL, X11 and libudev with your package manager if the game won't start."
+    echo "Install ALSA (libasound), OpenGL, X11, libudev and hidapi with your package manager if the game won't start."
 fi
 
 say "Copying the game to $DEST"
