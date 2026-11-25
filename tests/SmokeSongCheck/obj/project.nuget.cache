@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "k6XAMXQfRNelJ8W9qbC79I01ZlR4d9j/fhcBzi+SCwNZMzv2fGPhwuRhNb5kz95ZDMCRDxyj6x69ThJBBJXqLQ==",
+  "success": true,
+  "projectFilePath": "/home/user/YARG_Resurrected/tests/SmokeSongCheck/SmokeSongCheck.csproj",
+  "expectedPackageFiles": [
+    "/root/.nuget/packages/melanchall.drywetmidi.nativeless/7.0.0/melanchall.drywetmidi.nativeless.7.0.0.nupkg.sha512",
+    "/root/.nuget/packages/newtonsoft.json/13.0.3/newtonsoft.json.13.0.3.nupkg.sha512",
+    "/root/.nuget/packages/system.runtime.compilerservices.unsafe/6.0.0/system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "/root/.nuget/packages/zstring/2.5.1/zstring.2.5.1.nupkg.sha512"
+  ],
+  "logs": []
+}

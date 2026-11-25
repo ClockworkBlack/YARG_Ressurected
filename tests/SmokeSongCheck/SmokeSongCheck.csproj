@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Runs tests/smoke-song (the song the desktop play tests use) through YARG.Core's own song
+       scanner and chart loader, so a broken test song is caught before a 30-minute Unity build.
+       Run: dotnet run, project tests/SmokeSongCheck, with YargCore set to a YARG.Core checkout
+       and the song folder as the only argument (see the tests job in .github/workflows/linux.yml). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>SmokeSongCheck</RootNamespace>
+    <!-- YARG.Core opens its internal song scanner to an assembly of this name (its own unit
+         tests); borrowing the name lets this check call the scanner directly. -->
+    <AssemblyName>YARG.Core.UnitTests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(YargCore)/YARG.Core/YARG.Core.csproj" />
+  </ItemGroup>
+
+</Project>

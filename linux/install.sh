@@ -47,6 +47,11 @@ if command -v apt-get >/dev/null 2>&1; then
             sudo apt-get install -y -qq "$pkg" >/dev/null 2>&1 || echo "  (couldn't install $pkg, skipping)"
         fi
     done
+    # The game plays sound through ALSA. On systems where PipeWire is the sound server (newer
+    # Chromebook Linux, Ubuntu 22.10+), ALSA needs PipeWire's plugin or the game starts silent.
+    if pgrep -x pipewire >/dev/null 2>&1 && apt-cache show pipewire-alsa >/dev/null 2>&1; then
+        sudo apt-get install -y -qq pipewire-alsa >/dev/null 2>&1 || echo "  (couldn't install pipewire-alsa)"
+    fi
 else
     say "No apt-get here, so system libraries were not installed."
     echo "Install ALSA (libasound), OpenGL, X11 and libudev with your package manager if the game won't start."

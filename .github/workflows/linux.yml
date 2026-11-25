@@ -30,7 +30,7 @@ env:
 
 jobs:
   tests:
-    name: Automated tests (phone remote, guitar sound)
+    name: Automated tests (phone remote, guitar sound, play-test song)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +41,16 @@ jobs:
         run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
       - name: Run tests
         run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes" "$RUNNER_TEMP/demo"
+      - name: Check the play-test song with the game's own song scanner
+        run: |
+          git init "$RUNNER_TEMP/up"
+          git -C "$RUNNER_TEMP/up" remote add origin "https://github.com/$UPSTREAM_REPO"
+          GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" fetch -q --depth 1 origin "$UPSTREAM_REF"
+          GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" checkout -q FETCH_HEAD
+          GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" submodule update -q --init --depth 1 YARG.Core
+          for p in patches-core/*.patch; do git -C "$RUNNER_TEMP/up/YARG.Core" apply --whitespace=nowarn "$GITHUB_WORKSPACE/$p"; done
+          dotnet run --project tests/SmokeSongCheck -c Release -p:YargCore="$RUNNER_TEMP/up/YARG.Core" \
+            -- "tests/smoke-song/Smoke Test - YARG Resurrected"
 
   linux:
     name: Unity Linux x86_64 build
@@ -153,17 +163,72 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
+          retention-days: 14
           name: YARG-Resurrected-linux
           path: ${{ steps.zip.outputs.file }}
 
+  play-test:
+    name: Play test on Linux (installed with install.sh)
+    needs: [linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: YARG-Resurrected-linux
+          path: dist
+      - name: Virtual sound card (the song only moves on while its audio plays)
+        uses: LABSN/sound-ci-helpers@v1
+      - name: Unpack the game
+        run: |
+          # Software OpenGL for the virtual screen, and ALSA -> PulseAudio for the game's sound
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libasound2-plugins >/dev/null
+          cd "$RUNNER_TEMP"
+          tar xzf "$GITHUB_WORKSPACE/dist/"*.tar.gz
+          # Install the way the Chromebook guide says, then test the installed copy
+          bash YARG-Resurrected/install.sh
+          test -f "$HOME/.local/share/applications/yarg-resurrected.desktop"
+          echo "GAME=$HOME/.local/share/YARG-Resurrected/YARG.x86_64" >> "$GITHUB_ENV"
+      - name: Start the game, play the test song with a bot, check the result
+        run: bash tests/desktop-play-test.sh "$GAME" "$RUNNER_TEMP/play-test"
+      - name: Keep the logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-test-linux
+          path: ${{ runner.temp }}/play-test
+          if-no-files-found: warn
+
+  release:
+    name: Publish (only after the play test passed)
+    needs: [linux, play-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: YARG-Resurrected-linux
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: play-test-linux
+          path: play-test
       - name: Publish as a GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: linux-build-${{ github.run_number }}
           name: YARG Resurrected for Linux and Chromebook, build ${{ github.run_number }}
           prerelease: true
-          files: ${{ steps.zip.outputs.file }}
+          files: |
+            dist/*
+            play-test/menu.png
+            play-test/gameplay.png
           body: |
+            Play-tested on a GitHub Linux machine before publishing: the game started, reached the menu,
+            scanned a test song and played it with a bot (screenshots attached).
             Linux (x86_64) build of YARG Resurrected (upstream `${{ env.UPSTREAM_REF }}`), with the same
             features as the Android, Windows and Mac builds. Also runs on Intel/AMD Chromebooks in the
             Linux development environment.
