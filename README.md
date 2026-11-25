@@ -29,6 +29,10 @@ copies `overlay/` on top, builds the native libraries (`android/native/`), then 
 
 > Status: **experimental.** Expect the first CI runs to need fixes from the logs.
 
+**Website:** `site/` is a download page and player guide, published to GitHub Pages by
+`.github/workflows/pages.yml` (one time: **Settings → Pages → Source: GitHub Actions**). Its download
+buttons always point at the newest game and Converter builds in Releases.
+
 ## Gamepad (PS5 controller layout, others supported)
 
 The game is set up for a **PS5 DualSense** (PS4 works the same) and uses the usual PlayStation

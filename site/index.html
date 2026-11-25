@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YARG Resurrected</title>
+  <meta name="description" content="A 64-bit Android build of YARG (Yet Another Rhythm Game) for modern phones, with touch, gamepad, guitar and phone-as-controller support.">
+  <meta name="theme-color" content="#0e0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Crect x='1' y='4' width='4' height='22' rx='2' fill='%233ddc84'/%3E%3Crect x='7' y='4' width='4' height='22' rx='2' fill='%23ff5a5f'/%3E%3Crect x='13' y='4' width='4' height='22' rx='2' fill='%23ffd23f'/%3E%3Crect x='19' y='4' width='4' height='22' rx='2' fill='%233fa7ff'/%3E%3Crect x='25' y='4' width='4' height='22' rx='2' fill='%23ff8c32'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="./"><span class="frets" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>YARG Resurrected</a>
+      <nav>
+        <a href="./" aria-current="page">Download</a>
+        <a href="guide.html">Guide</a>
+        <a href="#" data-repo-link="">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="hero">
+      <span class="badge">Android · arm64 · experimental</span>
+      <h1>YARG on your phone, <span>64-bit</span>.</h1>
+      <p class="lead">An Android build of YARG (Yet Another Rhythm Game) for modern phones like the Galaxy Z Fold 7.
+        Play guitar, bass, drums and vocals with touch, a gamepad, a guitar controller, or friends' phones over Wi-Fi.</p>
+
+      <div class="downloads">
+        <div class="card" data-release="build-">
+          <h3>YARG Resurrected</h3>
+          <p class="meta">Looking up the newest build…</p>
+          <a class="btn primary" href="#" aria-disabled="true">Download APK</a>
+          <a class="btn ghost" href="#" data-notes data-repo-link="/releases">Release notes</a>
+          <a class="btn ghost" href="#" data-extra="guitar-sound-demo.wav" hidden>Hear the guitar sounds (.wav)</a>
+        </div>
+        <div class="card" data-release="converter-">
+          <h3>YARG Converter</h3>
+          <p class="meta">Looking up the newest build…</p>
+          <a class="btn primary" href="#" aria-disabled="true">Download APK</a>
+          <a class="btn ghost" href="#" data-notes data-repo-link="/releases">Release notes</a>
+        </div>
+      </div>
+      <p class="note">The game needs a 64-bit (arm64) Android phone. The Converter is an optional companion app that turns your own MP3, WAV or FLAC files into playable songs.</p>
+    </div>
+
+    <section id="install">
+      <h2>Install</h2>
+      <ol class="steps">
+        <li><strong>Download the APK on your phone</strong>Tap <em>Download APK</em> above. When it finishes, open it. If Android asks, allow your browser or file manager to install unknown apps.</li>
+        <li><strong>Allow All files access</strong>Open YARG and allow <em>All files access</em> when Android asks. YARG needs it to read your songs folder.</li>
+        <li><strong>Add songs</strong>Put song folders (Clone Hero, YARG or Rock Band format) in <code>Internal storage/YARG/songs</code>. Songs made with the Converter go there automatically.</li>
+        <li><strong>Scan</strong>In YARG: <em>Settings → Songs → Scan Songs</em>, or in the music library: <em>More Options → Scan Songs</em>.</li>
+        <li><strong>Add a controller to a profile</strong>Pick <em>Gamepad: PS5 / PS4 / Xbox / other</em>, <em>CRKD Guitar</em> or <em>Other guitar</em>. For touch buttons: <em>Profiles → Add Device → Virtual</em>.</li>
+      </ol>
+      <div class="callout">
+        <strong>Updating:</strong> if a new build won't install over the old one, uninstall the old app first.
+        This happens when builds aren't signed with the same key. Your songs folder stays on the phone either way.
+      </div>
+      <div class="callout warn">
+        Only play songs you own (for example, charts from your own Rock Band DLC) or free and official setlists.
+      </div>
+    </section>
+
+    <section id="features">
+      <h2>What's in it</h2>
+      <div class="features">
+        <div class="feature" style="--c: var(--green)">
+          <h3>Built for 64-bit phones</h3>
+          <p>A 64-bit build with arm64 audio and database libraries, so it runs on 64-bit-only chips like the Snapdragon 8 Elite.</p>
+        </div>
+        <div class="feature" style="--c: var(--red)">
+          <h3>Friends' phones as guitars and mics</h3>
+          <p>Other phones on the same Wi-Fi join from their browser, with nothing to install. No Wi-Fi? The host can start its own network.</p>
+        </div>
+        <div class="feature" style="--c: var(--yellow)">
+          <h3>Gamepads and guitars</h3>
+          <p>PS5 / PS4 layout by default, plus Xbox, Switch and generic pads. CRKD and other guitar controllers too.</p>
+        </div>
+        <div class="feature" style="--c: var(--blue)">
+          <h3>Guitar sound on your notes</h3>
+          <p>Songs without a separate guitar track get one, played on a modelled guitar, so misses drop out just like on the real track.</p>
+        </div>
+        <div class="feature" style="--c: var(--orange)">
+          <h3>Song Setup</h3>
+          <p>Change speed (50–200%) and key, loop a section with a live preview, or turn on freestyle guitar.</p>
+        </div>
+        <div class="feature">
+          <h3>Your own menu music</h3>
+          <p>Choose a song to play on startup and a playlist for the menus, shuffled or in order.</p>
+        </div>
+        <div class="feature" style="--c: var(--green)">
+          <h3>Phone mic for vocals</h3>
+          <p>Sing into the host phone's own mic, or another phone's mic over Wi-Fi.</p>
+        </div>
+        <div class="feature" style="--c: var(--red)">
+          <h3>Error logs you can send</h3>
+          <p>Errors are saved to <code>YARG/logs/yarg-errors.txt</code> on the phone. Nothing is uploaded.</p>
+        </div>
+      </div>
+      <p><a href="guide.html">Read the full guide →</a></p>
+    </section>
+
+    <section id="converter">
+      <h2>YARG Converter</h2>
+      <p>A companion app that turns an MP3, WAV or FLAC into a song folder you can play right away:
+        guitar and bass charts on Easy to Expert, Star Power, practice sections and lyrics, written into
+        <code>YARG/songs/Converted/</code>.</p>
+      <ul>
+        <li>Optional instrument separation makes the guitar chart from the guitar alone (a one-time 136 MB model download).</li>
+        <li>Lyrics can come from LRCLIB, from an <code>.lrc</code> file, or be pasted in and synced by tapping along.</li>
+        <li>Everything else runs on the phone.</li>
+      </ul>
+      <p><a href="#" data-repo-link="/blob/main/converter/README.md">Converter instructions →</a></p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <p>YARG Resurrected is an unofficial Android build of <a href="https://github.com/YARC-Official/YARG">YARG</a>,
+        based on <a href="https://github.com/putudarma/YARG-DROID">YARG-DROID</a> by putudarma, with Android groundwork by JordanSanchez06.
+        YARG and these patches are LGPL-3.0.</p>
+      <p>Audio uses BASS, which is free for non-commercial use only (<a href="https://www.un4seen.com/bass.html#license">un4seen license</a>). Please don't sell builds.</p>
+    </div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

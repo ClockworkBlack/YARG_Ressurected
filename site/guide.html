@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YARG Resurrected Guide</title>
+  <meta name="description" content="How to play YARG Resurrected on Android: gamepads, phone remotes, menu music, Song Setup, guitar sound and error logs.">
+  <meta name="theme-color" content="#0e0f14">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3E%3Crect x='1' y='4' width='4' height='22' rx='2' fill='%233ddc84'/%3E%3Crect x='7' y='4' width='4' height='22' rx='2' fill='%23ff5a5f'/%3E%3Crect x='13' y='4' width='4' height='22' rx='2' fill='%23ffd23f'/%3E%3Crect x='19' y='4' width='4' height='22' rx='2' fill='%233fa7ff'/%3E%3Crect x='25' y='4' width='4' height='22' rx='2' fill='%23ff8c32'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="./"><span class="frets" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>YARG Resurrected</a>
+      <nav>
+        <a href="./">Download</a>
+        <a href="guide.html" aria-current="page">Guide</a>
+        <a href="#" data-repo-link="">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="wrap guide">
+    <nav class="toc" aria-label="On this page">
+      <p>On this page</p>
+      <ul>
+        <li><a href="#gamepad">Gamepads</a></li>
+        <li><a href="#phone-remote">Phone remote</a></li>
+        <li><a href="#menu-music">Menu music</a></li>
+        <li><a href="#song-setup">Song Setup</a></li>
+        <li><a href="#guitar-sound">Guitar sound</a></li>
+        <li><a href="#logs">Error logs</a></li>
+        <li><a href="#build">Build it yourself</a></li>
+      </ul>
+    </nav>
+
+    <article>
+      <section>
+        <h2 id="gamepad">Gamepads</h2>
+        <p>The game is set up for a <strong>PS5 DualSense</strong> (a PS4 controller works the same way) and uses the usual PlayStation buttons.
+          Xbox, Switch and generic Android pads work too: pick yours in <em>Settings → General → Controller Layout</em>.</p>
+
+        <h3>Menus</h3>
+        <p>Any connected gamepad can move around the menus straight away, before you add it to a profile.</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Menu action</th><th>PS5 / PS4 (default)</th><th>Xbox / generic</th><th>Nintendo Switch</th><th>PlayStation, Japan style</th></tr></thead>
+            <tbody>
+              <tr><td>Move</td><td>D-pad or left stick (hold to scroll)</td><td>same</td><td>same</td><td>same</td></tr>
+              <tr><td>Confirm / select (green)</td><td>Cross</td><td>A</td><td>A (right)</td><td>Circle</td></tr>
+              <tr><td>Back (red)</td><td>Circle</td><td>B</td><td>B (bottom)</td><td>Cross</td></tr>
+              <tr><td>Yellow action (Play Show / Start Setlist)</td><td>Triangle</td><td>Y</td><td>Y</td><td>Triangle</td></tr>
+              <tr><td>Blue action (Filters)</td><td>Square</td><td>X</td><td>X</td><td>Square</td></tr>
+              <tr><td>More Options (orange)</td><td>L1 or R1</td><td>LB or RB</td><td>L or R</td><td>L1 or R1</td></tr>
+              <tr><td>Start / pause</td><td>Options</td><td>Menu</td><td>+</td><td>Options</td></tr>
+              <tr><td>Select (go to the song that's playing, on the main menu)</td><td>Create</td><td>View</td><td>−</td><td>Create</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>While a gamepad is connected, the bar at the bottom of the screen names the button for each action (for example "Back  Circle").
+          To turn this off, use <em>Settings → General → Show Controller Button Names</em>.</p>
+        <p>A gamepad in a profile uses that profile's menu buttons, which are set from the Controller Layout when you add the gamepad.
+          After changing the layout, remove the gamepad from its profile and add it again, or change the buttons in the profile's binding menu.</p>
+
+        <h3>Playing a song</h3>
+        <p>When you add a gamepad to a profile, pick <em>Gamepad: PS5 / PS4 / Xbox / other</em>. Guitar and bass use the Guitar Hero 2 layout:</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Guitar</th><th>PS5 / PS4</th><th>Xbox</th></tr></thead>
+            <tbody>
+              <tr><td>Green / Red / Yellow / Blue</td><td>L2 / L1 / R1 / R2</td><td>LT / LB / RB / RT</td></tr>
+              <tr><td>Orange</td><td>Cross</td><td>A</td></tr>
+              <tr><td>Strum</td><td>D-pad Up / Down</td><td>D-pad Up / Down</td></tr>
+              <tr><td>Star Power</td><td>Create</td><td>View</td></tr>
+              <tr><td>Whammy</td><td>Left stick left/right</td><td>Left stick left/right</td></tr>
+              <tr><td>Pause</td><td>Options</td><td>Menu</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>On vocals, Cross / A hits percussion notes and Create / View is Star Power. In the pause menu, the menu buttons above apply.
+          You can remap any button in the profile's binding menu. For a guitar controller, pick <em>CRKD Guitar</em> or <em>Other guitar</em> instead of Gamepad.</p>
+      </section>
+
+      <section>
+        <h2 id="phone-remote">Phone remote: friends' phones as guitars and mics</h2>
+        <p>Other phones on the same Wi-Fi (or on your hotspot) can join from their <strong>browser</strong>, with nothing to install.</p>
+        <ol class="steps">
+          <li><strong>No shared Wi-Fi?</strong>On the host, tap the <em>PHONES</em> bar on the main menu, then <em>Start game network</em>.
+            YARG starts a private Wi-Fi network (no internet) and shows a QR code to join it, plus a second one to open the page.
+            Android asks for the "Nearby devices" permission the first time (Location on Android 12 and older).</li>
+          <li><strong>Find the address</strong>On the host, the main menu shows a <em>PHONES</em> bar with the address. Tap it for QR codes.</li>
+          <li><strong>Open it on the guest's phone</strong>The browser warns that the connection isn't private, because the certificate is self-signed.
+            Tap <em>Advanced → Proceed</em>. On iPhone, use Safari: <em>Show Details → visit this website</em>.</li>
+          <li><strong>Join</strong>Type a name, pick <em>Guitar</em>, <em>Bass</em> or <em>Vocals</em> and a difficulty, then tap <em>Join</em>. Turn the phone sideways.
+            The host adds a player for that phone automatically between songs. A phone that joins mid-song is added when the song ends.
+            Pick <em>Controller only</em> if you want to set the phone up yourself in Profiles.
+            <ul>
+              <li><strong>Play</strong> tab: tap the colored <em>Lanes</em> (each tap strums, and chords work), or switch to <em>Frets</em> for frets, a strum pad and whammy.</li>
+              <li><strong>Menu</strong> tab: D-pad, OK, Back and Start for moving around YARG's menus.</li>
+              <li><strong>Mic</strong> tab: <em>Start mic</em> streams the phone's mic to the host for vocals.</li>
+            </ul>
+          </li>
+          <li><strong>Set it up by hand (optional)</strong>On the host: <em>Profiles</em> → pick or make a profile → <em>Add Device</em> → <em>"&lt;name&gt; (phone)"</em> for the controller,
+            or <em>"Phone mic: &lt;name&gt;"</em> for a vocals profile. The phone's profile reconnects by itself next time. The host's own mic shows up as <em>"This phone's mic"</em>.</li>
+        </ol>
+
+        <h3>How timing is kept tight</h3>
+        <ul>
+          <li>Each phone syncs its clock with the host and stamps every press with the moment the screen was touched.</li>
+          <li>The host plays each press a fixed few milliseconds after that moment, a bit more than the connection's usual delay (measured between songs).
+            This keeps Wi-Fi jitter out of the game. The host also shifts that player's input calibration by the same amount, so each press is judged at the moment of the touch.</li>
+          <li>While phones are connected, Android's Wi-Fi power saving is turned off for the app.</li>
+          <li>The game runs at the screen's refresh rate (120 Hz on a Z Fold 7) when the FPS cap is left at 60.</li>
+        </ul>
+
+        <div class="callout">
+          <ul>
+            <li>The <code>http://</code> address works too, but only for the controller. Browsers only allow the mic on <code>https://</code>.</li>
+            <li>Each build makes a new self-signed certificate, so guests see the warning again after an update.</li>
+            <li>Anyone on the same Wi-Fi can open the page, so only use it on networks you trust.</li>
+            <li>Wi-Fi adds a little delay. If timing feels off, run YARG's calibration with a phone.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <h2 id="menu-music">Menu music: a startup song and a playlist</h2>
+        <p>The menus play songs from your library in the background. You choose what plays:</p>
+        <ul>
+          <li><strong>A song on startup.</strong> In the music library, highlight a song, open <em>More Options</em> (orange / LB) and choose <em>Play On Startup</em>.
+            It plays first every time the game starts, then the menu music carries on as below. To turn it off, choose <em>Don't Play On Startup</em> on the same song,
+            or set <em>Settings → Sound → Startup Song</em> to <em>None</em>.</li>
+          <li><strong>Which songs play after it.</strong> <em>Settings → Sound → Menu Music</em>: <em>Whole library</em>, <em>Favorites</em>, or any of your playlists.
+            Or, in the music library's <em>Playlists</em> view, highlight a playlist (or Favorites), open <em>More Options</em> and choose <em>Use As Menu Music</em>
+            (<em>Stop Using As Menu Music</em> goes back to the whole library). The music switches right away.</li>
+          <li><strong>Order.</strong> <em>Settings → Sound → Shuffle Menu Music</em>: on plays songs in random order, off plays the playlist in its own order and loops it.</li>
+          <li><strong>Volume</strong> is still <em>Settings → Sound → Music Player Volume</em>. Set it to 0 to turn menu music off.</li>
+        </ul>
+        <p>If the playlist is empty, deleted, or none of its songs are in the library, the whole library plays instead.</p>
+      </section>
+
+      <section>
+        <h2 id="song-setup">Song Setup: speed, key, a section, freestyle</h2>
+        <p>After picking a song, the instrument / difficulty screen shows a <em>SONG SETUP</em> bar at the bottom.
+          Tap it to open a screen where you can change these while listening to the song:</p>
+        <ul>
+          <li><strong>Speed</strong>, from 50% to 200%. This is the same setting as the game's own song speed box.</li>
+          <li><strong>Key</strong>, up to 12 semitones down or up, without changing the speed. The generated guitar and freestyle notes move with it.</li>
+          <li><strong>Section.</strong> A bar shows the whole song. Drag its two yellow ends to choose where to start and stop, tap anywhere on the bar to hear the song from there,
+            or use <em>Start here</em> / <em>End here</em> while it plays. The preview loops the chosen part at the chosen speed and key.
+            If you start a song with a section chosen, it plays in practice mode on that part, on repeat.</li>
+          <li><strong>Freestyle guitar.</strong> This stays on until you turn it off or close the game. Every strum plays a real guitar note at once, chart or no chart, in the song's own scale and tuning:
+            <ul>
+              <li>the five frets are the five notes of the song's pentatonic scale, with green lowest; a strum with no fret plays the note just below green;</li>
+              <li>strum down for the low octave, strum up for the octave above;</li>
+              <li>two frets make a power chord, three or more a fuller chord;</li>
+              <li>change frets while a note rings to hammer on or pull off, and let go of all frets to stop it;</li>
+              <li>the whammy bar bends the note down.</li>
+            </ul>
+            With freestyle on, your instrument gets no generated track (you are the guitar), and wrong strums don't clunk.
+            The chart still scrolls and scores as usual, so you can follow it or ignore it. Works for five-fret guitar, bass and rhythm.</li>
+        </ul>
+        <p>These settings belong to the song you opened the screen for. Picking a different song resets to normal speed, the original key and the whole song.</p>
+      </section>
+
+      <section>
+        <h2 id="guitar-sound">Guitar sound on your notes</h2>
+        <p>Guitar Hero songs come with the guitar on its own audio track: it plays while you hit notes and cuts out when you miss.
+          Songs you add yourself (and everything from the Converter) are a single recording, so there is nothing to cut.
+          With <em>Settings → Sound → Guitar Sound On Notes</em> on (the default), the game makes that track while the song loads:</p>
+        <ol class="steps">
+          <li><strong>It listens to the song.</strong>It works out the recording's tuning (many songs aren't at exactly A = 440 Hz), its scale,
+            and which note the music is on at each moment, separately for the guitar and bass range.</li>
+          <li><strong>It gives every note of your chart a pitch.</strong>That's the note the song is on, in an octave chosen so the line goes up when the frets go up
+            and repeats when they repeat. Two- and three-fret notes become power chords on the harmony's root note.</li>
+          <li><strong>It plays the chart on a modelled electric guitar</strong>(or bass, for a bass player): plucked strings through an amplifier and speaker cabinet,
+            with hammer-ons softer than picked notes, vibrato on long notes and strummed chords. There are three sounds: Clean, Rock and Heavy.</li>
+        </ol>
+        <p>The result is added to the song as its guitar (or bass) track, so the game treats it like the real thing.
+          It sounds exactly on the notes whatever your audio delay (including Bluetooth), drops out when you miss and comes back on the next hit,
+          bends with the whammy bar on sustains, gets the Star Power reverb, follows the Guitar / Bass volume sliders, and works in practice mode at any speed.
+          A wrong strum still makes the game's own "clunk".</p>
+        <ul>
+          <li>Only for five-fret guitar, bass and rhythm, and only when the song has no separate audio for that instrument. Songs with a real guitar track are left alone.</li>
+          <li>With several guitarists on one instrument, you hear the hardest difficulty being played.</li>
+          <li>"Mute On Miss" must not be Off for the sound to drop out on misses (it's on by default).</li>
+          <li>Loading takes a few seconds longer. Songs over 20 minutes are skipped.</li>
+          <li>Every build's release includes <code>guitar-sound-demo.wav</code>: the three guitar sounds and the bass, recorded by the automated tests.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 id="logs">Error logs on the phone</h2>
+        <p>The game keeps a copy of its log next to your songs, in <code>Internal storage/YARG/logs</code>, so you can open or send it from any file manager:</p>
+        <ul>
+          <li><code>yarg-errors.txt</code>: only the errors, from every run, with the build and phone they happened on. <strong>This is the file to send when something goes wrong.</strong></li>
+          <li><code>yarg-log-&lt;date&gt;_&lt;time&gt;.txt</code>: everything the game logged in one run. The newest 10 are kept.</li>
+        </ul>
+        <p>It records errors the game caught, exceptions nothing caught (with where they happened), and low-memory warnings.
+          If a song fails to start, a dialog says why and the game goes back to the menu, instead of stopping on an empty screen.
+          Nothing is uploaded: the files stay on the phone. A crash inside a native library (the app closing with no message) isn't recorded.</p>
+        <p>To report a problem, <a href="#" data-repo-link="/issues/new">open an issue on GitHub</a> and attach <code>yarg-errors.txt</code>.</p>
+      </section>
+
+      <section>
+        <h2 id="build">Build it yourself</h2>
+        <p>Every build comes from GitHub Actions: it downloads YARG-DROID at a pinned commit, applies this repo's patches and overlay,
+          builds the arm64 native libraries with the Android NDK, then builds the APK with Unity and publishes it as a GitHub Release.
+          To build your own copy, fork the repo and follow the one-time setup in the
+          <a href="#" data-repo-link="#setup-one-time">README</a> (a free Unity personal license and three repository secrets), then run
+          <em>Actions → Build Android APK → Run workflow</em>.</p>
+      </section>
+    </article>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <p>YARG Resurrected is an unofficial Android build of <a href="https://github.com/YARC-Official/YARG">YARG</a>,
+        based on <a href="https://github.com/putudarma/YARG-DROID">YARG-DROID</a> by putudarma, with Android groundwork by JordanSanchez06.
+        YARG and these patches are LGPL-3.0.</p>
+      <p>Audio uses BASS, which is free for non-commercial use only (<a href="https://www.un4seen.com/bass.html#license">un4seen license</a>). Please don't sell builds.</p>
+    </div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
