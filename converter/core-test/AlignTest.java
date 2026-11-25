@@ -312,9 +312,14 @@ final class AlignTest {
         float[][] e = heard(lines, truth, 160, rnd);
 
         check(WordAligner.canAlign(lines), "English lyrics can be aligned");
-        List<Lrc.Line> korean = new ArrayList<>();
+        List<Lrc.Line> korean = new ArrayList<>(), chinese = new ArrayList<>();
         for (int i = 0; i < 8; i++) korean.add(new Lrc.Line(i * 3, "\uC0AC\uB791\uD574\uC694 \uADF8\uB300\uB97C"));
-        check(!WordAligner.canAlign(korean), "lyrics in another script are left to the voice-only check");
+        for (int i = 0; i < 8; i++) chinese.add(new Lrc.Line(i * 3, "\u6211\u7231\u4F60\u4E2D\u56FD \u4EB2\u7231\u7684"));
+        check(WordAligner.canAlign(korean), "Korean lyrics are read by their sound");
+        check(WordAligner.readable("\uC0AC\uB791\uD574\uC694 girl").equals("saranghaeyo girl"), "Korean as it sounds: " + WordAligner.readable("\uC0AC\uB791\uD574\uC694 girl"));
+        check(WordAligner.readable("\u304D\u307F\u306E \u30C8\u30FC\u30AD\u30E7\u30FC").equals("kimino tookyoo"), "Japanese kana as it sounds: " + WordAligner.readable("\u304D\u307F\u306E \u30C8\u30FC\u30AD\u30E7\u30FC"));
+        check(WordAligner.readable("caf\u00E9").equals("cafe"), "accents dropped");
+        check(!WordAligner.canAlign(chinese), "Chinese characters are left to the voice-only check");
 
         WordAligner.Aligned a = WordAligner.align(lines, e);
         int right = 0;
@@ -336,6 +341,26 @@ final class AlignTest {
         for (int i = 0; i < 24; i++) other.add(new Lrc.Line(8 + 6 * i, elsewhere[i % 4] + (i % 3 == 0 ? " tonight" : "")));
         LyricAligner.Result not = WordAligner.place(other, e, map, 4, 120);
         check(!not.moved() && not.lines == other, "lyrics that do not fit the voice are left alone");
+
+        // The same right lyrics heard poorly (a language the model reads by sound, a group in unison):
+        // the letters fit worse everywhere, but still better in their own order than shuffled
+        float[][] blurred = new float[e.length][];
+        for (int f = 0; f < e.length; f++) {
+            blurred[f] = e[f].clone();
+            for (int k = 0; k < blurred[f].length; k++) blurred[f][k] = Math.max(blurred[f][k] * 0.35f - 2.6f, -9f);
+        }
+        LyricAligner.Result poor = WordAligner.place(lines, blurred, map, 4, 120);
+        check(poor.moved(), "right lyrics heard poorly are still used");
+        LyricAligner.Result poorWrong = WordAligner.place(other, blurred, map, 4, 120);
+        check(!poorWrong.moved(), "wrong lyrics heard poorly are still refused");
+
+        // A good lyric file is believed on unclear lines, but never back into a crammed place
+        List<Lrc.Line> nearlyRight = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) nearlyRight.add(new Lrc.Line(truth[i], lines.get(i).text));
+        nearlyRight.set(13, new Lrc.Line(truth[14] - 0.2, lines.get(13).text));
+        LyricAligner.Result believed = WordAligner.place(nearlyRight, e, map, 4, 120);
+        check(believed.lines.size() == truth.length && Math.abs(believed.lines.get(13).time - truth[13]) <= 0.1,
+                "a line the file crams against the next stays where it is sung (" + (believed.lines.size() > 13 ? believed.lines.get(13).time : -1) + ", sung at " + truth[13] + ")");
 
         // A verse the lyric sheet has and this recording does not: left out, and nothing else disturbed
         List<Lrc.Line> longer = new ArrayList<>(lines);

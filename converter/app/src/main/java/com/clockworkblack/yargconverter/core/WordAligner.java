@@ -25,7 +25,8 @@ import java.util.Map;
  * entries alone, a speech recogniser's word times): this was the only one whose hook lines came
  * out the same in every repeat, within a twentieth of a second.
  *
- * English letters only for now: lyrics in other scripts are left to {@link LyricAligner}.
+ * Lyrics are read in Latin letters: English as written, Korean and Japanese kana by their sound
+ * ({@link #readable}). Lines in Chinese characters or other scripts are left to {@link LyricAligner}.
  */
 public final class WordAligner {
     private WordAligner() {}
@@ -63,8 +64,9 @@ public final class WordAligner {
         int latin = 0, other = 0, with = 0;
         for (Lrc.Line l : lines) {
             if (symbols(l.text).length > 0) with++;
-            for (int i = 0; i < l.text.length(); i++) {
-                char c = l.text.charAt(i);
+            String r = readable(l.text);
+            for (int i = 0; i < r.length(); i++) {
+                char c = r.charAt(i);
                 if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) latin++;
                 else if (Character.isLetter(c)) other++;
             }
@@ -72,9 +74,65 @@ public final class WordAligner {
         return with >= 4 && latin >= 20 && other * 5 <= latin;
     }
 
+    private static final String[] HANGUL_FIRST = {"g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h"};
+    private static final String[] HANGUL_MIDDLE = {"a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i"};
+    private static final String[] HANGUL_LAST = {"", "k", "k", "k", "n", "n", "n", "t", "l", "k", "m", "l", "l", "l", "p", "l", "m", "p", "p", "t", "t", "ng", "t", "t", "k", "t", "p", "t"};
+    private static final String KANA = "\u3042a \u3044i \u3046u \u3048e \u304Ao \u304Bka \u304Dki \u304Fku \u3051ke \u3053ko \u304Cga \u304Egi \u3050gu \u3052ge \u3054go "
+            + "\u3055sa \u3057shi \u3059su \u305Bse \u305Dso \u3056za \u3058ji \u305Azu \u305Cze \u305Ezo \u305Fta \u3061chi \u3064tsu \u3066te \u3068to "
+            + "\u3060da \u3062ji \u3065zu \u3067de \u3069do \u306Ana \u306Bni \u306Cnu \u306Dne \u306Eno \u306Fha \u3072hi \u3075fu \u3078he \u307Bho "
+            + "\u3070ba \u3073bi \u3076bu \u3079be \u307Cbo \u3071pa \u3074pi \u3077pu \u307Ape \u307Dpo \u307Ema \u307Fmi \u3080mu \u3081me \u3082mo "
+            + "\u3084ya \u3086yu \u3088yo \u3089ra \u308Ari \u308Bru \u308Cre \u308Dro \u308Fwa \u3092o \u3093n \u3083ya \u3085yu \u3087yo "
+            + "\u3041a \u3043i \u3045u \u3047e \u3049o \u3094vu";
+    private static final Map<Character, String> KANA_SOUND = new HashMap<>();
+    static {
+        for (String pair : KANA.split(" ")) {
+            char hira = pair.charAt(0);
+            KANA_SOUND.put(hira, pair.substring(1));
+            // Katakana is the same table, 0x60 further on
+            KANA_SOUND.put((char) (hira + 0x60), pair.substring(1));
+        }
+    }
+
+    /**
+     * The line written in plain Latin letters as it sounds, for the speech model: Korean by its
+     * sound (Revised Romanization), Japanese kana in Hepburn, accents dropped (caf\u00e9 is cafe).
+     * Chinese characters and other scripts are left as they are, and so are not followed.
+     */
+    public static String readable(String text) {
+        if (text == null) return "";
+        StringBuilder sb = new StringBuilder();
+        String t = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFC);
+        for (int i = 0; i < t.length(); i++) {
+            char c = t.charAt(i);
+            if (c >= 0xAC00 && c <= 0xD7A3) {
+                int n = c - 0xAC00;
+                sb.append(HANGUL_FIRST[n / 588]).append(HANGUL_MIDDLE[(n % 588) / 28]).append(HANGUL_LAST[n % 28]);
+            } else if (KANA_SOUND.containsKey(c)) {
+                String sound = KANA_SOUND.get(c);
+                boolean small = "\u3083\u3085\u3087\u30E3\u30E5\u30E7".indexOf(c) >= 0;
+                if (small && sb.length() > 0 && sb.charAt(sb.length() - 1) == 'i') {
+                    // ki + small ya is kya; shi + small ya is sha
+                    sb.setLength(sb.length() - 1);
+                    if (sb.length() >= 2 && (sb.toString().endsWith("sh") || sb.toString().endsWith("ch") || sb.toString().endsWith("j"))) sound = sound.substring(1);
+                }
+                sb.append(sound);
+            } else if (c == '\u3063' || c == '\u30C3') {
+                // A small tsu doubles the next sound: written here as a short pause, a space-free gap
+                continue;
+            } else if (c == '\u30FC') {
+                if (sb.length() > 0) sb.append(sb.charAt(sb.length() - 1));
+            } else {
+                String plain = java.text.Normalizer.normalize(String.valueOf(c), java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+                sb.append(plain);
+            }
+        }
+        return sb.toString();
+    }
+
     /** A line as the model's symbols: its words' letters, a space symbol after each word. Bracketed asides are left out. */
     public static int[] symbols(String text) {
         if (text == null) return new int[0];
+        text = readable(text);
         String body = text.replaceAll("\\([^)]*\\)", " ");
         boolean any = false;
         for (int i = 0; i < body.length() && !any; i++) any = Character.isLetter(body.charAt(i));
@@ -285,8 +343,13 @@ public final class WordAligner {
     static final double CLEAR_FIT = -0.5;
     /** A line taken out is put back when, among the lines that stayed, it fits at least this well. */
     static final double BACK_IN_FIT = -3.0;
-    /** Lyrics fitting worse than this on average are not this song's (right ones: about -1.7; wrong ones: -2.7 and below). */
-    static final double MIN_FIT = -2.3;
+    /**
+     * Right lyrics must fit at least this much better in their own order than shuffled. Measured
+     * on 11 songs: right lyrics +0.49 (Korean, group vocals) to +3.75; wrong lyrics -0.12 to -0.01.
+     * (A fixed limit on the fit did not work: the wrong song's lyrics on one song fitted better
+     * than the right lyrics on another.)
+     */
+    static final double MIN_MARGIN = 0.25;
 
     /**
      * @param timesKnown false when the lyrics came without times and the ones on the lines mean nothing
@@ -374,8 +437,11 @@ public final class WordAligner {
             placed++;
             fitSum += a.fit[i];
         }
-        // Lyrics of another song, another language, a voice the model cannot follow: not trusted
-        if (placed < n * 0.8 || fitSum / Math.max(1, placed) < MIN_FIT) {
+        // Lyrics of another song, or a voice the model cannot follow: not trusted. How well the
+        // letters fit depends on the language and the singing (Korean read by sound, a group in
+        // unison, rap), so the fit is judged against the same lines in a shuffled order: right
+        // lyrics fit clearly better in their own order, wrong ones no better than shuffled.
+        if (placed < n * 0.8 || fitSum / Math.max(1, placed) - shuffledFit(sung, logProbs) < MIN_MARGIN) {
             r.leftOut = 0;
             return r;
         }
@@ -413,7 +479,13 @@ public final class WordAligner {
             // file is the better witness. The song's repeats are not needed.
             for (int i = 0; i < n; i++) {
                 if (Math.abs(t[i] - sung.get(i).time - lead) > 1.0 && a.fit[i] < CLEAR_FIT) {
-                    t[i] = Math.max(0, sung.get(i).time + lead);
+                    double fileTime = Math.max(0, sung.get(i).time + lead);
+                    // Not when the file's time would cram it against the line before or after:
+                    // that is the file's own mistake, which the voice has already put right
+                    double before = i > 0 ? t[i - 1] : Double.NEGATIVE_INFINITY;
+                    double after = i + 1 < n ? t[i + 1] : Double.POSITIVE_INFINITY;
+                    if (fileTime - before < 0.5 * need(sung.get(Math.max(0, i - 1)).text) || after - fileTime < 0.5 * need(sung.get(i).text)) continue;
+                    t[i] = fileTime;
                     fromFile++;
                 }
             }
@@ -458,6 +530,38 @@ public final class WordAligner {
         return kept;
     }
 
+    /** Roughly how long a line takes to sing, in seconds. */
+    private static double need(String text) {
+        int syllables = 0;
+        // Asides in brackets (echoes, ad-libs) are sung over the line, not after it
+        String body = text.replaceAll("\\([^)]*\\)", " ");
+        if (VocalCharter.words(body).isEmpty()) body = text;
+        for (String w : VocalCharter.words(readable(body))) syllables += VocalCharter.syllables(w);
+        return Math.max(0.8, 0.2 * syllables);
+    }
+
+    /** The best average fit of the lines in three shuffled orders (always the same three). */
+    private static double shuffledFit(List<Lrc.Line> lines, float[][] logProbs) {
+        double best = Double.NEGATIVE_INFINITY;
+        for (int r = 1; r <= 3; r++) {
+            List<String> texts = new ArrayList<>();
+            for (Lrc.Line l : lines) texts.add(l.text);
+            java.util.Collections.shuffle(texts, new java.util.Random(r));
+            List<Lrc.Line> shuffled = new ArrayList<>();
+            for (int i = 0; i < lines.size(); i++) shuffled.add(new Lrc.Line(lines.get(i).time, texts.get(i)));
+            Aligned a = align(shuffled, logProbs);
+            double sum = 0;
+            int n = 0;
+            for (int i = 0; i < a.start.length; i++) {
+                if (Double.isNaN(a.start[i])) continue;
+                sum += a.fit[i];
+                n++;
+            }
+            if (n > 0) best = Math.max(best, sum / n);
+        }
+        return best;
+    }
+
     /** Lines that could not be aligned (no letters) go between their neighbours. */
     private static void fillGaps(double[] t) {
         int n = t.length;
@@ -475,6 +579,7 @@ public final class WordAligner {
 
     /** The letters of a line without asides in brackets: lines with the same key are the same words. */
     public static String key(String text) {
+        text = readable(text);
         String k = text.replaceAll("\\([^)]*\\)", "").toLowerCase(Locale.US).replaceAll("[^a-z]", "");
         return k.isEmpty() ? text.toLowerCase(Locale.US).replaceAll("[^a-z]", "") : k;
     }

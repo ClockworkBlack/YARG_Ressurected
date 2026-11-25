@@ -162,10 +162,21 @@ From converting real songs and checking every line by ear and by speech recognit
     voice on 70% of the lines or more, the few lines that differ keep the file's time unless the
     voice was heard clearly there. A file that agrees on fewer lines (NetEase on the first
     song: 37%) is not trusted, and the voice and the song's repeats decide.
-12. **Still not covered:** only English letters; one singer-songwriter and one R&B group is a
+12. **Korean and Japanese are read by their sound.** Hangul is written out in Latin letters as
+    it is pronounced (Revised Romanization) and kana in Hepburn, so the English speech model can
+    follow them; accents are dropped. Chinese characters are still left to the voice-only check.
+13. **Right lyrics are told from wrong ones by order, not by a fixed fit.** Korean read by sound,
+    or a group singing in unison, fits worse even when right (Gee: -2.79) than the wrong song's
+    lyrics on another recording (-2.25). What does not change: right lyrics fit clearly better in
+    their own order than shuffled (+0.49 to +3.75 on 11 songs), wrong ones never do (-0.12 to
+    -0.01).
+14. **A lyric file's crammed lines are its own mistake.** Even a lyric file believed on unclear
+    lines does not get a line back where it would leave less than half the time the line takes
+    to sing; echoes in brackets do not count towards that time.
+15. **Still not covered:** one singer-songwriter and one R&B group is a
     narrow sample (no rap, no heavy backing vocals, no live recordings); nothing here was
     checked by ear.
-13. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
+16. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
    much closer (average 0.23 s on the same song); the phone has no speech recogniser for files.
 
 ## Finding the lyrics
