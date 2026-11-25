@@ -321,6 +321,50 @@ final class AlignTest {
         for (int i = 0; i < truth.length; i++) if (Math.abs(a.start[i] - truth[i]) <= 0.05) right++;
         check(right == truth.length, "every line found where its letters are (" + right + " of " + truth.length + ")");
 
+        // The whole way through, as the converter uses it
+        double[] grid = new double[330];
+        for (int i = 0; i < grid.length; i++) grid[i] = i * 0.5;
+        TempoMap map = TempoMap.fromBeats(grid, 0, 4);
+        LyricAligner.Result placed = WordAligner.place(lines, e, map, 4, 120);
+        int inPlaceAll = 0;
+        for (int i = 0; i < truth.length; i++) if (placed.lines.size() == truth.length && Math.abs(placed.lines.get(i).time - truth[i]) <= 0.1) inPlaceAll++;
+        check(placed.moved() && inPlaceAll == truth.length && placed.leftOut == 0, "the lyrics come out where they are sung (" + inPlaceAll + " of " + truth.length + ")");
+
+        // Lyrics of some other song: not trusted, nothing changed
+        List<Lrc.Line> other = new ArrayList<>();
+        String[] elsewhere = {"seven ships upon the sea", "quiet rivers running deep", "paper lanterns in the rain", "old piano out of tune"};
+        for (int i = 0; i < 24; i++) other.add(new Lrc.Line(8 + 6 * i, elsewhere[i % 4] + (i % 3 == 0 ? " tonight" : "")));
+        LyricAligner.Result not = WordAligner.place(other, e, map, 4, 120);
+        check(!not.moved() && not.lines == other, "lyrics that do not fit the voice are left alone");
+
+        // A verse the lyric sheet has and this recording does not: left out, and nothing else disturbed
+        List<Lrc.Line> longer = new ArrayList<>(lines);
+        String[] cut = {"somewhere past the river bend", "we buried all our yesterdays", "under heavy summer skies"};
+        for (int k = 0; k < 3; k++) longer.add(12 + k, new Lrc.Line(51 + k, cut[k]));
+        LyricAligner.Result shorter = WordAligner.place(longer, e, map, 4, 120);
+        int kept = 0;
+        for (int i = 0; i < truth.length; i++) {
+            if (shorter.lines.size() == truth.length && shorter.lines.get(i).text.equals(lines.get(i).text) && Math.abs(shorter.lines.get(i).time - truth[i]) <= 0.1) kept++;
+        }
+        check(shorter.leftOut == 3 && kept == truth.length, "lines not in the recording are left out, the rest stay (" + shorter.leftOut + " left out, " + kept + " of " + truth.length + " in place)");
+
+        // The recording has a hook the lyric sheet leaves out: the others are not pulled on to its words
+        List<Lrc.Line> fewer = new ArrayList<>();
+        List<Double> fewerTruth = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            if (i >= 8 && i < 12) continue;
+            fewer.add(lines.get(i));
+            fewerTruth.add(truth[i]);
+        }
+        LyricAligner.Result gap = WordAligner.place(fewer, e, map, 4, 120);
+        int still = 0;
+        for (int i = 0; i < fewer.size(); i++) if (gap.lines.size() == fewer.size() && Math.abs(gap.lines.get(i).time - fewerTruth.get(i)) <= 0.1) still++;
+        StringBuilder off = new StringBuilder();
+        for (int i = 0; i < fewer.size() && gap.lines.size() == fewer.size(); i++) {
+            if (Math.abs(gap.lines.get(i).time - fewerTruth.get(i)) > 0.1) off.append(String.format(java.util.Locale.US, " line %d: %.2f, sung at %.2f;", i + 1, gap.lines.get(i).time, fewerTruth.get(i)));
+        }
+        check(still == fewer.size(), "a hook missing from the lyrics does not pull other lines on to it (" + still + " of " + fewer.size() + ")" + off + " " + gap.repeatNotes);
+
         // The same with the last hook misheard: its third line lands 1.7 s early, its fourth late
         String[] keys = new String[lines.size()];
         double[] beat = new double[lines.size()];

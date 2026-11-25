@@ -38,3 +38,8 @@ lyrics, line by line:
 
 Lines it could not hear are placed between their neighbours, so check repeated sections (hooks,
 outros) by ear; `timed.lrc.heard` lists every word it heard with its time.
+
+**Checking lyric timing on a song.** `--letters-out song.letters` keeps what the speech model heard,
+and `--timing-report report.tsv` writes each line's heard time, final time and fit. `WordEval
+song.letters lyrics.lrc <bpm> [plain]` then times the lyrics again in a second or two, without
+splitting the song again: the way every change to `core/WordAligner` was measured on the test songs.

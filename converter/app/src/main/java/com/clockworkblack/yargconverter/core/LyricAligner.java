@@ -37,6 +37,10 @@ public final class LyricAligner {
         public double laterShift;
         /** What was done, for the user; null when the lyrics were left alone. */
         public String note;
+        /** Word-by-word alignment only, one entry per line of {@link #lines}: where the letters were heard, and how well they fitted. */
+        public double[] heard, fit;
+        /** Lines of the lyrics found not to be sung in this recording and left out (word-by-word alignment only). */
+        public int leftOut;
         /** Lines the song's repeats corrected, one note each (word-by-word alignment only); may be null. */
         public List<String> repeatNotes;
 

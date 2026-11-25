@@ -106,6 +106,21 @@ public final class ConvertSong {
         log("Finding the beat and writing the charts…");
         SongWriter.Result r = SongWriter.analyze(features, lyrics, options, stems, Lrc.keepsTiming(lrcText));
         if (r.singerGuess != null || r.lyricsMoved) lrcText = Lrc.format(r.lyricsOut);
+        if (a.containsKey("letters-out") && stems != null && stems.letters != null) {
+            // What the speech model heard, kept so timing can be tried again without splitting the song again
+            try (DataOutputStream o = new DataOutputStream(new java.io.BufferedOutputStream(new FileOutputStream(a.get("letters-out")), 1 << 16))) {
+                o.writeInt(stems.letters.length);
+                for (float[] row : stems.letters) for (float v : row) o.writeFloat(v);
+            }
+        }
+        if (a.containsKey("timing-report") && r.wordTiming != null) {
+            // One row per line: where the letters were heard, the final start, how well they fitted
+            StringBuilder rep = new StringBuilder();
+            for (int i = 0; i < r.wordTiming.lines.size(); i++) {
+                rep.append(String.format(Locale.US, "%.2f\t%.2f\t%.2f\n", r.wordTiming.heard[i], r.wordTiming.lines.get(i).time, r.wordTiming.fit[i]));
+            }
+            Files.write(new File(a.get("timing-report")).toPath(), rep.toString().getBytes(StandardCharsets.UTF_8));
+        }
         SongWriter.writeFolder(dir, meta, r, audioFile);
         // Read back by the game's rules (core-test/MidiCheck): every note and word must come through
         List<String> problems = MidiCheck.verify(Files.readAllBytes(new File(dir, "notes.mid").toPath()), r);

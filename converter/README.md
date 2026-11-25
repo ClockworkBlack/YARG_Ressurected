@@ -135,7 +135,37 @@ From converting real songs and checking every line by ear and by speech recognit
 8. **The small (quantized, 95 MB) speech model is not good enough:** it agreed with the full
    one (378 MB) on only 20 of 36 lines. The phone app does not carry the speech model yet; it
    uses the voice-only check above. The desktop runner uses the full model (`--words-model`).
-9. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
+9. **Checked on nine real songs, not one.** Besides the first song (R&B, NetEase lyrics), eight
+   Creative Commons songs by Josh Woodward with independently timed lyrics from LRCLIB, three
+   of them remixed versions. Before any of the lyric file's times were used, the aligner put 86%
+   of 257 lines within 0.6 s of the file and 95% within 1 s. Of the 14 lines further off, the
+   letters showed the file wrong on 2, a speech recogniser could judge 2 more and sided with
+   the aligner on both, and on none was the aligner shown wrong; the rest could not be judged.
+   Lyrics given with no times at all came out the same as with times on those songs.
+10. **What the other songs broke, and the guards they led to:**
+    - a hook missing from the lyric sheet pulled lines 15 to 30 s on to the same words: each
+      line is now looked for within 10 s of its time in the lyric file;
+    - a verse in the lyric sheet that the recording lacks pushed real lines out of place: runs
+      of two or more lines whose letters fit nowhere are left out and the rest laid again (a
+      single badly heard line is never left out: two songs showed that would drop real lines);
+    - the wrong song's lyrics: rejected when the letters fit badly overall (right lyrics average
+      -0.3 to -1.7, wrong ones -2.7 and below; the line is drawn at -2.3);
+    - the repeat rule moved a last line that was held back on purpose (heard clearly, and the
+      lyric file agreed): lines the file confirms never move, and clearly heard lines move only
+      by whole repeats;
+    - the repeat rule preferred the longest period, then the one most passes kept, and each was
+      wrong somewhere: now the period most passes keep, among periods long enough to sing the
+      block in;
+    - a line's first letter latched on to a matching letter seconds early when unlisted singing
+      came before it: a stray letter or two is skipped.
+11. **A good lyric file is believed where the voice is unclear.** When the file agrees with the
+    voice on 70% of the lines or more, the few lines that differ keep the file's time unless the
+    voice was heard clearly there. A file that agrees on fewer lines (NetEase on the first
+    song: 37%) is not trusted, and the voice and the song's repeats decide.
+12. **Still not covered:** only English letters; one singer-songwriter and one R&B group is a
+    narrow sample (no rap, no heavy backing vocals, no live recordings); nothing here was
+    checked by ear.
+13. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
    much closer (average 0.23 s on the same song); the phone has no speech recogniser for files.
 
 ## Finding the lyrics

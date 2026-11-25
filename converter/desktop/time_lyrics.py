@@ -125,6 +125,13 @@ def main():
                 break
 
     import os as _os
+    if _os.environ.get("FIRSTWORD_OUT"):
+        # Per line: when its first word was heard to start and end ("" when that word was not heard)
+        with open(_os.environ["FIRSTWORD_OUT"], "w") as ff:
+            for i in range(len(lines)):
+                idx = [k for k in range(len(words)) if line_of[k] == i]
+                ok = idx and time_of[idx[0]] is not None
+                ff.write(("%.2f\t%.2f" % (time_of[idx[0]], end_of[idx[0]]) if ok else "\t") + "\n")
     if _os.environ.get("TRUTH_OUT"):
         # Where each line was heard starting, for measuring other ways of timing ("" when not sure)
         with open(_os.environ["TRUTH_OUT"], "w") as tf:

@@ -35,6 +35,8 @@ public final class SongWriter {
         public List<Lrc.Line> lyricsOut = new ArrayList<>();
         /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
         public boolean lyricsMoved;
+        /** The word-by-word timing in full (for reports and checks); null when it was not used. */
+        public LyricAligner.Result wordTiming;
         /** Lines the song's repeats corrected, for the user; null when none. */
         public List<String> repeatNotes;
         /** True when the lyrics were timed word by word with the speech model. */
@@ -78,6 +80,8 @@ public final class SongWriter {
          * the voice's entries alone.
          */
         public float[][] letters;
+        /** True when the lyrics came without times (the times on the lines mean nothing); needs {@link #letters}. */
+        public boolean lyricTimesUnknown;
         /** For a song with two singers whose lines are not marked: work out who sings what from their voices. */
         public boolean guessSingers;
         /** The two singers' names when the song names two artists (makes the guess surer), or null. */
@@ -133,13 +137,21 @@ public final class SongWriter {
             // Best of all: the letters of the lyrics matched to the voice by a speech model
             LyricAligner.Result byWord = null;
             if (!keepLyricTimes && stems != null && stems.letters != null) {
-                byWord = WordAligner.place(lyrics, stems.letters, r.tempo, r.beatsPerMeasure, r.bpm);
+                // First the whole song, when the lyrics were timed for another cut: each line is
+                // then looked for near where that puts it
+                List<Lrc.Line> rough = lyrics;
+                if (voice != null && !stems.lyricTimesUnknown) {
+                    LyricAligner.Result cut = LyricAligner.align(lyrics, voice);
+                    if (cut.moved()) rough = cut.lines;
+                }
+                byWord = WordAligner.place(rough, stems.letters, r.tempo, r.beatsPerMeasure, r.bpm, !stems.lyricTimesUnknown);
                 if (byWord.moved()) {
                     lyrics = byWord.lines;
                     r.lyricsMoved = true;
                     r.lyricTimingNote = byWord.note;
                     r.lyricsByWord = true;
                     r.repeatNotes = byWord.repeatNotes;
+                    r.wordTiming = byWord;
                 }
             }
             if (!keepLyricTimes && (byWord == null || !byWord.moved())) {
