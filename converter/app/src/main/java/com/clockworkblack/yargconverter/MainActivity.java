@@ -71,6 +71,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private static final int REQ_NOTIFICATIONS = 5;
     private static final int REQ_SINGERS = 6;
     private static final int REQ_BATCH = 7;
+    private static final int REQ_BATCH_SINGERS = 8;
+    /** The song in the list whose singers are being chosen. */
+    private Queued singersFor;
 
     /** Most songs converted in one go. */
     static final int BATCH_MAX = 33;
@@ -84,6 +87,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
         boolean read;
         /** How this song is converted: MODE_NORMAL, MODE_SPLIT or MODE_RNB. */
         int mode = MODE_NORMAL;
+        /** Lyrics found for it (with who sings each line, once marked), or null to look them up when it is converted. */
+        String lrcText;
+        /** The lines have been marked by hand with the Singers button. */
+        boolean singersMarked;
     }
 
     private static String modeName(int mode) {
@@ -543,6 +550,13 @@ public final class MainActivity extends Activity implements ConversionService.Li
         return r;
     }
 
+    /** An equal share of a row, with a small gap on the right. */
+    private LinearLayout.LayoutParams gapped() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(0, 0, dp(6), 0);
+        return lp;
+    }
+
     private LinearLayout.LayoutParams weighted() {
         return new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
     }
@@ -687,6 +701,17 @@ public final class MainActivity extends Activity implements ConversionService.Li
         if (resultCode != RESULT_OK || data == null) return;
         if (requestCode == REQ_BATCH) {
             addToBatch(data);
+        } else if (requestCode == REQ_BATCH_SINGERS) {
+            Queued q = singersFor;
+            singersFor = null;
+            String text = data.getStringExtra(SingersActivity.EXTRA_TEXT);
+            String[] names = data.getStringArrayExtra(SingersActivity.EXTRA_NAMES);
+            if (q != null && batch.contains(q) && text != null) {
+                q.lrcText = text;
+                q.singersMarked = true;
+                if (names != null) q.meta.singers = names;
+                showBatch();
+            }
         } else if (requestCode == REQ_AUDIO && data.getData() != null) {
             setAudio(data.getData());
         } else if (requestCode == REQ_LRC && data.getData() != null) {
@@ -1300,14 +1325,18 @@ public final class MainActivity extends Activity implements ConversionService.Li
         batchList.removeAllViews();
         for (int i = 0; i < batch.size(); i++) {
             final Queued q = batch.get(i);
-            LinearLayout r = row();
-            r.setGravity(Gravity.CENTER_VERTICAL);
+            // The song on one line, its buttons on the line under it, so they fit a phone held upright
+            LinearLayout r = new LinearLayout(this);
+            r.setOrientation(LinearLayout.VERTICAL);
+            r.setPadding(0, dp(4), 0, dp(8));
+            LinearLayout buttons = row();
             TextView t = new TextView(this);
             String who = q.meta.artist == null || q.meta.artist.isEmpty() ? "" : q.meta.artist + " - ";
             String len = q.seconds > 0 ? String.format(Locale.US, "  (%d:%02d)", (int) q.seconds / 60, (int) q.seconds % 60) : "";
             t.setText((i + 1) + ". " + who + q.meta.titleOrDefault() + len + (q.read ? "" : "  (reading…)"));
-            t.setPadding(0, dp(6), dp(8), dp(6));
-            r.addView(t, weighted());
+            t.setPadding(0, dp(6), 0, dp(2));
+            r.addView(t);
+            r.addView(buttons);
             final Button way = button(modeName(q.mode), new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -1320,7 +1349,15 @@ public final class MainActivity extends Activity implements ConversionService.Li
                     ((Button) v).setText(modeName(q.mode));
                 }
             });
-            r.addView(way, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            buttons.addView(way, gapped());
+            Button singersButton = button(q.singersMarked ? "Singers ✓" : "Singers", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    chooseSingers(q);
+                }
+            });
+            buttons.addView(singersButton, gapped());
             Button remove = button("Remove", new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -1329,7 +1366,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                     showBatch();
                 }
             });
-            r.addView(remove, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            buttons.addView(remove, gapped());
             batchList.addView(r);
             style(r);
         }
@@ -1341,6 +1378,57 @@ public final class MainActivity extends Activity implements ConversionService.Li
     /** The way a song was really converted: Split and R&B fall back to Normal without the model. */
     private static int useStemsNote(Queued q, boolean model) {
         return model ? q.mode : MODE_NORMAL;
+    }
+
+    /**
+     * Opens "who sings what" for one song of the list. Its lyrics are looked up first (once), so
+     * the lines can be marked before the list is converted.
+     */
+    private void chooseSingers(final Queued q) {
+        if (q.lrcText != null) {
+            openBatchSingers(q);
+            return;
+        }
+        batchStatus.setText("Looking up the lyrics of \"" + q.meta.titleOrDefault() + "\"…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                if (!q.read) readTags(q);
+                String text = null;
+                String why = "No timed lyrics were found online for this song.";
+                try {
+                    LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds);
+                    if (found != null && found.synced != null) text = found.synced;
+                } catch (IOException e) {
+                    why = "The lyrics could not be looked up: " + e.getMessage();
+                }
+                final String lyrics = text;
+                final String reason = why;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        batchStatus.setText("");
+                        if (lyrics == null) {
+                            message("No lyrics to mark", reason + " Convert this song on its own to paste or tap in its lyrics.");
+                            return;
+                        }
+                        q.lrcText = lyrics;
+                        openBatchSingers(q);
+                    }
+                });
+            }
+        }, "batch-lyrics").start();
+    }
+
+    private void openBatchSingers(Queued q) {
+        String[] names = q.meta.singers;
+        String first = names.length > 0 && !blank(names[0]) ? names[0].trim() : "Singer 1";
+        String second = names.length > 1 && !blank(names[1]) ? names[1].trim() : "Singer 2";
+        singersFor = q;
+        Intent i = new Intent(this, SingersActivity.class);
+        i.putExtra(SingersActivity.EXTRA_TEXT, q.lrcText);
+        i.putExtra(SingersActivity.EXTRA_NAMES, new String[] {first, second});
+        startActivityForResult(i, REQ_BATCH_SINGERS);
     }
 
     private void onBatchPressed() {
@@ -1381,7 +1469,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         List<Lrc.Line> lyrics = new ArrayList<>();
                         String lrcText = "";
                         String lyricsNote = "no lyrics";
-                        if (findLyrics) {
+                        if (q.lrcText != null) {
+                            // Found (and maybe marked) already with the Singers button
+                            lrcText = q.lrcText;
+                            lyrics = Lrc.parse(lrcText);
+                            lyricsNote = q.singersMarked ? "with lyrics, singers marked" : "with lyrics";
+                        } else if (findLyrics) {
                             ConversionService.setTextAndProgress("Looking for lyrics…", -1);
                             try {
                                 LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds);

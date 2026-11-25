@@ -85,8 +85,14 @@ stop the rest. At the end a summary lists which songs were converted (and whethe
 found) and which were not, and why; those stay in the list to try again. Then scan songs in YARG
 once for all of them.
 
-For a song that needs its lyrics fixed, two artists marked, or lyrics tapped in by hand, use the
-single-song steps above instead.
+**Two artists in the list.** Each song's **Singers** button finds its lyrics online (once) and
+opens the same "who sings what" screen as for a single song, with the two names from its artist
+("A feat. B", "A & B"). Mark the lines and go back: the button shows **Singers ✓**, and that song
+is converted with those lyrics and those marks. A song you don't mark is still split between two
+artists by the sound of their voices when it is set to Split or R&B and "Two artists: ... guess
+it from their voices" is ticked.
+
+For a song whose lyrics need fixing or tapping in by hand, use the single-song steps above.
 
 ## Adding a converted song to YARG
 
