@@ -299,6 +299,20 @@ public final class MainActivity extends Activity implements ConversionService.Li
         genreBox.setSingleLine(true);
         row.addView(genreBox, weighted());
         root.addView(row);
+        root.addView(button("Find details online", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (busy) return;
+                findDetails(titleBox, artistBox, albumBox, yearBox, genreBox, audioName, fileLabel, new Runnable() {
+                    @Override
+                    public void run() {
+                        // A featured artist found: the names for "who sings what"
+                        List<String> names = Lrc.artists(artistBox.getText().toString(), titleBox.getText().toString());
+                        if (names.size() >= 2) singerNames = names.toArray(new String[0]);
+                    }
+                });
+            }
+        }));
 
         root.addView(section("2. Lyrics (optional)"));
         LinearLayout lyricButtons = row();
@@ -1219,6 +1233,96 @@ public final class MainActivity extends Activity implements ConversionService.Li
 
     // ---------------------------------------------------------------- details from MusicBrainz
 
+    /**
+     * "Find details online": looks the song up on MusicBrainz from what is in the boxes (or the
+     * file name), fills the empty boxes, and when what it found differs from what is already
+     * there, asks before replacing it. Used by the single-song screen and each song's Edit page.
+     */
+    private void findDetails(final EditText title, final EditText artist, final EditText album, final EditText year,
+                             final EditText genre, final String fileName, final TextView status, final Runnable after) {
+        String t = title.getText().toString().trim();
+        final String a = artist.getText().toString().trim();
+        if (t.isEmpty() && fileName != null) {
+            // Nothing typed: the file name, "Artist - Title" or just the title
+            String base = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(fileName);
+            int dash = base.indexOf(" - ");
+            t = dash > 0 ? base.substring(dash + 3).trim() : base;
+        }
+        if (t.isEmpty()) {
+            status.setText("Type the title (and the artist if you know it) first.");
+            return;
+        }
+        final String askTitle = t;
+        status.setText("Looking the song up on MusicBrainz…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                MusicBrainz.Found f = null;
+                String error = null;
+                try {
+                    f = MusicBrainz.find(askTitle, a);
+                    // With the artist the search may be too narrow (a typo, a nickname): try the title alone
+                    if (f == null && !a.isEmpty()) f = MusicBrainz.find(askTitle, "");
+                } catch (IOException | RuntimeException e) {
+                    error = e.getMessage();
+                }
+                final MusicBrainz.Found found = f;
+                final String why = error;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (found == null) {
+                            status.setText(why != null ? "Could not reach MusicBrainz: " + why
+                                    : "No match found on MusicBrainz. Check the spelling of the title and artist.");
+                            return;
+                        }
+                        EditText[] boxes = {title, artist, album, year, genre};
+                        String[] values = {found.title, found.artist, found.album, found.year, found.genre};
+                        String[] names = {"title", "artist", "album", "year", "genre"};
+                        final List<Integer> different = new ArrayList<>();
+                        List<String> filled = new ArrayList<>();
+                        for (int i = 0; i < boxes.length; i++) {
+                            if (blank(values[i])) continue;
+                            String now = boxes[i].getText().toString().trim();
+                            if (now.isEmpty()) {
+                                boxes[i].setText(values[i]);
+                                filled.add(names[i]);
+                            } else if (!now.equalsIgnoreCase(values[i].trim())) {
+                                different.add(i);
+                            }
+                        }
+                        String found1 = "Found: " + found.artist + " - " + found.title
+                                + (blank(found.album) ? "" : ", " + found.album) + (blank(found.year) ? "" : " (" + found.year + ")")
+                                + (blank(found.genre) ? "" : ", " + found.genre) + ".";
+                        status.setText(found1 + (filled.isEmpty() ? "" : " Filled in: " + android.text.TextUtils.join(", ", filled) + "."));
+                        if (after != null) after.run();
+                        if (different.isEmpty()) return;
+                        StringBuilder sb = new StringBuilder("MusicBrainz has these differently. Use its versions?\n");
+                        for (int i : different) {
+                            sb.append("\n").append(names[i]).append(": \"").append(boxes[i].getText().toString().trim())
+                                    .append("\"  ->  \"").append(values[i]).append('"');
+                        }
+                        final EditText[] b = boxes;
+                        final String[] v = values;
+                        new AlertDialog.Builder(MainActivity.this)
+                                .setTitle("Replace details?")
+                                .setMessage(sb.toString())
+                                .setPositiveButton("Use these", new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface d, int which) {
+                                        for (int i : different) b[i].setText(v[i]);
+                                        if (after != null) after.run();
+                                    }
+                                })
+                                .setNegativeButton("Keep mine", null)
+                                .show();
+                    }
+                });
+            }
+        }, "find-details").start();
+    }
+
+
     /** True when a box is empty, so an online detail may go in it. */
     private static boolean blank(String s) {
         return s == null || s.trim().isEmpty();
@@ -1593,6 +1697,15 @@ public final class MainActivity extends Activity implements ConversionService.Li
         genre.setText(q.meta.genre);
         r.addView(genre, weighted());
         box.addView(r);
+        final TextView detailsStatus = new TextView(this);
+        box.addView(button("Find details online", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                findDetails(title, artist, album, year, genre, q.fileName, detailsStatus, null);
+            }
+        }));
+        detailsStatus.setPadding(0, dp(2), 0, dp(4));
+        box.addView(detailsStatus);
 
         TextView notesLabel = new TextView(this);
         notesLabel.setText("How many notes");

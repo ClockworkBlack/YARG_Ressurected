@@ -27,7 +27,10 @@ the one-time download of the instrument-separation model.
    [MusicBrainz](https://musicbrainz.org) by title and artist (or the file name) and put in the
    empty boxes only; nothing you typed or the file had is replaced. Check them before converting.
    The genre also helps the game's story mode suggest songs for each gig. The same happens for
-   every song in a list (below).
+   every song in a list (below). **Find details online** (under the boxes, and on each listed
+   song's Edit page) looks the song up again from whatever is in the boxes, or the file name when
+   they are empty: it fills the empty boxes and, where MusicBrainz has something different from
+   what is there, asks before replacing it.
 3. Lyrics, any of:
    - **Find online** searches [LRCLIB](https://lrclib.net) for time-synced lyrics by title and artist.
    - **Open .lrc** loads a lyrics file you already have.

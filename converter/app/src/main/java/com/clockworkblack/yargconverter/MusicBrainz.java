@@ -56,11 +56,21 @@ final class MusicBrainz {
             JSONArray recordings = new JSONObject(body).optJSONArray("recordings");
             if (recordings == null) return null;
             JSONObject best = null;
+            boolean byArtist = artist != null && !artist.trim().isEmpty();
             for (int i = 0; i < recordings.length(); i++) {
                 JSONObject r = recordings.getJSONObject(i);
                 if (r.optInt("score", 0) < MIN_SCORE) continue;
-                // Prefer the recording that came out first: the original, not a remaster or a cover
-                if (best == null || firstYear(r) < firstYear(best)) best = r;
+                if (best == null) {
+                    best = r;
+                } else if (byArtist) {
+                    // The artist is known: of their recordings, the one that came out first is the
+                    // original, not a remaster or a live take
+                    if (firstYear(r) < firstYear(best)) best = r;
+                } else {
+                    // Title alone: many songs share a name, so the best-known one (on the most
+                    // releases) is the likeliest, not the oldest
+                    if (releases(r) > releases(best)) best = r;
+                }
             }
             if (best == null) return null;
 
@@ -76,6 +86,11 @@ final class MusicBrainz {
         } catch (JSONException e) {
             throw new IOException("MusicBrainz sent an unexpected reply.", e);
         }
+    }
+
+    private static int releases(JSONObject recording) {
+        JSONArray r = recording.optJSONArray("releases");
+        return r == null ? 0 : r.length();
     }
 
     /** The artists as credited, e.g. "Don Toliver feat. Travis Scott". */
