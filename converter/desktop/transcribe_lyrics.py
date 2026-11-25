@@ -50,7 +50,7 @@ else:
             t = w.word.strip()
             if t:
                 words.append((w.start, w.end, t, w.probability))
-    language = language
+    language = info.language
     _json.dump({"language": language, "words": words}, open(cache, "w"))
 # Words where the separated voice is silent are made up (the model fills silence with phrases
 # like "thanks for watching"): each word must have voice under at least a third of it

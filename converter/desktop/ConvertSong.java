@@ -81,6 +81,16 @@ public final class ConvertSong {
                 meta.title = base;
             }
         }
+        // "Title (feat. X)", "Title with X": X is a featured artist, not part of the title
+        java.util.regex.Matcher feat = java.util.regex.Pattern.compile("(?i)^(.*?)\\s*[(\\[]?\\s*\\b(?:feat\\.?|ft\\.?|featuring|with)\\s+([^)\\]]+?)[)\\]]?\\s*(?:[(\\[].*)?$")
+                .matcher(meta.title);
+        if (feat.matches() && !feat.group(1).trim().isEmpty() && !a.containsKey("title")) {
+            String guest = feat.group(2).trim();
+            meta.title = feat.group(1).trim();
+            if (!meta.artist.toLowerCase(Locale.US).contains(guest.toLowerCase(Locale.US))) {
+                meta.artist = meta.artist.isEmpty() ? guest : meta.artist + " & " + guest;
+            }
+        }
         meta.title = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title).isEmpty() ? meta.title
                 : com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title);
         if (a.containsKey("find-details")) {
