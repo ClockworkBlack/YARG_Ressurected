@@ -10,3 +10,6 @@ converter/local.properties
 tests/*/bin/
 tests/*/obj/
 yarg-core/
+tests/RemoteServerTests/bin/
+tests/RemoteServerTests/obj/
+__pycache__/
