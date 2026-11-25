@@ -697,10 +697,10 @@ index 7044e29..2bcdba4 100644
                  else
                  {
 diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
-index 52c1471..820820d 100644
+index a0f4ca1..b2bf664 100644
 --- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
 +++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
-@@ -524,8 +524,10 @@ namespace YARG.Menu.DifficultySelect
+@@ -557,8 +557,10 @@ namespace YARG.Menu.DifficultySelect
              {
                  bool selected = CurrentPlayer.Profile.CurrentDifficulty == difficulty;
                  // Singers are told what each level asks for: how close to the note, how much of the line
@@ -710,8 +710,8 @@ index 52c1471..820820d 100644
 +                    ? YARG.Gameplay.VocalBattle.VocalParts.LevelHint(CurrentPlayer.EnginePreset, difficulty,
 +                        CurrentPlayer.Profile.IsModifierActive(Modifier.VocalsChallenge))
                      : null;
-                 CreateItem(hint, difficulty.ToLocalizedName(), selected, () =>
-                 {
+                 _nextHintTitle = difficulty.ToLocalizedName();
+                 _nextHint = hint ?? ExplainDifficulty(difficulty, CurrentPlayer.Profile.GameMode);
 diff --git a/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs b/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
 index 95b9275..5084e43 100644
 --- a/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
@@ -732,10 +732,10 @@ index 95b9275..5084e43 100644
          }
  
 diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
-index c7120aa..41c8abc 100644
+index e620126..4b90b44 100644
 --- a/Assets/Script/Settings/SettingsManager.Settings.cs
 +++ b/Assets/Script/Settings/SettingsManager.Settings.cs
-@@ -325,6 +325,9 @@ namespace YARG.Settings
+@@ -330,6 +330,9 @@ namespace YARG.Settings
              public VolumeSetting VocalsVolume { get; } =
                  new(1f, v => GlobalAudioHandler.SetVolumeSetting(SongStem.Vocals, v));
  
@@ -745,7 +745,7 @@ index c7120aa..41c8abc 100644
              public VolumeSetting SongVolume { get; } =
                  new(1f, v => GlobalAudioHandler.SetVolumeSetting(SongStem.Song, v));
  
-@@ -357,6 +360,12 @@ namespace YARG.Settings
+@@ -362,6 +365,12 @@ namespace YARG.Settings
  
              public SliderSetting MicrophoneSensitivity { get; } = new(2f, -50f, 50f);
  
@@ -759,10 +759,10 @@ index c7120aa..41c8abc 100644
              {
                  AudioFxMode.Off,
 diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
-index 5622855..1884d13 100644
+index 702434c..b521298 100644
 --- a/Assets/Script/Settings/SettingsManager.cs
 +++ b/Assets/Script/Settings/SettingsManager.cs
-@@ -116,6 +116,7 @@ namespace YARG.Settings
+@@ -117,6 +117,7 @@ namespace YARG.Settings
                  new FieldMetadata(nameof(Settings.KeysVolume), isAdvanced: true),
                  nameof(Settings.DrumsVolume),
                  nameof(Settings.VocalsVolume),
@@ -770,7 +770,7 @@ index 5622855..1884d13 100644
                  new FieldMetadata(nameof(Settings.SongVolume), isAdvanced: true),
                  new FieldMetadata(nameof(Settings.CrowdVolume), isAdvanced: true),
                  nameof(Settings.SfxVolume),
-@@ -133,6 +134,8 @@ namespace YARG.Settings
+@@ -134,6 +135,8 @@ namespace YARG.Settings
  
                  new HeaderMetadata("Input"),
                  nameof(Settings.MicrophoneSensitivity),
@@ -780,7 +780,7 @@ index 5622855..1884d13 100644
                  new HeaderMetadata("Gameplay"),
                  nameof(Settings.GuitarVoice),
 diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
-index c18c478..d0c000c 100644
+index d1189ba..f13a46d 100644
 --- a/Assets/StreamingAssets/lang/en-US.json
 +++ b/Assets/StreamingAssets/lang/en-US.json
 @@ -65,7 +65,8 @@
