@@ -31,6 +31,12 @@ final class LrcLib {
         String source = "LRCLIB";
     }
 
+    /**
+     * Also ask NetEase Cloud Music when LRCLIB has no timed lyrics. Off unless the user switches
+     * it on: it is an unofficial source (see {@link NetEase}).
+     */
+    static volatile boolean useNetEase;
+
     private static final String BASE = "https://lrclib.net/api/";
     private static final String AGENT = "YARGConverter/0.1 (https://github.com/ClockworkBlack/YARG_Ressurected)";
 
@@ -122,7 +128,15 @@ final class LrcLib {
             throw new IOException("The lyrics service sent an unexpected reply.", e);
         }
         if (best != null) return best;
+        // No timed lyrics in LRCLIB: the optional second catalogue of timed lyrics
+        Found netEasePlain = null;
+        if (useNetEase) {
+            Found other = NetEase.find(queries, durationSec);
+            if (other != null && other.synced != null) return other;
+            netEasePlain = other;
+        }
         if (bestPlain != null && bestPlain.plain != null) return bestPlain;
+        if (netEasePlain != null) return netEasePlain;
         // No timed lyrics anywhere, and no plain ones in LRCLIB: a second catalogue for the words
         // themselves (untimed; they can then be tapped in time)
         Found words = fromLyricsOvh(queries);

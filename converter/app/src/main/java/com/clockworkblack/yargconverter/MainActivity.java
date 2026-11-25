@@ -329,6 +329,19 @@ public final class MainActivity extends Activity implements ConversionService.Li
         lyricsStatus.setPadding(0, dp(4), 0, dp(4));
         root.addView(lyricsStatus);
 
+        final android.content.SharedPreferences prefs = getSharedPreferences("converter", MODE_PRIVATE);
+        CheckBox netEaseCheck = new CheckBox(this);
+        netEaseCheck.setText("Also search NetEase Cloud Music for timed lyrics when LRCLIB has none. Unofficial: it is not a service offered to other apps, and it may stop working at any time. Only the title and artist are sent.");
+        LrcLib.useNetEase = prefs.getBoolean("netease", false);
+        netEaseCheck.setChecked(LrcLib.useNetEase);
+        netEaseCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                LrcLib.useNetEase = checked;
+                prefs.edit().putBoolean("netease", checked).apply();
+            }
+        });
+        root.addView(netEaseCheck);
         singersButton = button("Two artists? Choose who sings what", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
