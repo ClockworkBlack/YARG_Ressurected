@@ -92,6 +92,13 @@ namespace YARG.Audio
         // starts out at the volume in the settings
         private void KeepMonitorQuiet()
         {
+            // The mic test's "Hear myself" is a deliberate choice: leave it alone while it is on
+            if (MicTest.HearMyself)
+            {
+                _wasMuted = true;
+                return;
+            }
+
             bool mute = !_headphones;
             if (!mute && !_wasMuted)
             {

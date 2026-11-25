@@ -233,6 +233,20 @@ artist. Each player then gets only that artist's lines to sing, in their own col
 other artist's words on the second line. Lines marked for both go to both. All singers have to
 choose the same instrument, Vocals or Harmonies. **Vocals** is always the whole song as one part.
 
+**Spoken and rapped lines have to be spoken.** Words with no note (rap, speech, and every word
+of a song converted in the converter's Normal mode) used to count for any sound at all, so one
+long "aaah" cleared a song. From Medium up, such a line now also counts syllables: every fresh
+start of your voice (after a tiny silence, a jump in loudness, or a clear move in pitch). Roughly
+half as many starts as the line has words, up to three a word, is full credit; a drone or a hum
+gets a fraction, and so does babbling as fast as you can. The game cannot check the words
+themselves, only the rhythm of saying them. Sung lines are judged on the note, as before, and
+Beginner and Easy are unchanged. For notes to sing, convert songs with **Split** or **R&B mode**.
+
+**Mic test.** On the Profiles screen, **MIC TEST** shows what the game hears from each active
+profile's microphone: how loud (it has to pass the white line, which is **Settings > Sound >
+Microphone Sensitivity**), the note you are on, a dot that follows your voice up and down, and
+the syllables it would count. **Hear myself** plays the microphone back; use headphones.
+
 **No vocals to pick?** Then the song has no vocals part: a message says so when the instrument
 screen opens. Songs from the converter only get one when they are converted with lyrics.
 
