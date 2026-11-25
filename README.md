@@ -149,7 +149,9 @@ Songs are played in a venue, with a crowd in front of the stage dancing in time 
   - *International:* a London stadium night and a Bucharest open-air show (Michael Jackson's 1988
     Wembley and 1992 Bucharest concerts), Tokyo Dome, a lakeside jazz festival (Montreux), a
     Johannesburg festival field.
-- **Choosing one:** **Settings > General > Venue**. Random by default; or random among street and
+- **Choosing one:** on the instrument and difficulty screen (Quickplay and the rest), the
+  **VENUE** bar above SONG SETUP shows where the next song is played and whether the crowd is on;
+  tap it to pick, or to switch the crowd. The same choice is in **Settings > General > Venue**. Random by default; or random among street and
   club venues only, random among high-class rooms only, one venue in particular, or None for the
   game's own background. A song that comes with its own background still uses that.
 - **Your own pictures or videos:** each venue has a folder in `Internal storage/YARG/venues/`
@@ -169,6 +171,10 @@ Songs are played in a venue, with a crowd in front of the stage dancing in time 
   Turn it off with **Settings > General > Dancing Crowd**.
 
 Everything here is drawn by code from simple shapes, so it is cartoon-like rather than realistic.
+
+Up to build 36 none of this could be seen on a phone: the note highways were drawn on a layer that
+is see-through on a computer but solid black on phones, and it covered the venue, the crowd and
+any background picture or video. Build 37 fixes that layer.
 
 ## Menu music: pick a startup song and a playlist
 
@@ -196,6 +202,13 @@ The menus play songs from your library in the background. You choose what plays:
 If the playlist is empty, deleted, or none of its songs are in the library, the whole library
 plays instead.
 
+## Lyrics and names in any language
+
+The game's own fonts cover Latin letters and Japanese. For everything else (Korean, Chinese, Thai,
+Arabic, Hebrew, Hindi and more) the fonts already on the phone are used, so lyrics, song titles and
+artist names in those languages are drawn instead of empty boxes. Arabic and Indian scripts are
+shown letter by letter, not joined up as they should be.
+
 ## Vocals: sing or rap, pick an artist, sing-off
 
 Any song with a vocals part can be sung: Rock Band style charts, and every song made with
@@ -204,8 +217,9 @@ get one; songs converted before only have a lyric bar).
 
 **Getting set up**
 
-1. **Profiles** > pick or make a profile > **Add Device** > choose a microphone (below).
-   A profile with a microphone becomes a vocals profile.
+1. **Profiles** > pick or make a profile > set its **Game Mode** to **Vocals** (new profiles
+   start as Five Fret Guitar, and those are never offered Vocals) > **Add Device** > choose a
+   microphone (below).
 2. Pick a song, then on the screen before it choose **Vocals** as the instrument and a level.
 3. Sing. Notes scroll along the top with the words under them; your needle shows where your
    voice is. Words in italics over a shaded block, with no note line to follow, are **rapped or
@@ -236,6 +250,27 @@ offer a second instrument, **Harmonies**. Choose it and a **Whose Lines** row ap
 artist. Each player then gets only that artist's lines to sing, in their own color, with the
 other artist's words on the second line. Lines marked for both go to both. All singers have to
 choose the same instrument, Vocals or Harmonies. **Vocals** is always the whole song as one part.
+
+**Spoken and rapped lines have to be spoken.** Words with no note (rap, speech, and every word
+of a song converted in the converter's Normal mode) used to count for any sound at all, so one
+long "aaah" cleared a song. From Medium up, such a line now also counts syllables: every fresh
+start of your voice (after a tiny silence, a jump in loudness, or a clear move in pitch). Roughly
+half as many starts as the line has words, up to three a word, is full credit; a drone or a hum
+gets a fraction, and so does babbling as fast as you can. The game cannot check the words
+themselves, only the rhythm of saying them. Sung lines are judged on the note, as before, and
+Beginner and Easy are unchanged. For notes to sing, convert songs with **Split** or **R&B mode**.
+
+**Mic test.** On the Profiles screen, **MIC TEST** shows what the game hears from each active
+profile's microphone: how loud (it has to pass the white line, which is **Settings > Sound >
+Microphone Sensitivity**), the note you are on, a dot that follows your voice up and down, and
+the syllables it would count. **Hear myself** plays the microphone back; use headphones.
+
+**No vocals to pick?** Then the song has no vocals part: a message says so when the instrument
+screen opens. Songs from the converter only get one when they are converted with lyrics.
+
+**Hearing yourself.** Your voice is played back to you (**Settings > Sound > Vocal Monitoring
+Volume**) only while headphones are connected, wired, USB or Bluetooth. Through the phone's own
+speaker the microphone would hear it again and squeal, so without headphones it is silent.
 
 **Sing-off**
 

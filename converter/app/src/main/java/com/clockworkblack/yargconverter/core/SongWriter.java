@@ -23,12 +23,20 @@ public final class SongWriter {
         public GuitarCharter.Chart bassChart;
         /** What the guitar chart was made from, in words for the user. */
         public String guitarSource = "the full mix";
+        /** R&amp;B mode was asked for and the guitar chart follows the singer. */
+        public boolean rnb;
+        /** Why R&amp;B mode could not follow the singer on this song, in words for the user; null when it did or was not asked. */
+        public String rnbNote;
         public int bassTier = -1;
         /** Lyrics as notes to sing; empty when the song has no lyrics. */
         public VocalCharter.Chart vocals = new VocalCharter.Chart();
         public int vocalTier = -1;
         /** The lyric lines as charted, carrying who sings each (including a guess made from the voices). */
         public List<Lrc.Line> lyricsOut = new ArrayList<>();
+        /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
+        public boolean lyricsMoved;
+        /** What was done to the lyrics' timing, for the user; null when nothing. */
+        public String lyricTimingNote;
         /** True when the app was asked to tell two singers apart by voice. */
         public boolean singersGuessTried;
         /** What it came up with; null when it was not asked or the voices could not be told apart. */
@@ -62,6 +70,15 @@ public final class SongWriter {
         public VocalAnalyzer.Voice voice;
         /** For a song with two singers whose lines are not marked: work out who sings what from their voices. */
         public boolean guessSingers;
+        /** The two singers' names when the song names two artists (makes the guess surer), or null. */
+        public String[] singerNames;
+        /** The vocals on their own, measured like an instrument; only needed for R&amp;B mode. */
+        public Features vocals;
+        /**
+         * R&amp;B mode: the voice comes first. The guitar chart follows the lead singer's melody
+         * (see {@link MelodyCharter}) and the vocals part follows runs note by note.
+         */
+        public boolean rnb;
         /** Sum of squared samples of each, for comparing how much of the song they make up. */
         public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy;
     }
@@ -75,6 +92,16 @@ public final class SongWriter {
      * @param stems separated instruments, or null to chart everything from the full mix
      */
     public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems) {
+        return analyze(f, lyrics, options, stems, false);
+    }
+
+    /**
+     * @param keepLyricTimes true when the lyrics' times were set by hand and must be used as they
+     *                       are; otherwise lyrics timed for another cut of the song (a longer
+     *                       intro, silence at the start) are lined up with this audio
+     */
+    public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems,
+                                 boolean keepLyricTimes) {
         Result r = new Result();
         BeatTracker.Result beats = BeatTracker.track(f);
         r.bpm = beats.bpm;
@@ -93,14 +120,24 @@ public final class SongWriter {
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
-            r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice);
+            if (!keepLyricTimes) {
+                LyricAligner.Result placed = voice != null ? LyricAligner.align(lyrics, voice) : LyricAligner.alignToStart(lyrics, f);
+                if (placed.moved()) {
+                    lyrics = placed.lines;
+                    r.lyricsMoved = true;
+                    r.lyricTimingNote = placed.note;
+                }
+            }
+            r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb, times);
             r.lyricLines = r.vocals.lines;
             r.lyricsOut = lyrics;
             boolean marked = false;
             for (Lrc.Line l : lyrics) marked |= l.singer != Lrc.UNMARKED;
             if (stems != null && stems.guessSingers && voice != null && !marked) {
                 r.singersGuessTried = true;
-                r.singerGuess = VoiceSplitter.guess(r.vocals, voice, lyrics.size());
+                // Two artists named: there certainly are two singers, only the lines need sorting
+                boolean knownTwo = stems.singerNames != null && stems.singerNames.length >= 2;
+                r.singerGuess = VoiceSplitter.guess(r.vocals, voice, lyrics.size(), knownTwo);
                 if (r.singerGuess != null) {
                     r.vocals.assignParts(r.singerGuess.partOfLine);
                     // Written back into the lyrics, so the guess is saved and can be corrected by hand.
@@ -152,6 +189,7 @@ public final class SongWriter {
                 break;
             }
         }
+        if (stems.rnb) chartFromVoice(r, stems, options);
         if (stems.bass != null && stems.bassEnergy >= 0.003 * Math.max(1e-12, stems.mixEnergy)) {
             GuitarCharter.Options bassOptions = options == null ? new GuitarCharter.Options() : options.copy();
             bassOptions.chords = false;
@@ -163,6 +201,29 @@ public final class SongWriter {
                 double nps = r.duration > 1 ? notes / r.duration : 0;
                 r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
             }
+        }
+    }
+
+    /**
+     * R&amp;B mode: replaces the guitar chart with one that follows the lead singer. A song with
+     * little singing in it (an instrumental, a long intro and one chorus) keeps the chart made
+     * from the instruments, and the user is told why.
+     */
+    private static void chartFromVoice(Result r, Stems stems, GuitarCharter.Options options) {
+        if (stems.vocals == null || stems.voice == null) {
+            r.rnbNote = "R&B mode needs the song split into instruments, so the guitar chart follows the band instead.";
+            return;
+        }
+        GuitarCharter.Chart chart = MelodyCharter.build(stems.vocals, stems.voice, r.tempo, r.bpm, options);
+        int notes = chart.notes.get(GuitarCharter.EXPERT).size();
+        // A vocal-led chart is sparser than one from the band, so it is judged by how much of the
+        // song is sung, not by how many notes the band chart had
+        if (notes >= 24 && MelodyCharter.singingShare(stems.voice) >= MelodyCharter.MIN_SINGING_SHARE) {
+            r.chart = chart;
+            r.rnb = true;
+            r.guitarSource = "the lead vocal (R&B mode)";
+        } else {
+            r.rnbNote = "R&B mode: there was too little singing to follow, so the guitar chart follows the band instead.";
         }
     }
 

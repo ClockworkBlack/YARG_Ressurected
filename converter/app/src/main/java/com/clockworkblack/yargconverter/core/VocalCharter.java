@@ -21,6 +21,10 @@ public final class VocalCharter {
     public static final int MIN_PITCH = 36, MAX_PITCH = 84;
     /** Note written for spoken words (the game ignores it; it only has to be in range). */
     static final int SPOKEN_PITCH = 60;
+    /** A word held at least this long (seconds) is followed if the voice moves to other notes. */
+    static final double HELD_WORD_SEC = 0.5;
+    /** The same in R&amp;B mode, where shorter runs are followed too. */
+    static final double RUN_WORD_SEC = 0.3;
     /** Lyric lines longer than this are cut into phrases of about equal length. */
     static final int MAX_WORDS = 9;
 
@@ -83,6 +87,30 @@ public final class VocalCharter {
     }
 
     public static Chart build(List<Lrc.Line> lines, TempoMap map, double duration, VocalAnalyzer.Voice voice) {
+        return build(lines, map, duration, voice, false);
+    }
+
+    /**
+     * @param runs R&amp;B mode: follow the voice through runs and riffs. Shorter held words get
+     *             joined-on notes too, and a word may move through more notes, so a melisma is
+     *             sung note by note instead of as one or two long notes.
+     */
+    public static Chart build(List<Lrc.Line> lines, TempoMap map, double duration, VocalAnalyzer.Voice voice, boolean runs) {
+        return build(lines, map, duration, voice, runs, null);
+    }
+
+    /**
+     * @param onsets times (seconds, ascending) where a new sound starts in the full song, or
+     *               null. Without the separated voice, words are moved onto these, so they fall
+     *               on the rhythm of the song instead of drifting between its beats.
+     */
+    public static Chart build(List<Lrc.Line> lines, TempoMap map, double duration, VocalAnalyzer.Voice voice, boolean runs,
+                              double[] onsets) {
+        // Timing words from the lyric file's own pace and the song's sounds was tried and did not
+        // place words better than a plain speaking pace (see RnbTest.normalModeKeepsPace), so it
+        // is switched off: the code is kept for the next attempt.
+        double pace = PACE_FROM_SONG ? songPace(lines, duration) : 0;
+        if (!PACE_FROM_SONG) onsets = null;
         Chart chart = new Chart();
         if (lines == null) return chart;
         float gate = voice != null ? voice.gate() : 0f;
@@ -117,13 +145,14 @@ public final class VocalCharter {
                     wordEnd[k] = voice.timeOf(frameEnd[k]);
                 }
             } else {
-                timeByPace(start, limit, words, wordStart, wordEnd);
+                timeByPace(start, limit, words, wordStart, wordEnd, pace);
+                if (onsets != null) snapToOnsets(onsets, wordStart, wordEnd, limit);
             }
 
             // What is sung on each word, and is this line sung at all?
             List<Note> notes = new ArrayList<>();
             boolean leanSung = twinVerdict(lines, verdict, i, songLean);
-            boolean sung = heard && pitchLine(voice, gate, words, frameStart, frameEnd, wordStart, wordEnd, notes, leanSung);
+            boolean sung = heard && pitchLine(voice, gate, words, frameStart, frameEnd, wordStart, wordEnd, notes, leanSung, runs);
             if (!sung) {
                 notes.clear();
                 for (int k = 0; k < n; k++) {
@@ -209,17 +238,97 @@ public final class VocalCharter {
     }
 
     /** Words spread over a natural pace: all that can be done when only the start of the line is known. */
-    private static void timeByPace(double start, double limit, List<String> words, double[] wordStart, double[] wordEnd) {
-        int chars = 0;
-        for (String w : words) chars += w.length() + 1;
-        double natural = 0.4 + chars * 0.075;
-        double end = Math.min(start + natural, limit);
+    /** Fastest and slowest a syllable is taken to be, in seconds, when the voice cannot be listened to. */
+    static final double MIN_SYLLABLE_SEC = 0.11, MAX_SYLLABLE_SEC = 0.5;
+    /** A word is moved onto a sound of the song that starts within this many seconds of it. */
+    static final double SNAP_SEC = 0.09;
+
+    /**
+     * How long this song takes over a syllable, worked out from the lyric file alone: where one
+     * line follows straight on from another, the singer filled the time between their stamps, so
+     * that time divided by the line's syllables is the pace. The middle value over such lines is
+     * used for the whole song: a rap comes out quick, a ballad slow.
+     */
+    static double songPace(List<Lrc.Line> lines, double duration) {
+        if (lines == null) return 0.19;
+        List<Double> paces = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            List<String> words = words(lines.get(i).text);
+            if (words.isEmpty()) continue;
+            int syllables = 0;
+            for (String w : words) syllables += syllables(w);
+            double next = i + 1 < lines.size() ? lines.get(i + 1).time : duration;
+            double per = (next - lines.get(i).time - 0.15) / syllables;
+            // A longer wait than this is a pause or an instrumental break, not singing
+            if (per >= MIN_SYLLABLE_SEC && per <= 0.6) paces.add(per);
+        }
+        if (paces.size() < 3) return 0.19;
+        java.util.Collections.sort(paces);
+        // The quicker side of the middle: stamps include the breath before the next line
+        double pace = paces.get(paces.size() * 1 / 10) * 0.9;
+        return Math.max(MIN_SYLLABLE_SEC, Math.min(MAX_SYLLABLE_SEC, pace));
+    }
+
+    /** Experiment, off: see {@link #build(List, TempoMap, double, VocalAnalyzer.Voice, boolean, double[])}. */
+    static final boolean PACE_FROM_SONG = false;
+
+    /** Spreads the words of a line from its time stamp at a speaking pace (or, in the experiment, the song's own). */
+    private static void timeByPace(double start, double limit, List<String> words, double[] wordStart, double[] wordEnd, double pace) {
+        if (pace <= 0) {
+            int chars = 0;
+            for (String w : words) chars += w.length() + 1;
+            double natural = 0.4 + chars * 0.075;
+            double end = Math.min(start + natural, limit);
+            if (end < start + 0.2) end = start + 0.2;
+            int seen = 0;
+            for (int k = 0; k < words.size(); k++) {
+                wordStart[k] = start + (end - start) * seen / chars;
+                seen += words.get(k).length() + 1;
+                wordEnd[k] = start + (end - start) * seen / chars;
+            }
+            return;
+        }
+        int total = 0;
+        for (String w : words) total += syllables(w);
+        double end = Math.min(start + total * pace, limit);
         if (end < start + 0.2) end = start + 0.2;
         int seen = 0;
         for (int k = 0; k < words.size(); k++) {
-            wordStart[k] = start + (end - start) * seen / chars;
-            seen += words.get(k).length() + 1;
-            wordEnd[k] = start + (end - start) * seen / chars;
+            wordStart[k] = start + (end - start) * seen / total;
+            seen += syllables(words.get(k));
+            // A short gap before the next word, so two words on one note are still two
+            wordEnd[k] = start + (end - start) * seen / total - Math.min(0.03, (end - start) / total * 0.2);
+        }
+    }
+
+    /**
+     * Moves each word onto the nearest sound of the song that starts close to it, keeping the
+     * words in order. Sung and rapped syllables land on the song's rhythm, so this pulls words
+     * placed by pace onto the beat they are really said on.
+     */
+    static void snapToOnsets(double[] onsets, double[] wordStart, double[] wordEnd, double limit) {
+        int n = wordStart.length;
+        double floor = Double.NEGATIVE_INFINITY;
+        for (int k = 0; k < n; k++) {
+            int at = java.util.Arrays.binarySearch(onsets, wordStart[k]);
+            if (at < 0) at = -at - 1;
+            double best = Double.NaN;
+            for (int j = Math.max(0, at - 1); j <= Math.min(onsets.length - 1, at); j++) {
+                double d = Math.abs(onsets[j] - wordStart[k]);
+                if (d <= SNAP_SEC && onsets[j] >= floor + 0.05 && (Double.isNaN(best) || d < Math.abs(best - wordStart[k]))) best = onsets[j];
+            }
+            if (!Double.isNaN(best)) {
+                double shift = best - wordStart[k];
+                wordStart[k] = best;
+                // The word before now ends where this one begins, less a breath
+                if (k > 0 && shift < 0) wordEnd[k - 1] = Math.min(wordEnd[k - 1], best - 0.02);
+            }
+            if (wordStart[k] < floor + 0.05) wordStart[k] = floor + 0.05;
+            floor = wordStart[k];
+        }
+        for (int k = 0; k < n; k++) {
+            double nextStart = k + 1 < n ? wordStart[k + 1] : limit;
+            wordEnd[k] = Math.max(wordStart[k] + 0.04, Math.min(wordEnd[k], nextStart - 0.02));
         }
     }
 
@@ -570,19 +679,48 @@ public final class VocalCharter {
         return s;
     }
 
-    /** A rough count of the syllables in a word: each run of vowels is one. Good enough to share out time. */
-    static int syllables(String word) {
-        String w = word.toLowerCase(java.util.Locale.US).replaceAll("[^a-z]", "");
-        if (w.isEmpty()) return Math.max(1, word.length() / 3);
+    /**
+     * A rough count of the syllables in a word, good enough to share out time. In English and other
+     * languages written with letters each run of vowels is one; in Korean, Chinese and Japanese
+     * every character is one.
+     */
+    public static int syllables(String word) {
+        int blocks = 0, letters = 0;
+        for (int i = 0; i < word.length(); ) {
+            int c = word.codePointAt(i);
+            i += Character.charCount(c);
+            if (isSyllableCharacter(c)) blocks++;
+            else if (Character.isLetter(c)) letters++;
+        }
+        if (blocks > 0 && letters == 0) return blocks;
+
+        String w = word.toLowerCase(java.util.Locale.ROOT);
         int count = 0;
-        boolean inVowels = false;
+        boolean inVowels = false, latin = false;
         for (int i = 0; i < w.length(); i++) {
-            boolean vowel = "aeiouy".indexOf(w.charAt(i)) >= 0;
+            char c = w.charAt(i);
+            if (c >= 'a' && c <= 'z') latin = true;
+            if (!Character.isLetter(c)) continue;
+            boolean vowel = VOWELS.indexOf(c) >= 0;
             if (vowel && !inVowels) count++;
             inVowels = vowel;
         }
-        if (count > 1 && w.endsWith("e") && !w.endsWith("le")) count--;
-        return Math.max(1, count);
+        if (count == 0) return Math.max(1, blocks + (letters + 1) / 3);
+        if (latin && count > 1 && w.endsWith("e") && !w.endsWith("le")) count--;
+        return Math.max(1, count + blocks);
+    }
+
+    /** Vowels of the Latin (with accents), Cyrillic and Greek alphabets. */
+    private static final String VOWELS = "aeiouy\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef"
+            + "\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00ff\u0153\u0131"
+            + "\u0430\u0435\u0451\u0438\u043e\u0443\u044b\u044d\u044e\u044f\u0456\u0457\u0454"
+            + "\u03b1\u03b5\u03b7\u03b9\u03bf\u03c5\u03c9\u03ac\u03ad\u03ae\u03af\u03cc\u03cd\u03ce";
+
+    /** True for a character that is a syllable by itself: Korean blocks, Chinese characters, Japanese kana. */
+    static boolean isSyllableCharacter(int c) {
+        Character.UnicodeScript script = Character.UnicodeScript.of(c);
+        return script == Character.UnicodeScript.HANGUL || script == Character.UnicodeScript.HAN
+                || script == Character.UnicodeScript.HIRAGANA || script == Character.UnicodeScript.KATAKANA;
     }
 
     /**
@@ -595,14 +733,14 @@ public final class VocalCharter {
      * @return true and fills {@code out} when the line is sung
      */
     private static boolean pitchLine(VocalAnalyzer.Voice v, float gate, List<String> words, int[] frameStart, int[] frameEnd,
-                                     double[] wordStart, double[] wordEnd, List<Note> out, boolean leanSung) {
+                                     double[] wordStart, double[] wordEnd, List<Note> out, boolean leanSung, boolean runs) {
         int from0 = frameStart[0], to0 = Math.min(frameEnd[words.size() - 1], v.frames());
         if (!judgeSung(measure(v, gate, from0, to0), leanSung)) return false;
-        return pitchWords(v, gate, words, frameStart, frameEnd, wordStart, wordEnd, out);
+        return pitchWords(v, gate, words, frameStart, frameEnd, wordStart, wordEnd, out, runs);
     }
 
     private static boolean pitchWords(VocalAnalyzer.Voice v, float gate, List<String> words, int[] frameStart, int[] frameEnd,
-                                     double[] wordStart, double[] wordEnd, List<Note> out) {
+                                     double[] wordStart, double[] wordEnd, List<Note> out, boolean runs) {
         int n = words.size();
         int from = frameStart[0], to = Math.min(frameEnd[n - 1], v.frames());
 
@@ -655,8 +793,8 @@ public final class VocalCharter {
             first.end = wordEnd[k];
             first.pitch = clampPitch(Math.round(note) + shift);
             out.add(first);
-            if (wordEnd[k] - wordStart[k] >= 0.5) {
-                addSlides(v, gate, frameStart[k], Math.min(frameEnd[k], v.frames()), note, shift, first, out);
+            if (wordEnd[k] - wordStart[k] >= (runs ? RUN_WORD_SEC : HELD_WORD_SEC)) {
+                addSlides(v, gate, frameStart[k], Math.min(frameEnd[k], v.frames()), note, shift, first, out, runs);
             }
         }
         return true;
@@ -666,8 +804,13 @@ public final class VocalCharter {
      * A long held word that moves to other notes (a run, an "oh-oh-oh") gets a joined-on note for
      * each place the voice settles on a new note for a moment.
      */
-    private static void addSlides(VocalAnalyzer.Voice v, float gate, int a, int b, float startNote, int shift, Note word, List<Note> out) {
-        final int hold = 7;
+    private static void addSlides(VocalAnalyzer.Voice v, float gate, int a, int b, float startNote, int shift, Note word, List<Note> out,
+                                  boolean runs) {
+        // A run moves quickly: in R&B mode a note counts once the voice has sat on it for 50 ms
+        // (70 ms otherwise), and a word may pass through up to eight of them.
+        final int hold = runs ? 5 : 7;
+        final int most = runs ? 8 : 3;
+        final double gap = runs ? 0.08 : 0.12;
         float current = Float.NaN;
         // The note the word opens on: the middle value of its first voiced frames.
         float[] head = new float[hold];
@@ -685,7 +828,7 @@ public final class VocalCharter {
         int run = 0;
         float[] moved = new float[hold];
         int added = 0;
-        for (; f < b && added < 3; f++) {
+        for (; f < b && added < most; f++) {
             float m = v.midi[f];
             if (Float.isNaN(m) || v.level[f] <= gate) {
                 run = 0;
@@ -703,7 +846,7 @@ public final class VocalCharter {
             int startFrame = f - hold + 1;
             double at = v.timeOf(startFrame);
             // Leave a short lead-in for the voice to travel between the two notes.
-            if (at - last.start < 0.12) {
+            if (at - last.start < gap) {
                 run = 0;
                 continue;
             }
@@ -747,15 +890,68 @@ public final class VocalCharter {
     public static List<String> words(String text) {
         List<String> out = new ArrayList<>();
         if (text == null) return out;
-        for (String raw : text.trim().split("\\s+")) {
-            String w = raw.replace("\"", "").replace("“", "").replace("”", "")
+        for (String raw : text.trim().split("[\\s\u3000]+")) {
+            String w = raw.replace("\"", "").replace("\u201c", "").replace("\u201d", "")
                     .replace("[", "").replace("]", "");
             // These characters are control codes in vocal charts (joins, pitch flags, hidden text).
             w = w.replaceAll("^[$]+", "");
-            w = w.replaceAll("[+#^%$/§_*]+$", "");
+            w = w.replaceAll("[+#^%$/\u00a7_*]+$", "");
             if (w.endsWith("-")) w = w.substring(0, w.length() - 1) + "=";
-            if (!w.isEmpty()) out.add(w);
+            if (w.isEmpty()) continue;
+            if (!splitUnspaced(w, out)) out.add(w);
         }
         return out;
+    }
+
+    /** Characters of Chinese or Japanese sung to one note when a line is written without spaces. */
+    static final int UNSPACED_GROUP = 2;
+
+    /**
+     * Chinese and Japanese are written without spaces, so a whole line would be one "word" on one
+     * note. Such a run is cut into pieces of two characters, each ending in "-", which a vocal
+     * chart shows joined to the next piece with no space.
+     *
+     * @return false when the word is not such a run and was left alone
+     */
+    private static boolean splitUnspaced(String w, List<String> out) {
+        int count = 0;
+        for (int i = 0; i < w.length(); ) {
+            int c = w.codePointAt(i);
+            i += Character.charCount(c);
+            Character.UnicodeScript script = Character.UnicodeScript.of(c);
+            if (script == Character.UnicodeScript.HAN || script == Character.UnicodeScript.HIRAGANA
+                    || script == Character.UnicodeScript.KATAKANA) count++;
+        }
+        if (count < 2 * UNSPACED_GROUP) return false;
+
+        StringBuilder piece = new StringBuilder();
+        int inPiece = 0;
+        List<String> pieces = new ArrayList<>();
+        for (int i = 0; i < w.length(); ) {
+            int c = w.codePointAt(i);
+            i += Character.charCount(c);
+            boolean syllable = isSyllableCharacter(c);
+            // Punctuation and small marks stay with the piece before them
+            if (syllable && inPiece >= UNSPACED_GROUP) {
+                pieces.add(piece.toString());
+                piece.setLength(0);
+                inPiece = 0;
+            }
+            piece.appendCodePoint(c);
+            if (syllable) inPiece++;
+        }
+        if (piece.length() > 0) pieces.add(piece.toString());
+        for (int k = 0; k < pieces.size(); k++) {
+            String p = pieces.get(k);
+            boolean lastPiece = k == pieces.size() - 1;
+            if (!lastPiece) {
+                // The join mark must follow a character, not a "-" or "=" of the text's own
+                while (p.endsWith("-") || p.endsWith("=")) p = p.substring(0, p.length() - 1);
+                if (p.isEmpty()) continue;
+                p = p + "-";
+            }
+            out.add(p);
+        }
+        return true;
     }
 }
