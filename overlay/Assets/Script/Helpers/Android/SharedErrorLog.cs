@@ -14,8 +14,8 @@
 // Unity's log (exceptions nobody caught, with their stack trace), and the runtime's last-chance
 // handlers. Every line is written to disk straight away, so it survives the app being killed.
 //
-// On Windows and macOS the same files go to Documents/YARG/logs, which is easier to find than the
-// game's own log under AppData\LocalLow.
+// On Windows and macOS the same files go to Documents/YARG/logs, and on Linux (and Chromebooks)
+// to ~/YARG/logs, which are easier to find than the game's own log.
 //
 // Nothing leaves the phone: the files are only ever written to local storage.
 
@@ -62,7 +62,8 @@ namespace YARG.Helpers
         {
             if (_started || (Application.platform != RuntimePlatform.Android &&
                 Application.platform != RuntimePlatform.WindowsPlayer &&
-                Application.platform != RuntimePlatform.OSXPlayer))
+                Application.platform != RuntimePlatform.OSXPlayer &&
+                Application.platform != RuntimePlatform.LinuxPlayer))
             {
                 return;
             }
@@ -101,6 +102,13 @@ namespace YARG.Helpers
             {
                 string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 return string.IsNullOrEmpty(documents) ? Application.persistentDataPath : documents;
+            }
+
+            if (Application.platform == RuntimePlatform.LinuxPlayer)
+            {
+                // ~/YARG/logs: on a Chromebook that is "Linux files > YARG > logs" in the Files app
+                string home = Environment.GetEnvironmentVariable("HOME");
+                return string.IsNullOrEmpty(home) ? Application.persistentDataPath : home;
             }
 
             if (Application.platform == RuntimePlatform.OSXPlayer)
