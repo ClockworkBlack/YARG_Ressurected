@@ -1,0 +1,1082 @@
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index 7b1f01a..a0f4ca1 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -31,6 +31,7 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private enum State
+         {
++            RapMode,
+             Main,
+             Instrument,
+             Difficulty,
+@@ -133,6 +134,9 @@ namespace YARG.Menu.DifficultySelect
+                 NavigationScheme.Entry.NavigateUp,
+                 NavigationScheme.Entry.NavigateDown,
+                 NavigationScheme.Entry.NavigateSelect,
++                // Left / right (D-pad or a guitar's joystick): song speed, 5% at a time
++                new NavigationScheme.Entry(MenuAction.Left, "Menu.Common.Left", () => NudgeSpeed(-0.05f), hide: true),
++                new NavigationScheme.Entry(MenuAction.Right, "Menu.Common.Right", () => NudgeSpeed(0.05f), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () =>
+                 {
+                     if (_menuState == State.Main)
+@@ -239,8 +243,15 @@ namespace YARG.Menu.DifficultySelect
+                 case State.Harmony:
+                     CreateHarmonyMenu();
+                     break;
++                case State.RapMode:
++                    CreateRapModeMenu();
++                    break;
+             }
+ 
++            // Nothing under the cursor yet: the screen's own artist, no explanation
++            YARG.Menu.Persistent.MenuInfoPanel.HideHint();
++            ShowScreenArtist();
++
+             _lastMenuState = _menuState;
+         }
+ 
+@@ -265,6 +276,9 @@ namespace YARG.Menu.DifficultySelect
+             if (_possibleInstruments.Count > 0)
+             {
+                 // Ready button
++                _nextHint = PlayerContainer.Players.Count > 1 && _playerIndex < PlayerContainer.Players.Count - 1
++                    ? "Done choosing: the next player picks theirs."
++                    : "Start the song.";
+                 CreateItem(LocalizeHeader("Ready"), _lastMenuState == State.Main, _difficultyGreenPrefab, () =>
+                 {
+                     // If the player just selected vocal modifiers, don't show them again
+@@ -309,6 +323,17 @@ namespace YARG.Menu.DifficultySelect
+                     });
+                 }
+ 
++                // Rap mode: whose verses to do, or trade bars with another singer
++                if (player.Profile.GameMode == GameMode.Vocals && !GlobalVariables.State.IsPractice)
++                {
++                    _nextHint = "Pick whose verses you rap (on a song with each artist marked), or split the song evenly with another singer, a few bars each.";
++                    CreateItem("Rap Mode", RapModeText(), _lastMenuState == State.RapMode, () =>
++                    {
++                        _menuState = State.RapMode;
++                        UpdateForPlayer();
++                    });
++                }
++
+                 // With more than one player, the singers can make it a sing-off
+                 if (player.Profile.GameMode == GameMode.Vocals && PlayerContainer.Players.Count > 1 &&
+                     !GlobalVariables.State.IsPractice)
+@@ -319,6 +344,8 @@ namespace YARG.Menu.DifficultySelect
+                         : player.Profile.CurrentInstrument == Instrument.Harmony
+                             ? "On: artist against artist"
+                             : "On: take turns, best singer wins";
++                    _nextHint = "Turns the vocals into a battle: every line is marked out of 100 and the bar under the lyrics leans to whoever is ahead. " +
++                        "On Vocals the lines are dealt out in turns; on Harmonies it's artist against artist.";
+                     CreateItem("Sing-Off", singOffText, _reselectSingOff, () =>
+                     {
+                         // (Not through Value: that also pokes the settings menu, which isn't open here)
+@@ -355,6 +382,7 @@ namespace YARG.Menu.DifficultySelect
+                         modifierText = modifierText.Trim();
+                     }
+ 
++                    _nextHint = "Change how the notes play, such as All Taps (no strumming) or Note Shuffle.";
+                     CreateItem(LocalizeHeader("Modifiers"),
+                         modifierText, _lastMenuState == State.Modifiers, () =>
+                     {
+@@ -364,6 +392,20 @@ namespace YARG.Menu.DifficultySelect
+                 }
+             }
+ 
++            // Plug something in after picking the song: no need to go back to Profiles
++            if (!player.Profile.IsBot)
++            {
++                _nextHint = "Plug in or turn on a controller, guitar or microphone, then pick it from the list. It joins " +
++                    player.Profile.Name + "'s profile.";
++                CreateItem("Devices", "Add Controller or Mic", false, () => AddDeviceHere(player));
++            }
++
++            if (PlayerContainer.Profiles.Any(e => !e.IsBot && !PlayerContainer.IsProfileTaken(e)))
++            {
++                _nextHint = "Bring in another profile to play this song too. They choose their instrument after you.";
++                CreateItem("Players", "Add Another Player", false, AddPlayerHere);
++            }
++
+             // Only show if there is more than one play, only if there is instruments available
+             if (_possibleInstruments.Count <= 0 || PlayerContainer.Players.Count != 1)
+             {
+@@ -399,6 +441,74 @@ namespace YARG.Menu.DifficultySelect
+             }
+         }
+ 
++        private async void AddDeviceHere(YargPlayer player)
++        {
++            YARG.Menu.Persistent.MenuInfoPanel.HideAll();
++            try
++            {
++                await YARG.Menu.ProfileList.ProfileView.PromptAddDeviceFor(player.Profile);
++                await Cysharp.Threading.Tasks.UniTask.Yield();
++                await DialogManager.Instance.WaitUntilCurrentClosed();
++            }
++            catch (Exception e)
++            {
++                YARG.Core.Logging.YargLogger.LogException(e, "Adding a device before the song failed");
++            }
++
++            if (this == null || !isActiveAndEnabled) return;
++
++            // The instruments on offer depend on what is plugged in
++            if (_playerIndex < PlayerContainer.Players.Count)
++            {
++                UpdateForPlayer();
++            }
++        }
++
++        private void AddPlayerHere()
++        {
++            YARG.Menu.Persistent.MenuInfoPanel.HideAll();
++            var dialog = DialogManager.Instance.ShowList("Add Another Player");
++            foreach (var profile in PlayerContainer.Profiles.OrderBy(e => e.Name))
++            {
++                if (profile.IsBot || PlayerContainer.IsProfileTaken(profile)) continue;
++
++                var chosen = profile;
++                dialog.AddListButton(chosen.Name, () => ConnectHere(chosen));
++            }
++        }
++
++        private async void ConnectHere(YargProfile profile)
++        {
++            try
++            {
++                await Cysharp.Threading.Tasks.UniTask.Yield();
++                await DialogManager.Instance.WaitUntilCurrentClosed();
++
++                var added = PlayerContainer.CreatePlayerFromProfile(profile, true);
++                if (added is null) return;
++
++                if (added.Bindings.Empty &&
++                    !await YARG.Menu.ProfileList.ProfileView.PromptAddDeviceFor(profile))
++                {
++                    // Nothing to play on: don't leave an empty player in the band
++                    PlayerContainer.DisposePlayer(added);
++                    return;
++                }
++
++                ToastManager.ToastSuccess($"{profile.Name} joined. Their turn to choose comes after yours.");
++            }
++            catch (Exception e)
++            {
++                YARG.Core.Logging.YargLogger.LogException(e, "Adding a player before the song failed");
++            }
++
++            if (this == null || !isActiveAndEnabled) return;
++            if (_playerIndex < PlayerContainer.Players.Count)
++            {
++                UpdateForPlayer();
++            }
++        }
++
+         private void ShowWarning(string message)
+         {
+             if (string.IsNullOrEmpty(message))
+@@ -450,6 +560,8 @@ namespace YARG.Menu.DifficultySelect
+                 string hint = CurrentPlayer.Profile.GameMode == GameMode.Vocals
+                     ? YARG.Gameplay.VocalBattle.VocalParts.LevelHint(CurrentPlayer.EnginePreset, difficulty)
+                     : null;
++                _nextHintTitle = difficulty.ToLocalizedName();
++                _nextHint = hint ?? ExplainDifficulty(difficulty, CurrentPlayer.Profile.GameMode);
+                 CreateItem(hint, difficulty.ToLocalizedName(), selected, () =>
+                 {
+                     CurrentPlayer.Profile.CurrentDifficulty
+@@ -462,6 +574,143 @@ namespace YARG.Menu.DifficultySelect
+             }
+         }
+ 
++        private static string ExplainDifficulty(Difficulty difficulty, GameMode mode)
++        {
++            bool frets = mode is GameMode.FiveFretGuitar or GameMode.SixFretGuitar;
++            return difficulty switch
++            {
++                Difficulty.Beginner => frets
++                    ? "Beginner: wide bars you can play with any fret, on the beat. For a first try."
++                    : "Beginner: just the main beats.",
++                Difficulty.Easy => frets
++                    ? "Easy: three frets (green, red, yellow), few notes, no chords. A good start on a gamepad."
++                    : "Easy: few notes, simple rhythms.",
++                Difficulty.Medium => frets
++                    ? "Medium: four frets, some two-note chords, more notes."
++                    : "Medium: more notes, still forgiving.",
++                Difficulty.Hard => frets
++                    ? "Hard: all five frets, chords and faster runs."
++                    : "Hard: most of the notes.",
++                Difficulty.Expert => "Expert: every note of the part.",
++                Difficulty.ExpertPlus => "Expert+: Expert with extra notes (double kick on drums).",
++                _ => null,
++            };
++        }
++
++        // ------------------------------------------------------------------ rap mode
++
++        /// <summary>The Rap Mode row shows this.</summary>
++        private string RapModeText()
++        {
++            var settings = YARG.Settings.SettingsManager.Settings;
++            var song = GlobalVariables.State.CurrentSong;
++            if (settings.SingOff.Value && IsBarTurns(settings.SingOffTurnLength.Value) &&
++                CurrentPlayer.Profile.CurrentInstrument == Instrument.Vocals)
++            {
++                return "Trade every " + Bars(settings.SingOffTurnLength.Value) + " bars";
++            }
++
++            if (CurrentPlayer.Profile.CurrentInstrument == Instrument.Harmony &&
++                YARG.Gameplay.VocalBattle.VocalParts.HasNames(song))
++            {
++                return YARG.Gameplay.VocalBattle.VocalParts.Label(song, CurrentPlayer.Profile.HarmonyIndex) + "'s verses";
++            }
++
++            return "Whole song";
++        }
++
++        private static bool IsBarTurns(YARG.Gameplay.VocalBattle.SingOffTurns turns) =>
++            turns is YARG.Gameplay.VocalBattle.SingOffTurns.FourBars or YARG.Gameplay.VocalBattle.SingOffTurns.EightBars
++                or YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars;
++
++        private static int Bars(YARG.Gameplay.VocalBattle.SingOffTurns turns) => turns switch
++        {
++            YARG.Gameplay.VocalBattle.SingOffTurns.FourBars => 4,
++            YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars => 16,
++            _ => 8,
++        };
++
++        private void SetVocalInstrument(Instrument instrument)
++        {
++            if (!_possibleInstruments.Contains(instrument) || CurrentPlayer.Profile.CurrentInstrument == instrument)
++            {
++                return;
++            }
++
++            CurrentPlayer.Profile.CurrentInstrument = instrument;
++            UpdatePossibleDifficulties();
++            UpdatePossibleModifiers();
++        }
++
++        private void CreateRapModeMenu()
++        {
++            var settings = YARG.Settings.SettingsManager.Settings;
++            var song = GlobalVariables.State.CurrentSong;
++            string current = RapModeText();
++
++            _nextHint = "You do the whole song: every verse, hook and ad-lib.";
++            CreateItem("Whole song", current == "Whole song", () =>
++            {
++                settings.SingOff.SetValueWithoutNotify(false);
++                YARG.Settings.SettingsManager.SaveSettings();
++                SetVocalInstrument(Instrument.Vocals);
++                _menuState = State.Main;
++                UpdateForPlayer();
++            });
++
++            // A song with each artist's part marked: rap one artist's verses
++            if (YARG.Gameplay.VocalBattle.VocalParts.HasNames(song) && _possibleInstruments.Contains(Instrument.Harmony))
++            {
++                for (int i = 0; i < _maxHarmonyIndex && i < YARG.Gameplay.VocalBattle.VocalParts.NamesFor(song).Length; i++)
++                {
++                    int part = i;
++                    string name = YARG.Gameplay.VocalBattle.VocalParts.Label(song, i);
++                    _nextArtist = name;
++                    _nextHint = "You rap " + name + "'s verses only. The other verses play and scroll past without counting against you. " +
++                        "Two players can each take an artist: with Sing-Off on, it becomes artist against artist.";
++                    CreateItem(name + "'s verses", current == name + "'s verses", () =>
++                    {
++                        settings.SingOff.SetValueWithoutNotify(false);
++                        YARG.Settings.SettingsManager.SaveSettings();
++                        SetVocalInstrument(Instrument.Harmony);
++                        CurrentPlayer.Profile.HarmonyIndex = (byte) part;
++                        _menuState = State.Main;
++                        UpdateForPlayer();
++                    });
++                }
++            }
++
++            // Split the song evenly between singers, a block of bars each
++            int singers = PlayerContainer.Players.Count(p => !p.SittingOut && p.Profile.GameMode == GameMode.Vocals);
++            foreach (var turns in new[]
++                     {
++                         YARG.Gameplay.VocalBattle.SingOffTurns.FourBars,
++                         YARG.Gameplay.VocalBattle.SingOffTurns.EightBars,
++                         YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars,
++                     })
++            {
++                var choice = turns;
++                int bars = Bars(choice);
++                string label = "Trade every " + bars + " bars";
++                _nextHint = "The song is split evenly: the first singer raps " + bars + " bars, the next singer the next " + bars +
++                    ", and so on, each in their own color, scored head to head." +
++                    (singers < 2 ? " Needs two singers: use Add Another Player, and have them pick Vocals." : string.Empty);
++                CreateItem(label, current == label, () =>
++                {
++                    settings.SingOff.SetValueWithoutNotify(true);
++                    settings.SingOffTurnLength.SetValueWithoutNotify(choice);
++                    YARG.Settings.SettingsManager.SaveSettings();
++                    SetVocalInstrument(Instrument.Vocals);
++                    if (singers < 2)
++                    {
++                        ToastManager.ToastInformation("Trading bars needs a second singer. Add another player who picks Vocals.");
++                    }
++                    _menuState = State.Main;
++                    UpdateForPlayer();
++                });
++            }
++        }
++
+         private void CreateModifierMenu()
+         {
+             var profile = CurrentPlayer.Profile;
+@@ -486,6 +735,7 @@ namespace YARG.Menu.DifficultySelect
+                 });
+ 
+                 _navGroup.AddNavigatable(btn);
++                Explain(btn, modifier.ToLocalizedName(), YARG.Menu.Persistent.MenuInfoPanel.Explain(modifier), null);
+                 _modifierItems.Add(btn);
+             }
+ 
+@@ -505,6 +755,17 @@ namespace YARG.Menu.DifficultySelect
+             {
+                 int capture = i;
+                 bool selected = CurrentPlayer.Profile.HarmonyIndex == i;
++                var partSong = GlobalVariables.State.CurrentSong;
++                if (YARG.Gameplay.VocalBattle.VocalParts.HasNames(partSong))
++                {
++                    string name = YARG.Gameplay.VocalBattle.VocalParts.Label(partSong, i);
++                    _nextArtist = name;
++                    _nextHint = "You sing or rap " + name + "'s lines. The other artist's lines are shown too, but only yours count for you.";
++                }
++                else
++                {
++                    _nextHint = "Harmony part " + (i + 1) + ". Part 1 is usually the lead.";
++                }
+                 CreateItem(YARG.Gameplay.VocalBattle.VocalParts.Label(GlobalVariables.State.CurrentSong, i), selected, () =>
+                 {
+                     CurrentPlayer.Profile.HarmonyIndex = (byte) capture;
+@@ -760,6 +1021,8 @@ namespace YARG.Menu.DifficultySelect
+                 Current = null;
+             }
+ 
++            YARG.Menu.Persistent.MenuInfoPanel.HideAll();
++
+             Navigator.Instance.PopScheme();
+         }
+ 
+@@ -777,6 +1040,8 @@ namespace YARG.Menu.DifficultySelect
+             }
+ 
+             _navGroup.AddNavigatable(btn.Button);
++            Explain(btn.Button, _nextHintTitle ?? header ?? body, _nextHint, _nextArtist);
++            _nextHint = _nextArtist = _nextHintTitle = null;
+ 
+             if (selected)
+             {
+@@ -784,6 +1049,52 @@ namespace YARG.Menu.DifficultySelect
+             }
+         }
+ 
++        // What the next item made explains when the cursor is on it (light blue box), and whose
++        // picture and bio it shows (artist card)
++        private string _nextHint;
++        private string _nextHintTitle;
++        private string _nextArtist;
++
++        private void Explain(YARG.Menu.Navigation.NavigatableBehaviour item, string title, string hint, string artist)
++        {
++            item.SelectionStateChanged += (_, isSelected, _) =>
++            {
++                if (!isSelected || this == null || !isActiveAndEnabled) return;
++
++                if (string.IsNullOrEmpty(hint)) YARG.Menu.Persistent.MenuInfoPanel.HideHint();
++                else YARG.Menu.Persistent.MenuInfoPanel.ShowHint(title, hint);
++
++                if (!string.IsNullOrEmpty(artist)) YARG.Menu.Persistent.MenuInfoPanel.ShowArtist(artist);
++                else ShowScreenArtist();
++            };
++        }
++
++        /// <summary>For a singer, the song's artist on the card; for anyone else, no card.</summary>
++        private void ShowScreenArtist()
++        {
++            if (PlayerContainer.Players.Count == 0 || _playerIndex >= PlayerContainer.Players.Count ||
++                CurrentPlayer.Profile.GameMode != GameMode.Vocals)
++            {
++                YARG.Menu.Persistent.MenuInfoPanel.HideArtist();
++                return;
++            }
++
++            var song = GlobalVariables.State.CurrentSong;
++            string artist = YARG.Gameplay.VocalBattle.VocalParts.HasNames(song) &&
++                CurrentPlayer.Profile.CurrentInstrument == Instrument.Harmony
++                    ? YARG.Gameplay.VocalBattle.VocalParts.Label(song, CurrentPlayer.Profile.HarmonyIndex)
++                    : YARG.Menu.Persistent.MenuInfoPanel.FirstArtist(song?.Artist);
++            YARG.Menu.Persistent.MenuInfoPanel.ShowArtist(artist);
++        }
++
++        private void NudgeSpeed(float change)
++        {
++            float speed = Mathf.Clamp(Mathf.Round((ShownSongSpeed + change) * 20f) / 20f, 0.25f, 2f);
++            ShownSongSpeed = speed;
++            YARG.Menu.Persistent.MenuInfoPanel.ShowHint("Song Speed: " + Mathf.RoundToInt(speed * 100f) + "%",
++                "Left and right change the song's speed, 5% at a time. Slower is easier to learn; the song's pitch stays the same.");
++        }
++
+         private void CreateItem(string body, bool selected, DifficultyItem difficultyItem, UnityAction a)
+         {
+             CreateItem(null, body, selected, difficultyItem, a);
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+index 8d5dcfa..9f5b187 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+@@ -501,13 +501,72 @@ namespace YARG.Menu.MusicLibrary
+             return playlist.Name;
+         }
+ 
++        /// <summary>
++        /// A list of every artist (or genre, album, year, charter) in the library to pick from with a
++        /// controller; picking one shows just its songs. No typing needed.
++        /// </summary>
++        public void Browse(SortAttribute attribute)
++        {
++            StopPreview();
++
++            var groups = new List<(string name, int count)>();
++            void Add<TKey>(IReadOnlyDictionary<TKey, List<SongEntry>> source, Func<TKey, string> name)
++            {
++                if (source == null) return;
++                foreach (var pair in source)
++                {
++                    string label = name(pair.Key);
++                    if (!string.IsNullOrWhiteSpace(label)) groups.Add((label, pair.Value.Count));
++                }
++            }
++
++            string what;
++            switch (attribute)
++            {
++                case SortAttribute.Artist:
++                    Add(SongContainer.Artists, k => k.Original);
++                    what = "Artist";
++                    break;
++                case SortAttribute.Genre:
++                    Add(SongContainer.Genres, k => k.Original);
++                    what = "Genre";
++                    break;
++                case SortAttribute.Album:
++                    Add(SongContainer.Albums, k => k.Original);
++                    what = "Album";
++                    break;
++                case SortAttribute.Charter:
++                    Add(SongContainer.Charters, k => k.Original);
++                    what = "Charter";
++                    break;
++                case SortAttribute.Year:
++                    Add(SongContainer.Years, k => k);
++                    what = "Year";
++                    break;
++                default:
++                    return;
++            }
++
++            groups.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.CurrentCultureIgnoreCase));
++
++            var dialog = DialogManager.Instance.ShowList("Browse by " + what + "\n<size=60%><line-height=60%>\n" +
++                groups.Count + " to choose from. Pick one to see its songs.</size>");
++            dialog.AddListButton("All songs (clear the search)", () => SetSearchInput(attribute, string.Empty));
++            foreach (var (name, count) in groups)
++            {
++                string chosen = name;
++                dialog.AddListButton(name + "   <alpha=#88>(" + count + (count == 1 ? " song)" : " songs)"),
++                    () => SetSearchInput(attribute, "\"" + chosen + "\""));
++            }
++        }
++
+         public void SetSearchInput(SortAttribute songAttribute, string input)
+         {
+             _searchField.SetSearchInput(songAttribute, input);
+             UpdateSearch(true);
+         }
+ 
+-        private void OpenFilters()
++        public void OpenFilters()
+         {
+             // Stop any library preview audio so the Filters menu doesn't inherit it
+             StopPreview();
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+index 56957b6..7b32ad1 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+@@ -354,13 +354,48 @@ namespace YARG.Menu.MusicLibrary
+                     SettingsManager.Settings.EnablePlayAShow.Value ?
+                         new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.PlayShow", EnterShowMode) :
+                         new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.PlayShow", () => { }, hide: true),
+-                new NavigationScheme.Entry(MenuAction.Blue, "Menu.MusicLibrary.Filters", OpenFilters),
++                // Square / blue: favorite the song under the cursor (Filters moved into More Options)
++                new NavigationScheme.Entry(MenuAction.Blue, "Menu.MusicLibrary.Favorite", ToggleFavorite),
+                 new NavigationScheme.Entry(MenuAction.Orange, "Menu.MusicLibrary.MoreOptions",
+                     OnOrangeHit, OnOrangeRelease),
+             }, false));
+ 
+         }
+ 
++        private void ToggleFavorite()
++        {
++            var selection = CurrentSelection;
++            if (selection == null || !selection.GetFavoriteInfo().ShowFavoriteButton)
++            {
++                return;
++            }
++
++            bool wasFavorite = selection.GetFavoriteInfo().IsFavorited;
++            string name = selection is SongViewType songView ? songView.SongEntry.Name.ToString() : "Song";
++            selection.FavoriteClick();
++
++            if (wasFavorite)
++            {
++                ToastManager.ToastInformation($"{name}: removed from Favorites");
++                return;
++            }
++
++            // The first favorites become the menu music, unless a playlist was already chosen for it
++            var source = SettingsManager.Settings.MenuMusicSource;
++            if (string.IsNullOrEmpty(source.Value) || source.Value == MenuMusic.SOURCE_ALL)
++            {
++                source.SetValueWithoutNotify(MenuMusic.SOURCE_FAVORITES);
++                SettingsManager.SaveSettings();
++                ToastManager.ToastSuccess($"{name}: added to Favorites.\nThe menus now play your Favorites.");
++            }
++            else
++            {
++                ToastManager.ToastSuccess($"{name}: added to Favorites");
++            }
++
++            RefreshViewsObjects();
++        }
++
+         protected override void OnSelectedIndexChanged()
+         {
+             const double PREVIEW_SCROLL_DELAY = .6f;
+diff --git a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+index 354abcd..93276f8 100644
+--- a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+@@ -122,6 +122,22 @@ namespace YARG.Menu.MusicLibrary
+                 gameObject.SetActive(false);
+             });
+ 
++            // Find songs without typing: a list of artists, genres...
++            if (_musicLibrary.MenuState != MenuState.PlaylistSelect)
++            {
++                CreateItemUnlocalized("Browse by Artist", () => Browse(SortAttribute.Artist));
++                CreateItemUnlocalized("Browse by Genre", () => Browse(SortAttribute.Genre));
++                CreateItemUnlocalized("Browse by Album", () => Browse(SortAttribute.Album));
++                CreateItemUnlocalized("Browse by Year", () => Browse(SortAttribute.Year));
++                CreateItemUnlocalized("Browse by Charter", () => Browse(SortAttribute.Charter));
++            }
++
++            CreateItem("Filters", () =>
++            {
++                gameObject.SetActive(false);
++                _musicLibrary.OpenFilters();
++            });
++
+             CreateItem("ScanSongs", () =>
+             {
+                 _musicLibrary.RefreshSongs();
+@@ -593,6 +609,12 @@ namespace YARG.Menu.MusicLibrary
+             _musicLibrary.SetNavigationScheme(true);
+         }
+ 
++        private void Browse(SortAttribute attribute)
++        {
++            gameObject.SetActive(false);
++            _musicLibrary.Browse(attribute);
++        }
++
+         private void CreateItemUnlocalized(string body, UnityAction a)
+         {
+             var btn = Instantiate(_menuItemPrefab, _container);
+diff --git a/Assets/Script/Menu/Persistent/MusicPlayer.cs b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+index 63e5ca2..fc872c0 100644
+--- a/Assets/Script/Menu/Persistent/MusicPlayer.cs
++++ b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+@@ -33,12 +33,44 @@ namespace YARG.Menu.Persistent
+         [SerializeField]
+         private Sprite _pauseSprite;
+ 
++        // The song keeps its place while another screen has the player hidden (the song list,
++        // a dialog), and carries on from there when the menu comes back
++        private bool _heldForLater;
++        private bool _pausedByUser;
++
++        // Songs played before this one, for going back with L2
++        private static readonly System.Collections.Generic.List<SongEntry> _history = new();
++        private SongEntry _forcedNext;
++
+         private async void OnEnable()
+         {
++            lock (_lock)
++            {
++                if (_mixer != null && _nowPlaying != null)
++                {
++                    // Carry on with the song that was playing
++                    StemSettings.ApplySettings = false;
++                    _heldForLater = false;
++                    _songText.text = _nowPlaying.Name;
++                    _artistText.text = _nowPlaying.Artist;
++                    if (!_pausedByUser)
++                    {
++                        _mixer.Play();
++                        _playPauseButton.sprite = _pauseSprite;
++                    }
++                    else
++                    {
++                        _playPauseButton.sprite = _playSprite;
++                    }
++                    return;
++                }
++            }
++
+             _songText.text = _artistText.text = string.Empty;
+ 
+             // Wait until the loading is done
+             await UniTask.WaitUntil(() => !LoadingScreen.IsActive);
++            if (!isActiveAndEnabled) return;
+ 
+             // Disable if there are no songs to play
+             if (SongContainer.Count <= 0)
+@@ -55,11 +87,57 @@ namespace YARG.Menu.Persistent
+             StemSettings.ApplySettings = SettingsManager.Settings.ApplyVolumesInMusicLibrary.Value; // reset to default value
+             lock (_lock)
+             {
+-                _mixer?.Dispose();
++                if (_mixer == null) return;
++
++                if (GlobalVariables.Instance != null && GlobalVariables.Instance.CurrentScene == SceneIndex.Menu)
++                {
++                    // Still in the menus: keep the song, paused, to pick up where it was
++                    if (!_mixer.IsPaused) _mixer.Pause();
++                    _heldForLater = true;
++                    return;
++                }
++
++                // Going off to play a song: let it go
++                _mixer.Dispose();
+                 _mixer = null;
++                _heldForLater = false;
+             }
+         }
+ 
++        private void Update()
++        {
++            // R2 skips to the next song, L2 goes back one, on any controller, wherever the player shows
++            foreach (var pad in UnityEngine.InputSystem.Gamepad.all)
++            {
++                // Only real gamepads: on a guitar (the Les Paul) these are the whammy bar and such
++                if (!YARG.Input.ControllerLayout.IsStandardGamepad(pad)) continue;
++
++                if (pad.rightTrigger.wasPressedThisFrame)
++                {
++                    NextSong();
++                    return;
++                }
++
++                if (pad.leftTrigger.wasPressedThisFrame)
++                {
++                    PreviousSong();
++                    return;
++                }
++            }
++        }
++
++        public void PreviousSong()
++        {
++            if (_history.Count == 0)
++            {
++                return;
++            }
++
++            _forcedNext = _history[^1];
++            _history.RemoveAt(_history.Count - 1);
++            NextSong();
++        }
++
+         private static Task<StemMixer> _current;
+         public async void NextSong()
+         {
+@@ -67,7 +145,10 @@ namespace YARG.Menu.Persistent
+             for (int tries = 0; tries < MAX_TRIES; tries++)
+             {
+                 // Startup song first, then the chosen playlist / favorites / whole library
+-                var entry = MenuMusic.PickNext(_nowPlaying, out int poolSize);
++                bool goingBack = _forcedNext != null;
++                int poolSize = 2;
++                var entry = _forcedNext ?? MenuMusic.PickNext(_nowPlaying, out poolSize);
++                _forcedNext = null;
+                 if (entry == null)
+                 {
+                     break;
+@@ -76,7 +157,13 @@ namespace YARG.Menu.Persistent
+                 {
+                     continue;
+                 }
++                if (!goingBack && _nowPlaying != null)
++                {
++                    _history.Add(_nowPlaying);
++                    if (_history.Count > 50) _history.RemoveAt(0);
++                }
+                 _nowPlaying = entry;
++                _pausedByUser = false;
+ 
+                 Task<StemMixer> task;
+                 lock (_lock)
+@@ -93,12 +180,19 @@ namespace YARG.Menu.Persistent
+ 
+                 lock (_lock)
+                 {
+-                    if (_current != task || !gameObject.activeSelf)
++                    if (_current != task)
+                     {
+                         mixer.Dispose();
+                         continue;
+                     }
+ 
++                    if (!isActiveAndEnabled)
++                    {
++                        // Hidden while the song was loading: start afresh when the menu comes back
++                        mixer.Dispose();
++                        return;
++                    }
++
+                     _mixer?.Dispose();
+                     _mixer = mixer;
+                     _mixer.SongEnd += () =>
+@@ -107,6 +201,7 @@ namespace YARG.Menu.Persistent
+                         _mixer = null;
+                         NextSong();
+                     };
++                    _heldForLater = false;
+                     _mixer.Play();
+ 
+                     _songText.text = _nowPlaying.Name;
+@@ -138,11 +233,13 @@ namespace YARG.Menu.Persistent
+                 if (!_mixer.IsPaused)
+                 {
+                     _mixer.Pause();
++                    _pausedByUser = true;
+                     _playPauseButton.sprite = _playSprite;
+                 }
+                 else
+                 {
+                     _mixer.Play();
++                    _pausedByUser = false;
+                     _playPauseButton.sprite = _pauseSprite;
+                 }
+             }
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index e157e94..45eeb1c 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -49,7 +49,13 @@ namespace YARG.Menu.ProfileList
+ 
+             Navigator.Instance.PushScheme(new NavigationScheme(new()
+             {
++                // On a controller: up and down move through the profiles, confirm lists what can be
++                // done with the one that is lit up
++                NavigationScheme.Entry.NavigateUp,
++                NavigationScheme.Entry.NavigateDown,
++                new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", OpenSelectedProfileActions),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu(), hide: true),
++                new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfile),
+             }, true));
+ 
+             PlayerContainer.PlayerAdded += OnPlayerAdded;
+@@ -133,6 +139,21 @@ namespace YARG.Menu.ProfileList
+             return newName;
+         }
+ 
++        private void OpenSelectedProfileActions()
++        {
++            var views = _profileList.GetComponentsInChildren<ProfileView>();
++            var view = views.FirstOrDefault(e => e.Selected);
++            if (view == null)
++            {
++                // Nothing lit up yet: light up the first profile
++                view = views.FirstOrDefault();
++                if (view != null) view.SetSelected(true, SelectionOrigin.Navigation);
++                return;
++            }
++
++            view.ShowActions();
++        }
++
+         public void AddProfile()
+         {
+             PlayerContainer.AddProfile(new YargProfile
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 2033658..0b069fe 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -5,10 +5,12 @@ using UnityEngine;
+ using UnityEngine.InputSystem;
+ using UnityEngine.InputSystem.XInput;
+ using UnityEngine.UI;
++using YARG.Core;
+ using YARG.Core.Audio;
+ using YARG.Core.Game;
+ using YARG.Core.Logging;
+ using YARG.Input;
++using YARG.Localization;
+ using YARG.Menu.Navigation;
+ using YARG.Menu.Persistent;
+ using YARG.Player;
+@@ -146,12 +148,23 @@ namespace YARG.Menu.ProfileList
+             }
+         }
+ 
+-        public async UniTask<bool> PromptAddDevice()
++        public UniTask<bool> PromptAddDevice() => PromptAddDeviceFor(Profile);
++
++        /// <summary>
++        /// Lets the player behind a connected profile pick a controller or microphone to add.
++        /// Also used from the screen before a song, so a device can be added without going back to Profiles.
++        /// </summary>
++        public static async UniTask<bool> PromptAddDeviceFor(YargProfile profile)
+         {
+             var dialog = DialogManager.Instance.ShowList("Add Device\n" +
+                 "<alpha=#44><size=65%><line-height=50%>\nIf your device does not show up, try hitting a button/pad on " +
+                 "it first, and then retry.</size>");
+-            var player = PlayerContainer.GetPlayerFromProfile(Profile);
++            var player = PlayerContainer.GetPlayerFromProfile(profile);
++            if (player is null)
++            {
++                DialogManager.Instance.ClearDialog();
++                return false;
++            }
+ 
+             bool devicesAvailable = false;
+             bool selectedDevice = false;
+@@ -417,6 +430,147 @@ namespace YARG.Menu.ProfileList
+             return selectedDevice;
+         }
+ 
++        /// <summary>
++        /// Confirm on a controller: a list of what can be done with this profile, since the buttons
++        /// on the row and in the sidebar can only be reached by touch.
++        /// </summary>
++        public void ShowActions()
++        {
++            var engine = YARG.Settings.Customization.CustomContentManager.EnginePresets.GetPresetById(Profile.EnginePreset);
++            string engineName = engine != null ? engine.Name : "Default";
++            var dialog = DialogManager.Instance.ShowList(Profile.Name + "\n<size=55%><line-height=60%>\n" +
++                Profile.GameMode.ToLocalizedName() + " - Engine " +
++                YARG.Menu.Persistent.MenuInfoPanel.ExplainEngine(engineName) + "</size>");
++
++            if (!PlayerContainer.IsProfileTaken(Profile))
++            {
++                if (_profileListMenu.CanConnectProfile)
++                {
++                    dialog.AddListButton(Profile.IsBot ? "Add this bot to the band" : "Connect (play as this profile)",
++                        () => After(() => Connect(true)));
++                }
++                dialog.AddListButton("Delete this profile", () => After(() =>
++                {
++                    RemoveProfile();
++                    return UniTask.CompletedTask;
++                }));
++                return;
++            }
++
++            if (!Profile.IsBot)
++            {
++                dialog.AddListButton("Add Device (controller or microphone)", () => After(async () =>
++                {
++                    await PromptAddDevice();
++                    _profileListMenu.RefreshList(Profile);
++                }));
++                dialog.AddListButton("Remove Device", () => After(async () =>
++                {
++                    await PromptRemoveDevice();
++                    _profileListMenu.RefreshList(Profile);
++                }));
++            }
++
++            dialog.AddListButton("Instrument Type: " + Profile.GameMode.ToLocalizedName() + "  (change)", () =>
++            {
++                var modes = new[]
++                {
++                    YARG.Core.GameMode.FiveFretGuitar, YARG.Core.GameMode.Vocals,
++                    YARG.Core.GameMode.FourLaneDrums, YARG.Core.GameMode.FiveLaneDrums,
++                    YARG.Core.GameMode.SixFretGuitar, YARG.Core.GameMode.ProKeys,
++                };
++                int at = System.Array.IndexOf(modes, Profile.GameMode);
++                Profile.GameMode = modes[(at + 1) % modes.Length];
++                Profile.CurrentInstrument = Profile.GameMode.PossibleInstruments()[0];
++                YARG.Menu.Filters.FiltersMenu.ResetIntensityFiltersForProfile(Profile);
++                UpdateDisplay(Profile);
++                After(Reopen);
++            });
++            dialog.AddListButton("Engine: " + engineName + "  (change)", () =>
++            {
++                // Default, Casual, Precision, Solo Taps: the ones that change this instrument
++                var choices = new System.Collections.Generic.List<YARG.Core.Game.EnginePreset>
++                    { YARG.Core.Game.EnginePreset.Default };
++                if (Profile.GameMode is YARG.Core.GameMode.FiveFretGuitar or YARG.Core.GameMode.Vocals)
++                    choices.Add(YARG.Core.Game.EnginePreset.Casual);
++                if (Profile.GameMode is not YARG.Core.GameMode.ProKeys)
++                    choices.Add(YARG.Core.Game.EnginePreset.Precision);
++                if (Profile.GameMode is YARG.Core.GameMode.FiveFretGuitar)
++                    choices.Add(YARG.Core.Game.EnginePreset.SoloTaps);
++                int at = choices.FindIndex(e => e.Id == Profile.EnginePreset);
++                Profile.EnginePreset = choices[(at + 1) % choices.Count].Id;
++                After(Reopen);
++            });
++            dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (faster)", () =>
++            {
++                Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed + 0.5f, 0.5f, 100f);
++                After(Reopen);
++            });
++            dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (slower)", () =>
++            {
++                Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed - 0.5f, 0.5f, 100f);
++                After(Reopen);
++            });
++            dialog.AddListButton(Profile.LeftyFlip ? "Lefty Flip: On" : "Lefty Flip: Off", () =>
++            {
++                Profile.LeftyFlip = !Profile.LeftyFlip;
++                After(Reopen);
++            });
++            dialog.AddListButton("More Settings and Button Bindings", () => After(() =>
++            {
++                _profileSidebar.UpdateSidebar(Profile, this);
++                _profileSidebar.EditProfile();
++                return UniTask.CompletedTask;
++            }));
++
++            int index = PlayerContainer.GetPlayerIndex(PlayerContainer.GetPlayerFromProfile(Profile));
++            if (index > 0)
++            {
++                dialog.AddListButton("Move Up (earlier player)", () => After(() =>
++                {
++                    MoveUp();
++                    return UniTask.CompletedTask;
++                }));
++            }
++            if (index < PlayerContainer.Players.Count - 1)
++            {
++                dialog.AddListButton("Move Down (later player)", () => After(() =>
++                {
++                    MoveDown();
++                    return UniTask.CompletedTask;
++                }));
++            }
++
++            dialog.AddListButton("Disconnect", () => After(() =>
++            {
++                Disconnect();
++                return UniTask.CompletedTask;
++            }));
++        }
++
++        private UniTask Reopen()
++        {
++            _profileSidebar.UpdateSidebar(Profile, this);
++            ShowActions();
++            return UniTask.CompletedTask;
++        }
++
++        // Runs once the list that was just chosen from has closed, so a new dialog can open
++        private async void After(System.Func<UniTask> action)
++        {
++            try
++            {
++                await UniTask.Yield();
++                await DialogManager.Instance.WaitUntilCurrentClosed();
++                if (this == null) return;
++                await action();
++            }
++            catch (System.Exception e)
++            {
++                YargLogger.LogException(e, "Profile action failed");
++            }
++        }
++
+         public void ConnectButtonAction()
+         {
+             if (_profileListMenu.CanConnectProfile)
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index c7120aa..e620126 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -157,8 +157,13 @@ namespace YARG.Settings
+                 {
+                     YARG.Gameplay.VocalBattle.SingOffTurns.OneLine,
+                     YARG.Gameplay.VocalBattle.SingOffTurns.TwoLines,
+-                    YARG.Gameplay.VocalBattle.SingOffTurns.FourLines
++                    YARG.Gameplay.VocalBattle.SingOffTurns.FourLines,
++                    YARG.Gameplay.VocalBattle.SingOffTurns.FourBars,
++                    YARG.Gameplay.VocalBattle.SingOffTurns.EightBars,
++                    YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars
+                 };
++            // A picture and short bio of the artist when choosing whose part to sing (from Wikipedia)
++            public ToggleSetting ShowArtistCards { get; } = new(true);
+             public ToggleSetting EnablePracticeSP { get; } = new(false);
+             public SliderSetting PracticeRestartDelay { get; } = new(2f, 0.5f, 5f);
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 5622855..702434c 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -57,6 +57,7 @@ namespace YARG.Settings
+                 new HeaderMetadata("Vocals"),
+                 nameof(Settings.SingOff),
+                 nameof(Settings.SingOffTurnLength),
++                nameof(Settings.ShowArtistCards),
+ 
+                 new HeaderMetadata("StatusBar"),
+                 nameof(Settings.ShowBattery),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index a4f6dbb..68fdd45 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -328,6 +328,7 @@
+                     "RandomSong": "Random Song",
+                     "BackToTop": "Back to Top",
+                     "ScanSongs": "Scan Songs",
++                    "Filters": "Filters",
+                     "SortBy": "Sort By: {0}",
+                     "GoToSection": "Go To Section...",
+                     "AddToFavorites": "Add To Favorites",
+@@ -368,6 +369,7 @@
+             "StartSet": "Start The Set",
+             "PlayShow": "Play A Show",
+             "Filters": "Filters",
++            "Favorite": "Favorite",
+             "NoSongsInPlaylist": "No Songs In Playlist",
+             "CannotAddToSelf": "No, I will not create an ouroboros for you. Nice try, Jaden.",
+             "AddToShow": "Add To Show",
+@@ -1700,13 +1702,20 @@
+                 "Name": "Sing-Off",
+                 "Description": "Turns the vocals into a battle when two or more players sing. On the Vocals instrument the lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. On Harmonies (a song with a part for each artist) each player sings the artist they picked and the two artists' singers face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. A sing-off with turns leaves no high score, since each singer has only half the song. Can also be switched on the screen before a song."
+             },
++            "ShowArtistCards": {
++                "Name": "Artist Pictures and Bios",
++                "Description": "When choosing whose part to sing or rap (Rap Mode, Harmonies, Sing-Off), shows the artist's picture and a short bio on the right. They come from Wikipedia the first time (the artist's name is looked up there) and are kept on the phone after that."
++            },
+             "SingOffTurnLength": {
+                 "Name": "Sing-Off Turn Length",
+                 "Description": "In a sing-off on the Vocals instrument: how many lines a singer gets before the other takes over.",
+                 "Dropdown": {
+                     "OneLine": "One line each",
+                     "TwoLines": "Two lines each",
+-                    "FourLines": "Four lines each"
++                    "FourLines": "Four lines each",
++                    "FourBars": "Four bars each (rap mode)",
++                    "EightBars": "Eight bars each (rap mode)",
++                    "SixteenBars": "Sixteen bars each (rap mode)"
+                 }
+             },
+             "GamepadNoStrum": {
