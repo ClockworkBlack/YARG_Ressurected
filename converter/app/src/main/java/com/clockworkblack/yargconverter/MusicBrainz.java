@@ -43,6 +43,11 @@ final class MusicBrainz {
      */
     static Found find(String title, String artist) throws IOException {
         if (title == null || title.trim().isEmpty()) return null;
+        // Without "(Official Video)", "(feat. X)" and the like, and with the main artist only
+        title = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(title);
+        String asCredited = artist;
+        artist = com.clockworkblack.yargconverter.core.SongNames.primaryArtist(artist);
+        if (title.isEmpty()) return null;
         StringBuilder q = new StringBuilder("recording:\"").append(escape(title)).append('"');
         if (artist != null && !artist.trim().isEmpty()) q.append(" AND artist:\"").append(escape(artist)).append('"');
         String body = get(BASE + "recording?fmt=json&limit=10&query=" + URLEncoder.encode(q.toString(), "UTF-8"));

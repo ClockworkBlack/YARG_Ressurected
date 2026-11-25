@@ -290,7 +290,7 @@ final class VocalTest {
         check(Lrc.artists("Don Toliver & Travis Scott", "").toString().equals("[Don Toliver, Travis Scott]"), "ampersand");
         check(Lrc.artists("Drake", "Sicko Mode (feat. Swae Lee)").toString().equals("[Drake, Swae Lee]"), "feat. in the title: " + Lrc.artists("Drake", "Sicko Mode (feat. Swae Lee)"));
         check(Lrc.artists("Don Toliver", "No Pole").toString().equals("[Don Toliver]"), "one artist");
-        check(Lrc.artists("A ft. B, C", "").toString().equals("[A, B]"), "at most two: " + Lrc.artists("A ft. B, C", ""));
+        check(Lrc.artists("A ft. B, C", "").toString().equals("[A, B & C]"), "two parts at most, the guests together: " + Lrc.artists("A ft. B, C", ""));
         check(Lrc.artists("", null).isEmpty(), "no artist");
         check(Lrc.artists("Max x Lexi", "").toString().equals("[Max, Lexi]") && Lrc.artists("Maxx", "").size() == 1, "an x between names, not inside one");
 

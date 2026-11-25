@@ -33,6 +33,7 @@ final class RnbTest {
         runsInTheVocals();
         wholeSong();
         singersFromLyrics();
+        namesForLookups();
         // normalModeKeepsPace() measures an experiment that is switched off (VocalCharter.PACE_FROM_SONG);
         // run it by hand when working on word timing without the separated voice.
         return failures;
@@ -347,6 +348,65 @@ final class RnbTest {
         check(Lrc.markFromHeaders(synced, "[Verse 1]\nFirst line of mine\n[Chorus]\nSing it all together", names) == null, "plain lyrics that name nobody change nothing");
         check(Lrc.markFromHeaders(synced, "[Verse 1: Lead One]\nCompletely other words\n[Verse 2: Guest Two]\nNothing alike at all", names) == null, "lyrics of a different song are not trusted");
         check(Lrc.markFromHeaders(synced, plain, names.subList(0, 1)) == null, "one artist: nothing to split");
+    }
+
+    /** Tidying titles and artists so a lookup finds the song, and telling the right result from a namesake. */
+    private static void namesForLookups() {
+        System.out.println("Names for looking a song up");
+        String[][] titles = {
+                {"Just Be A Man About It (Official Video)", "Just Be A Man About It"},
+                {"03 - No Pole [Official Audio]", "No Pole"},
+                {"After Party (feat. Offset)", "After Party"},
+                {"Superstition - Remastered 2011", "Superstition"},
+                {"07. What's Going On.mp3", "What's Going On"},
+                {"Lovin_You_(Lyrics)", "Lovin You"},
+                {"Sittin' On The Dock Of The Bay (Live) [HD]", "Sittin' On The Dock Of The Bay"},
+                {"(Sittin' On) The Dock of the Bay", "(Sittin' On) The Dock of the Bay"},
+                {"No Scrubs ft. Someone Else", "No Scrubs"},
+                {"1999", "1999"},
+        };
+        for (String[] t : titles) {
+            String got = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(t[0]);
+            check(got.equals(t[1]), "\"" + t[0] + "\" is looked up as \"" + t[1] + "\" (got \"" + got + "\")");
+        }
+        check(com.clockworkblack.yargconverter.core.SongNames.primaryArtist("Don Toliver feat. Travis Scott & Offset").equals("Don Toliver"), "the main artist of three");
+
+        List<com.clockworkblack.yargconverter.core.SongNames.Query> qs =
+                com.clockworkblack.yargconverter.core.SongNames.queries("Toni Braxton - Just Be A Man About It (Official Video)", "", "Toni Braxton - Just Be A Man About It (Official Video).mp3");
+        boolean split = false, titleOnly = false;
+        for (com.clockworkblack.yargconverter.core.SongNames.Query q : qs) {
+            if (q.title.equals("Just Be A Man About It") && q.artist.equals("Toni Braxton")) split = true;
+            if (q.artist.isEmpty()) titleOnly = true;
+        }
+        check(split, "an untagged \"Artist - Title\" file is asked for by title and artist");
+        check(titleOnly && qs.size() >= 3 && qs.size() <= 8, "several ways of asking, a title-only one among them (" + qs.size() + ")");
+
+        com.clockworkblack.yargconverter.core.SongNames.Query q = qs.get(0);
+        for (com.clockworkblack.yargconverter.core.SongNames.Query each : qs) if (each.title.equals("Just Be A Man About It") && each.artist.equals("Toni Braxton")) q = each;
+        check(com.clockworkblack.yargconverter.core.SongNames.fit(q, "Just Be a Man About It", "Toni Braxton", 289, 289) >= 4, "the same song fits");
+        check(com.clockworkblack.yargconverter.core.SongNames.fit(q, "Just Be A Man About It", "Toni Braxton feat. Dr. Dre", 289, 0) >= 3, "... with a guest credited too");
+        check(com.clockworkblack.yargconverter.core.SongNames.fit(q, "Just Be A Man About It", "Some Cover Band", 289, 200) == 0, "a namesake by someone else, of another length, does not");
+        check(com.clockworkblack.yargconverter.core.SongNames.fit(q, "Another Song Entirely", "Toni Braxton", 289, 289) == 0, "another song by the same artist does not");
+        com.clockworkblack.yargconverter.core.SongNames.Query bare = qs.get(qs.size() - 1);
+        check(bare.artist.isEmpty() && bare.title.equals("Just Be A Man About It"), "the last resort is the title alone: \"" + bare.title + "\"");
+        check(com.clockworkblack.yargconverter.core.SongNames.fit(bare, "Just Be A Man About It", "Anyone", 289, 288) > 0
+                && com.clockworkblack.yargconverter.core.SongNames.fit(bare, "Just Be A Man About It", "Anyone", 289, 200) == 0, "by title alone, the length has to agree");
+
+        // More than two artists: the main one, and the guests together
+        List<String> three = Lrc.artists("Lead One feat. Guest Two & Guest Three", "A Song");
+        check(three.size() == 2 && three.get(0).equals("Lead One") && three.get(1).equals("Guest Two & Guest Three"), "three artists become the lead and the guests together: " + three);
+        check(Lrc.allArtists("A, B & C feat. D", null).size() == 4, "every artist is found");
+        String plain = "[Verse 1: Lead One]\nLine one here\n[Verse 2: Guest Two]\nLine two here\n[Verse 3: Guest Three]\nLine three here\n[Outro: Lead One & Guest Three]\nLine four here\n";
+        String synced = "[00:01.00]Line one here\n[00:05.00]Line two here\n[00:09.00]Line three here\n[00:13.00]Line four here\n";
+        String marked = Lrc.markFromHeaders(synced, plain, three);
+        check(marked != null, "three singers' headers are used");
+        if (marked != null) {
+            List<Lrc.Line> lines = Lrc.parse(marked);
+            check(lines.get(0).singer == Lrc.FIRST && lines.get(1).singer == Lrc.SECOND && lines.get(2).singer == Lrc.SECOND && lines.get(3).singer == Lrc.BOTH,
+                    "either guest's lines go to the guests' part, a line shared with the lead to both:\n" + marked);
+        }
+        List<String> fromHeaders = Lrc.findSingers("A Song", plain, "Lead One");
+        check(fromHeaders.size() == 2 && fromHeaders.get(1).equals("Guest Two & Guest Three"), "guests named only in the lyrics' headers are found together: " + fromHeaders);
     }
 
     /** Through the whole converter: R&B mode is used when there is singing, and explained when it cannot be. */

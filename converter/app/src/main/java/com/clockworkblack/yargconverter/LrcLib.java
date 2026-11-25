@@ -1,5 +1,7 @@
 package com.clockworkblack.yargconverter;
 
+import com.clockworkblack.yargconverter.core.SongNames;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -32,47 +34,96 @@ final class LrcLib {
 
     /** @return the best match, or null when nothing was found */
     static Found find(String title, String artist, String album, double durationSec) throws IOException {
-        if (title == null || title.trim().isEmpty()) return null;
-        Found best = null;
+        return find(title, artist, album, durationSec, null);
+    }
+
+    /**
+     * Looks a song up every sensible way until its timed lyrics turn up: as tagged, then with the
+     * title tidied ("(Official Video)", "(feat. X)", "- Remastered", a track number), with only
+     * the main artist, as free text, by title alone, and from the file name ("Artist - Title").
+     * Each result is checked against what was asked (same title, and the same artist or the same
+     * length), so a different song that shares the name is not taken.
+     *
+     * @param fileName the audio file's name, or null
+     * @return the best match, or null when nothing was found
+     */
+    static Found find(String title, String artist, String album, double durationSec, String fileName) throws IOException {
+        java.util.List<SongNames.Query> queries = SongNames.queries(title, artist, fileName);
+        if (queries.isEmpty()) return null;
+        Found best = null, bestPlain = null;
+        double bestFit = 0, bestPlainFit = 0;
+        IOException failure = null;
+        java.util.Set<String> asked = new java.util.HashSet<>();
         try {
-            // Exact lookup first: needs the right title, artist and length (within 2 seconds).
-            if (artist != null && !artist.trim().isEmpty() && durationSec > 1) {
-                StringBuilder q = new StringBuilder(BASE).append("get?track_name=").append(enc(title))
-                        .append("&artist_name=").append(enc(artist));
-                if (album != null && !album.trim().isEmpty()) q.append("&album_name=").append(enc(album));
-                q.append("&duration=").append(Math.round(durationSec));
-                String body = get(q.toString());
-                if (body != null) {
+            // Exact lookups first: they need the right title, artist and length (within 2 seconds)
+            int exact = 0;
+            for (SongNames.Query q : queries) {
+                if (q.artist.isEmpty() || durationSec <= 1 || exact >= 3) continue;
+                exact++;
+                StringBuilder url = new StringBuilder(BASE).append("get?track_name=").append(enc(q.title))
+                        .append("&artist_name=").append(enc(q.artist));
+                if (exact == 1 && album != null && !album.trim().isEmpty()) url.append("&album_name=").append(enc(album));
+                url.append("&duration=").append(Math.round(durationSec));
+                if (!asked.add(url.toString())) continue;
+                try {
+                    String body = get(url.toString());
+                    if (body == null) continue;
                     Found f = parse(new JSONObject(body));
                     if (f.synced != null) return f;
-                    best = f;
+                    if (bestPlain == null && (f.plain != null || f.instrumental)) {
+                        bestPlain = f;
+                        bestPlainFit = 5;
+                    }
+                } catch (IOException e) {
+                    failure = e;
                 }
             }
-            StringBuilder q = new StringBuilder(BASE).append("search?track_name=").append(enc(title));
-            if (artist != null && !artist.trim().isEmpty()) q.append("&artist_name=").append(enc(artist));
-            String body = get(q.toString());
-            if (body != null) {
-                JSONArray arr = new JSONArray(body);
-                Found bestSynced = null;
-                double bestDiff = Double.MAX_VALUE;
-                for (int i = 0; i < arr.length(); i++) {
-                    Found f = parse(arr.getJSONObject(i));
-                    if (f.synced != null) {
-                        double diff = durationSec > 1 && f.duration > 0 ? Math.abs(f.duration - durationSec) : i;
-                        if (diff < bestDiff) {
-                            bestDiff = diff;
-                            bestSynced = f;
+
+            int searches = 0;
+            for (SongNames.Query q : queries) {
+                java.util.List<String> urls = new java.util.ArrayList<>();
+                if (!q.artist.isEmpty()) {
+                    urls.add(BASE + "search?track_name=" + enc(q.title) + "&artist_name=" + enc(q.artist));
+                    urls.add(BASE + "search?q=" + enc(q.artist + " " + q.title));
+                } else {
+                    urls.add(BASE + "search?track_name=" + enc(q.title));
+                }
+                for (String url : urls) {
+                    if (!asked.add(url) || searches >= 10) continue;
+                    searches++;
+                    String body;
+                    try {
+                        body = get(url);
+                    } catch (IOException e) {
+                        failure = e;
+                        continue;
+                    }
+                    if (body == null) continue;
+                    JSONArray arr = new JSONArray(body);
+                    for (int i = 0; i < arr.length(); i++) {
+                        Found f = parse(arr.getJSONObject(i));
+                        double fit = SongNames.fit(q, f.title, f.artist, durationSec, f.duration);
+                        if (fit <= 0) continue;
+                        if (f.synced != null && fit > bestFit) {
+                            bestFit = fit;
+                            best = f;
+                        } else if (f.synced == null && (f.plain != null || f.instrumental) && fit > bestPlainFit) {
+                            bestPlainFit = fit;
+                            bestPlain = f;
                         }
-                    } else if (best == null && f.plain != null) {
-                        best = f;
                     }
                 }
-                if (bestSynced != null) return bestSynced;
+                // Title with the artist or the length confirmed: no need to keep asking
+                if (bestFit >= 3) break;
             }
         } catch (JSONException e) {
             throw new IOException("The lyrics service sent an unexpected reply.", e);
         }
-        return best != null && (best.plain != null || best.instrumental) ? best : null;
+        if (best != null) return best;
+        if (bestPlain != null) return bestPlain;
+        // Nothing found and the service could not be reached at all: say so
+        if (failure != null) throw failure;
+        return null;
     }
 
     private static Found parse(JSONObject o) {

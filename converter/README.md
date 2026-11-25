@@ -67,6 +67,16 @@ the one-time download of the instrument-separation model.
    Open the app again at any time to see where it is.
 6. Add the song to the game (next section).
 
+## Finding the lyrics
+
+**Find online** (and the lookup for every song in a list) asks LRCLIB for the song several ways
+until its timed lyrics turn up: as tagged; with the title tidied (no "(Official Video)",
+"[Lyrics]", "(feat. X)", "- Remastered 2011", track number or file ending); with only the main
+artist; as free text; by title alone; and from the file name ("Artist - Title.mp3", either way
+round). Each result has to have the same title, and the same artist or the same length, so a
+different song that shares the name is not taken. If nothing is found, check the Title and
+Artist boxes: they are what is searched for.
+
 ## Two artists, worked out for you
 
 The converter looks for a second singer by itself, in this order:
@@ -81,6 +91,10 @@ The converter looks for a second singer by itself, in this order:
    what, and the song is converted with **Split** or **R&B mode**, the lines are split by the
    sound of the two voices. This now happens by itself; the "guess it from their voices" box
    is only needed to try it on a song where no second singer is named.
+
+**More than two artists.** The game has two parts to hand out, so a song with three or more
+names becomes the main artist against the guests together ("B & C"): a line under any guest's
+header goes to the guests' part, and a line shared with the main artist to both.
 
 The app says which of these happened, and the result is always shown as marks in the lyrics, so
 it can be checked and corrected with **Choose who sings what** (or the **Singers** button in a

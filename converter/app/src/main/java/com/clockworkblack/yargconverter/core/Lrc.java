@@ -148,8 +148,13 @@ public final class Lrc {
     }
 
     private static boolean names(String haystack, String artist) {
-        String a = artist == null ? "" : artist.trim().toLowerCase(Locale.US);
-        return a.length() >= 2 && haystack.contains(a);
+        if (artist == null) return false;
+        // A part that stands for several guests ("B & C") is named when any one of them is
+        for (String one : artist.split("\\s+&\\s+")) {
+            String a = one.trim().toLowerCase(Locale.US);
+            if (a.length() >= 2 && haystack.contains(a)) return true;
+        }
+        return false;
     }
 
     /**
@@ -158,6 +163,19 @@ public final class Lrc {
      * main artist first; one name (or none) means there is nobody to split the lines between.
      */
     public static List<String> artists(String artist, String title) {
+        List<String> all = allArtists(artist, title);
+        if (all.size() <= 2) return all;
+        // The game has two parts to give out: the main artist, and the guests together
+        List<String> out = new ArrayList<>();
+        out.add(all.get(0));
+        StringBuilder guests = new StringBuilder();
+        for (int i = 1; i < all.size(); i++) guests.append(i > 1 ? " & " : "").append(all.get(i));
+        out.add(guests.toString());
+        return out;
+    }
+
+    /** Every artist named, however many, the main artist first. */
+    public static List<String> allArtists(String artist, String title) {
         List<String> out = new ArrayList<>();
         String all = artist == null ? "" : artist;
         if (title != null) {
@@ -171,7 +189,6 @@ public final class Lrc {
             boolean seen = false;
             for (String o : out) if (o.equalsIgnoreCase(name)) seen = true;
             if (!seen) out.add(name);
-            if (out.size() == 2) break;
         }
         return out;
     }
@@ -189,7 +206,7 @@ public final class Lrc {
             if (!s.startsWith("[") || !s.endsWith("]") || s.length() > 80) continue;
             int colon = s.indexOf(':');
             if (colon < 0) continue;
-            for (String name : artists(s.substring(colon + 1, s.length() - 1), null)) {
+            for (String name : allArtists(s.substring(colon + 1, s.length() - 1), null)) {
                 boolean seen = false;
                 for (String o : out) if (o.equalsIgnoreCase(name)) seen = true;
                 if (!seen && name.length() >= 2 && name.length() <= 40) out.add(name);
@@ -212,15 +229,18 @@ public final class Lrc {
             if (main.isEmpty()) main = found;
         }
         List<String> out = new ArrayList<>(main);
+        if (out.size() >= 2) return out;
+        StringBuilder guests = new StringBuilder();
         for (String name : headerSingers(plainLyrics)) {
-            if (out.size() >= 2) break;
             boolean seen = false;
             for (String o : out) {
                 String a = o.toLowerCase(Locale.US), b = name.toLowerCase(Locale.US);
                 if (a.equals(b) || a.contains(b) || b.contains(a)) seen = true;
             }
-            if (!seen) out.add(name);
+            if (out.isEmpty()) out.add(name);
+            else if (!seen) guests.append(guests.length() > 0 ? " & " : "").append(name);
         }
+        if (guests.length() > 0) out.add(guests.toString());
         return out;
     }
 

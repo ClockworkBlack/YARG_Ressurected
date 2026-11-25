@@ -919,6 +919,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             return;
         }
         final double seconds = audioSeconds;
+        final String fileForLookup = audioName;
         lyricsStatus.setText("Searching lrclib.net…");
         findButton.setEnabled(false);
         new Thread(new Runnable() {
@@ -927,7 +928,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 LrcLib.Found found = null;
                 String error = null;
                 try {
-                    found = LrcLib.find(title, artist, album, seconds);
+                    found = LrcLib.find(title, artist, album, seconds, fileForLookup);
                 } catch (IOException e) {
                     error = e.getMessage() == null ? "No connection." : e.getMessage();
                 }
@@ -1463,7 +1464,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 String text = null;
                 String why = "No timed lyrics were found online for this song.";
                 try {
-                    LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds);
+                    LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds, q.fileName);
                     if (found != null && found.synced != null) {
                         List<String> names = findSingers(q.meta.title, q.meta.artist, q.credit, found);
                         if (names.size() >= 2) q.meta.singers = names.toArray(new String[0]);
@@ -1547,14 +1548,16 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         } else if (findLyrics) {
                             ConversionService.setTextAndProgress("Looking for lyrics…", -1);
                             try {
-                                LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds);
+                                LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds, q.fileName);
                                 if (found != null && found.synced != null) {
                                     List<String> names = findSingers(q.meta.title, q.meta.artist, q.credit, found);
                                     if (names.size() >= 2) q.meta.singers = names.toArray(new String[0]);
                                     lrcText = markedLyrics(found, names);
                                     lyrics = Lrc.parse(lrcText);
                                     lyricsNote = hasMarks(lrcText) ? "with lyrics, singers from the lyrics"
-                                            : names.size() >= 2 ? "with lyrics, two singers" : "with lyrics";
+                                            : names.size() < 2 ? "with lyrics"
+                                            : q.mode != MODE_NORMAL && model ? "with lyrics, singers by their voices"
+                                            : "with lyrics; " + names.get(0) + " and " + names.get(1) + " not told apart: that needs Split or R&B, or the Singers button";
                                 } else {
                                     lyricsNote = "no timed lyrics found";
                                 }
