@@ -66,7 +66,7 @@ time with the note that was played.
 
 The bank is only the bare guitar signal. The sound comes from the amplifier model in
 `GuitarVoiceAmp.cs`: valve stages, a power stage and a tone-and-speaker filter chain. The
-filter chains were fitted by measurement, not by ear:
+filter chains were fitted by measurement, not by ear, with `fit_amp.py` in this folder:
 
 - **Rock** and **Heavy**: the bank's notes were played through the model and compared, overtone
   by overtone, with recordings of real amplified guitars playing the same notes (the
@@ -77,6 +77,21 @@ filter chains were fitted by measurement, not by ear:
 - **Clean**: FreePats also publishes the same guitar takes played through a clean amplifier
   (*Electric Guitar FSBS (clean)*, CC0). Comparing each take before and after gives what that
   amplifier does to the tone, and the Clean chain was fitted to it.
+
+To run it again (it prints the three filter chains exactly as they stand in
+`GuitarVoiceAmp.cs`, in under a minute):
+
+```
+git clone --depth 1 https://github.com/freepats/electric-guitar-FSBS-clean
+sudo apt-get install fluid-soundfont-gm
+python3 tools/string-bank/fit_amp.py \
+    --guitar electric-guitar-FSBS-direct \
+    --clean electric-guitar-FSBS-clean \
+    --soundfont /usr/share/sounds/sf2/FluidR3_GM.sf2
+```
+
+The valve-stage settings at the top of `fit_amp.py` are a copy of the ones in
+`GuitarVoiceAmp.cs`; change them in both places.
 
 For scale: in those recordings of real distorted amps, 20 to 80% of a note's energy sits
 between 2 and 5 kHz, where a guitar speaker peaks (least on the lowest string, most in the
