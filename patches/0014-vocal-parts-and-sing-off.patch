@@ -1,0 +1,255 @@
+diff --git a/Assets/Script/Gameplay/GameManager.Loading.cs b/Assets/Script/Gameplay/GameManager.Loading.cs
+index e97923d..f2b5483 100644
+--- a/Assets/Script/Gameplay/GameManager.Loading.cs
++++ b/Assets/Script/Gameplay/GameManager.Loading.cs
+@@ -467,6 +467,9 @@ namespace YARG.Gameplay
+             {
+                 _players = new List<BasePlayer>();
+ 
++                // A sing-off (Settings > General > Sing-Off) sets two singers or teams against each other
++                YARG.Gameplay.VocalBattle.SingOff.Setup(this, Chart, YargPlayers);
++
+                 bool vocalTrackInitialized = false;
+ 
+                 int index = -1;
+@@ -546,6 +549,8 @@ namespace YARG.Gameplay
+                             var chart = player.Profile.CurrentInstrument == Instrument.Vocals
+                                 ? Chart.Vocals
+                                 : Chart.Harmony;
++                            // In a sing-off with turns: the vocals with their lines dealt out to the two sides
++                            chart = YARG.Gameplay.VocalBattle.SingOff.TrackOr(chart);
+                             VocalTrack.Initialize(chart, player, Song.VocalScrollSpeedScalingFactor);
+ 
+                             _lyricBar.gameObject.SetActive(false);
+@@ -584,6 +589,9 @@ namespace YARG.Gameplay
+                         state.Audible += 2;
+                     }
+                 }
++
++                // The sing-off's scoreboard
++                YARG.Gameplay.VocalBattle.SingOff.Begin(this);
+             }
+             catch (Exception ex)
+             {
+diff --git a/Assets/Script/Gameplay/Player/VocalsPlayer.cs b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
+index 21520b2..2db2e0e 100644
+--- a/Assets/Script/Gameplay/Player/VocalsPlayer.cs
++++ b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
+@@ -61,6 +61,9 @@ namespace YARG.Gameplay.Player
+ 
+         private int _phraseIndex = -1;
+ 
++        // Which part of the vocals this player sings: the harmony part picked, or a side of a sing-off
++        private int _partIndex;
++
+         private const int NEEDLES_COUNT = 7;
+ 
+         private SongChart _chart;
+@@ -85,11 +88,14 @@ namespace YARG.Gameplay.Player
+ 
+             // Get the notes from the specific harmony or solo part
+ 
+-            var multiTrack = chart.GetVocalsTrack(Player.Profile.CurrentInstrument);
++            // In a sing-off with turns the lines are dealt out into two parts, one a side
++            var multiTrack = YARG.Gameplay.VocalBattle.SingOff.TrackOr(
++                chart.GetVocalsTrack(Player.Profile.CurrentInstrument));
+             _allVocalParts = multiTrack.Parts;
+             _handlesCountdown = vocalIndex == 0;
+ 
+-            var track = multiTrack.Parts[Player.Profile.HarmonyIndex];
++            _partIndex = YARG.Gameplay.VocalBattle.SingOff.PartIndex(Player);
++            var track = multiTrack.Parts[_partIndex];
+             player.Profile.ApplyVocalModifiers(track);
+ 
+             OriginalNoteTrack = track.CloneAsInstrumentDifficulty();
+@@ -109,7 +115,7 @@ namespace YARG.Gameplay.Player
+                 var startSpeed = main.startSpeed;
+                 startSpeed.constant *= trackSpeed;
+                 main.startSpeed = startSpeed;
+-                main.startColor = VocalTrack.Colors[Player.Profile.HarmonyIndex];
++                main.startColor = VocalTrack.Colors[_partIndex];
+             }
+ 
+             // Initialize player specific vocal visuals
+@@ -167,7 +173,7 @@ namespace YARG.Gameplay.Player
+             HitWindow = EngineParams.HitWindow;
+ 
+             var engine = new YargVocalsEngine(NoteTrack, SyncTrack, EngineParams, Player.Profile.IsBot);
+-            EngineContainer = GameManager.EngineManager.Register(engine, NoteTrack.Instrument, Player.Profile.HarmonyIndex, _chart, Player.RockMeterPreset);
++            EngineContainer = GameManager.EngineManager.Register(engine, NoteTrack.Instrument, _partIndex, _chart, Player.RockMeterPreset);
+ 
+             engine.OnComboIncrement += OnComboIncrement;
+             engine.OnComboReset += OnComboReset;
+@@ -183,6 +189,11 @@ namespace YARG.Gameplay.Player
+ 
+             engine.OnPhraseHit += (percent, fullPoints, isLastPhrase) =>
+             {
++                // The engine reports the line against the level's pass mark; a sing-off marks it on
++                // the share of the line that was sung right
++                YARG.Gameplay.VocalBattle.SingOff.ReportLine(Player, percent * EngineParams.PhraseHitPercent,
++                    Player.Profile.CurrentDifficulty, GameManager.SongTime);
++
+                 if (!fullPoints)
+                 {
+                     IsFc = false;
+@@ -230,7 +241,8 @@ namespace YARG.Gameplay.Player
+ 
+             if (_handlesCountdown)
+             {
+-                if (Player.Profile.CurrentInstrument == Instrument.Vocals)
++                if (Player.Profile.CurrentInstrument == Instrument.Vocals &&
++                    !YARG.Gameplay.VocalBattle.SingOff.SplitLines)
+                 {
+                     engine.BuildCountdownsFromSelectedPart();
+                 }
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index 2fbd228..7b1f01a 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -78,6 +78,9 @@ namespace YARG.Menu.DifficultySelect
+         private int _playerIndex;
+         private int _vocalModifierSelectIndex = -1;
+ 
++        // Keeps the Sing-Off row highlighted after it has been switched
++        private bool _reselectSingOff;
++
+         private State _lastMenuState;
+         private State _menuState;
+ 
+@@ -290,11 +293,15 @@ namespace YARG.Menu.DifficultySelect
+                     UpdateForPlayer();
+                 });
+ 
+-                // Harmony players must pick their harmony index
++                // Harmony players must pick their harmony index. A song that names its vocal parts
++                // (two artists, from YARG Converter) shows the artists instead of numbers.
+                 if (player.Profile.CurrentInstrument == Instrument.Harmony)
+                 {
+-                    CreateItem(LocalizeHeader("Harmony"),
+-                        (player.Profile.HarmonyIndex + 1).ToString(),
++                    var partSong = GlobalVariables.State.CurrentSong;
++                    CreateItem(YARG.Gameplay.VocalBattle.VocalParts.HasNames(partSong)
++                            ? "Whose Lines"
++                            : LocalizeHeader("Harmony"),
++                        YARG.Gameplay.VocalBattle.VocalParts.Label(partSong, player.Profile.HarmonyIndex),
+                         _lastMenuState == State.Harmony, () =>
+                     {
+                         _menuState = State.Harmony;
+@@ -302,6 +309,27 @@ namespace YARG.Menu.DifficultySelect
+                     });
+                 }
+ 
++                // With more than one player, the singers can make it a sing-off
++                if (player.Profile.GameMode == GameMode.Vocals && PlayerContainer.Players.Count > 1 &&
++                    !GlobalVariables.State.IsPractice)
++                {
++                    var singOff = YARG.Settings.SettingsManager.Settings.SingOff;
++                    string singOffText = !singOff.Value
++                        ? "Off"
++                        : player.Profile.CurrentInstrument == Instrument.Harmony
++                            ? "On: artist against artist"
++                            : "On: take turns, best singer wins";
++                    CreateItem("Sing-Off", singOffText, _reselectSingOff, () =>
++                    {
++                        // (Not through Value: that also pokes the settings menu, which isn't open here)
++                        singOff.SetValueWithoutNotify(!singOff.Value);
++                        YARG.Settings.SettingsManager.SaveSettings();
++                        _reselectSingOff = true;
++                        UpdateForPlayer();
++                    });
++                    _reselectSingOff = false;
++                }
++
+                 // Only allow vocal modifiers to be selected once (so they don't conflict)
+                 if (player.Profile.GameMode != GameMode.Vocals ||
+                     _vocalModifierSelectIndex == -1 ||
+@@ -418,7 +446,11 @@ namespace YARG.Menu.DifficultySelect
+             foreach (var difficulty in _possibleDifficulties)
+             {
+                 bool selected = CurrentPlayer.Profile.CurrentDifficulty == difficulty;
+-                CreateItem(difficulty.ToLocalizedName(), selected, () =>
++                // Singers are told what each level asks for: how close to the note, how much of the line
++                string hint = CurrentPlayer.Profile.GameMode == GameMode.Vocals
++                    ? YARG.Gameplay.VocalBattle.VocalParts.LevelHint(CurrentPlayer.EnginePreset, difficulty)
++                    : null;
++                CreateItem(hint, difficulty.ToLocalizedName(), selected, () =>
+                 {
+                     CurrentPlayer.Profile.CurrentDifficulty
+                         = CurrentPlayer.Profile.DifficultyFallback
+@@ -473,7 +505,7 @@ namespace YARG.Menu.DifficultySelect
+             {
+                 int capture = i;
+                 bool selected = CurrentPlayer.Profile.HarmonyIndex == i;
+-                CreateItem((i + 1).ToString(), selected, () =>
++                CreateItem(YARG.Gameplay.VocalBattle.VocalParts.Label(GlobalVariables.State.CurrentSong, i), selected, () =>
+                 {
+                     CurrentPlayer.Profile.HarmonyIndex = (byte) capture;
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 73681d1..fb4d65a 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -149,6 +149,16 @@ namespace YARG.Settings
+                 (value) => InputSystem.pollingFrequency = value
+             );
+             public ToggleSetting VoiceActivatedVocalStarPower { get; } = new(true);
++
++            // Vocals: two singers (or two teams) trade lines and are scored head to head
++            public ToggleSetting SingOff { get; } = new(false);
++            public DropdownSetting<YARG.Gameplay.VocalBattle.SingOffTurns> SingOffTurnLength { get; }
++                = new(YARG.Gameplay.VocalBattle.SingOffTurns.TwoLines)
++                {
++                    YARG.Gameplay.VocalBattle.SingOffTurns.OneLine,
++                    YARG.Gameplay.VocalBattle.SingOffTurns.TwoLines,
++                    YARG.Gameplay.VocalBattle.SingOffTurns.FourLines
++                };
+             public ToggleSetting EnablePracticeSP { get; } = new(false);
+             public SliderSetting PracticeRestartDelay { get; } = new(2f, 0.5f, 5f);
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index a3b6c18..6890632 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -54,6 +54,10 @@ namespace YARG.Settings
+                 nameof(Settings.LearningGuides),
+                 new FieldMetadata(nameof(Settings.ReduceNoteSpeedByDifficulty)),
+ 
++                new HeaderMetadata("Vocals"),
++                nameof(Settings.SingOff),
++                nameof(Settings.SingOffTurnLength),
++
+                 new HeaderMetadata("StatusBar"),
+                 nameof(Settings.ShowBattery),
+                 nameof(Settings.ShowTime),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 8caba9b..fb0944e 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -962,6 +962,7 @@
+             "AdvancedDMXChannels": "Advanced DMX Channels",
+             "StatusBar": "Status Bar",
+             "Controller": "Controller",
++            "Vocals": "Vocals",
+             "AdvancedDMXSettings": "Advanced sACN and DMX settings",
+             "Experimental": "Experimental",
+             "HUD": "HUD",
+@@ -1682,6 +1683,19 @@
+                     "FaceButtons": "Face buttons (Cross, Circle, Triangle, Square, L1)"
+                 }
+             },
++            "SingOff": {
++                "Name": "Sing-Off",
++                "Description": "Turns the vocals into a battle when two or more players sing. On the Vocals instrument the lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. On Harmonies (a song with a part for each artist) each player sings the artist they picked and the two artists' singers face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. A sing-off with turns leaves no high score, since each singer has only half the song. Can also be switched on the screen before a song."
++            },
++            "SingOffTurnLength": {
++                "Name": "Sing-Off Turn Length",
++                "Description": "In a sing-off on the Vocals instrument: how many lines a singer gets before the other takes over.",
++                "Dropdown": {
++                    "OneLine": "One line each",
++                    "TwoLines": "Two lines each",
++                    "FourLines": "Four lines each"
++                }
++            },
+             "GamepadNoStrum": {
+                 "Name": "No Strumming On Gamepads",
+                 "Description": "On: when you play guitar or bass on a gamepad, pressing the fret button plays the note, with no strumming. Hold the buttons of a chord together; press again for a repeated note. It works by giving the profile the \"All Taps\" modifier and the Casual engine preset, which you can see and change on the screen before a song and in the profile. Off: notes need a strum (D-pad up or down) like on a guitar controller. Takes effect the next time you choose a song."

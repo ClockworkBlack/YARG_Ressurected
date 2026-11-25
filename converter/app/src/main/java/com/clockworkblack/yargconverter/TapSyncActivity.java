@@ -222,11 +222,11 @@ public final class TapSyncActivity extends Activity {
     private void show() {
         int n = lines.size();
         counter.setText(Math.min(next, n) + " of " + n + " lines");
-        previous.setText(next > 0 ? lines.get(next - 1) : "");
+        previous.setText(next > 0 ? shown(next - 1) : "");
         if (next < n) {
-            current.setText(lines.get(next));
+            current.setText(shown(next));
             StringBuilder sb = new StringBuilder();
-            for (int i = next + 1; i < Math.min(n, next + 4); i++) sb.append(lines.get(i)).append('\n');
+            for (int i = next + 1; i < Math.min(n, next + 4); i++) sb.append(shown(i)).append('\n');
             upcoming.setText(sb.toString().trim());
             tapButton.setEnabled(true);
         } else {
@@ -235,6 +235,11 @@ public final class TapSyncActivity extends Activity {
             tapButton.setEnabled(false);
         }
         doneButton.setEnabled(next > 0);
+    }
+
+    /** A line as shown while tapping: without the "v1:" style mark that says who sings it. */
+    private String shown(int index) {
+        return Lrc.stripMark(lines.get(index), new int[1]);
     }
 
     private void finishWithResult() {

@@ -3,6 +3,7 @@ package com.clockworkblack.yargconverter;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -38,6 +39,8 @@ import com.clockworkblack.yargconverter.core.Lrc;
 import com.clockworkblack.yargconverter.core.SongMeta;
 import com.clockworkblack.yargconverter.core.SongWriter;
 import com.clockworkblack.yargconverter.core.StemSplitter;
+import com.clockworkblack.yargconverter.core.VocalAnalyzer;
+import com.clockworkblack.yargconverter.core.VocalCharter;
 import com.clockworkblack.yargconverter.stems.OrtStemModel;
 
 import java.io.BufferedInputStream;
@@ -55,16 +58,20 @@ import java.util.List;
 import java.util.Locale;
 
 /** Pick a song, sort out its lyrics, and write a ready-to-play folder into YARG's songs folder. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends Activity implements ConversionService.Listener {
     private static final int REQ_AUDIO = 1;
     private static final int REQ_LRC = 2;
     private static final int REQ_TAP = 3;
     private static final int REQ_PERMISSION = 4;
+    private static final int REQ_NOTIFICATIONS = 5;
+    private static final int REQ_SINGERS = 6;
 
     /** Folder inside Internal storage/YARG/songs that converted songs go into. */
     private static final String SUBFOLDER = "Converted";
 
     private final Handler main = new Handler(Looper.getMainLooper());
+    /** The app, not this screen: the conversion keeps using it after the screen is closed. */
+    private Context app;
 
     private Uri audioUri;
     private String audioName = "";
@@ -77,7 +84,11 @@ public final class MainActivity extends Activity {
     private Button pickButton, findButton, lrcButton, tapButton, convertButton;
     private ProgressBar progress;
     private RadioGroup densityGroup;
-    private CheckBox stemsCheck;
+    private CheckBox stemsCheck, guessCheck;
+    private Button singersButton;
+    private TextView singersStatus;
+    /** The two artists' names as typed on the "Who sings what" screen; null until that has been used. */
+    private String[] singerNames;
     private TextView modelStatus;
     private Button modelButton;
     private static final int DENSITY_FEWER = 1, DENSITY_STANDARD = 2, DENSITY_MORE = 3;
@@ -85,8 +96,57 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        app = getApplicationContext();
         buildUi();
         handleIncoming(getIntent());
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ConversionService.setListener(this);
+        onConversionChanged();
+    }
+
+    @Override
+    protected void onPause() {
+        ConversionService.setListener(null);
+        super.onPause();
+    }
+
+    /** Shows a conversion that runs (or finished) in the background, including one started before
+     * this screen was last closed. */
+    @Override
+    public void onConversionChanged() {
+        if (log == null) return;
+        if (ConversionService.isRunning()) {
+            if (!busy) setBusy(true);
+            progress.setVisibility(View.VISIBLE);
+            int p = ConversionService.progress();
+            if (p < 0) {
+                progress.setIndeterminate(true);
+            } else {
+                progress.setIndeterminate(false);
+                progress.setProgress(p);
+            }
+            log.setText(ConversionService.text());
+            return;
+        }
+
+        String result = ConversionService.unseenResult();
+        if (result != null) {
+            ConversionService.markResultSeen();
+            setBusy(false);
+            progress.setVisibility(View.GONE);
+            log.setText(result);
+            // Singers worked out from the voices go back into the lyrics box, to be checked.
+            String marked = ConversionService.takeMarkedLyrics();
+            if (marked != null && ConversionService.succeeded()) {
+                lyricsBox.setText(marked);
+                describeLyrics("Singers guessed from their voices.");
+            }
+            if (!ConversionService.succeeded()) message("Conversion failed", result);
+        }
     }
 
     @Override
@@ -129,7 +189,7 @@ public final class MainActivity extends Activity {
         root.addView(heading);
 
         TextView sub = new TextView(this);
-        sub.setText("Turns an MP3, WAV or FLAC into a guitar chart (Easy to Expert) with lyrics, and puts it in YARG's songs folder.");
+        sub.setText("Turns an MP3, WAV or FLAC into guitar and bass charts (Easy to Expert) and a vocals part to sing or rap along to, and puts it in YARG's songs folder.");
         sub.setPadding(0, dp(4), 0, dp(16));
         root.addView(sub);
 
@@ -198,6 +258,18 @@ public final class MainActivity extends Activity {
         lyricsStatus.setPadding(0, dp(4), 0, dp(4));
         root.addView(lyricsStatus);
 
+        singersButton = button("Two artists? Choose who sings what", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openSingers();
+            }
+        });
+        root.addView(singersButton);
+        singersStatus = new TextView(this);
+        singersStatus.setPadding(0, dp(2), 0, dp(4));
+        singersStatus.setText("With lyrics, the song gets a vocals part: every player with a microphone can sing or rap it. Mark the lines of two artists and each player picks whose lines to do.");
+        root.addView(singersStatus);
+
         root.addView(section("3. Convert"));
         stemsCheck = new CheckBox(this);
         stemsCheck.setText("Split the song into instruments first. The guitar chart is then made from the guitar alone, and a bass chart is added. Takes a few minutes per song.");
@@ -212,6 +284,9 @@ public final class MainActivity extends Activity {
             }
         });
         root.addView(modelButton);
+        guessCheck = new CheckBox(this);
+        guessCheck.setText("Two artists: where the lyrics don't say who sings a line, guess it from their voices. Needs the split above. It is a guess; check it afterwards with \"Choose who sings what\".");
+        root.addView(guessCheck);
         refreshModelUi(true);
 
         TextView densityLabel = new TextView(this);
@@ -245,6 +320,22 @@ public final class MainActivity extends Activity {
         log.setPadding(0, dp(10), 0, 0);
         log.setTextIsSelectable(true);
         root.addView(log);
+
+        root.addView(section("Change a song's notes"));
+        TextView editInfo = new TextView(this);
+        editInfo.setText("Add or take away notes in a song that is already converted, without converting it again.");
+        editInfo.setPadding(0, 0, 0, dp(4));
+        root.addView(editInfo);
+        root.addView(button("Edit a converted song's notes", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!hasStorageAccess()) {
+                    requestStorageAccess();
+                    return;
+                }
+                startActivity(new Intent(MainActivity.this, EditorActivity.class));
+            }
+        }));
 
         setContentView(scroll);
     }
@@ -293,7 +384,9 @@ public final class MainActivity extends Activity {
         tapButton.setEnabled(!value);
         convertButton.setEnabled(!value);
         modelButton.setEnabled(!value);
+        singersButton.setEnabled(!value);
         stemsCheck.setEnabled(!value && ModelStore.installed(this));
+        guessCheck.setEnabled(!value && ModelStore.installed(this));
         if (value) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } else {
@@ -305,6 +398,8 @@ public final class MainActivity extends Activity {
     private void refreshModelUi(boolean tickIfInstalled) {
         boolean installed = ModelStore.installed(this);
         stemsCheck.setEnabled(installed && !busy);
+        guessCheck.setEnabled(installed && !busy);
+        if (!installed) guessCheck.setChecked(false);
         if (!installed) stemsCheck.setChecked(false);
         else if (tickIfInstalled) stemsCheck.setChecked(true);
         modelButton.setVisibility(installed ? View.GONE : View.VISIBLE);
@@ -412,6 +507,14 @@ public final class MainActivity extends Activity {
             if (lrc != null && !lrc.isEmpty()) {
                 lyricsBox.setText(lrc);
                 describeLyrics("Synced by tapping.");
+            }
+        } else if (requestCode == REQ_SINGERS) {
+            String text = data.getStringExtra(SingersActivity.EXTRA_TEXT);
+            String[] names = data.getStringArrayExtra(SingersActivity.EXTRA_NAMES);
+            if (names != null) singerNames = names;
+            if (text != null) {
+                lyricsBox.setText(text);
+                describeLyrics("Singers chosen.");
             }
         }
     }
@@ -521,6 +624,56 @@ public final class MainActivity extends Activity {
         } else {
             lyricsStatus.setText(prefix + " " + Lrc.plainLines(text).size() + " lines without times. Use \"Tap to sync\" to time them.");
         }
+        describeSingers(text);
+    }
+
+    /** The two artists of the song: as typed on the "Who sings what" screen, else read from the artist and title. */
+    private String[] singers() {
+        String[] names = singerNames;
+        if (names == null) {
+            names = Lrc.artists(artistBox.getText().toString(), titleBox.getText().toString()).toArray(new String[0]);
+        }
+        String first = names.length > 0 ? names[0].trim() : "";
+        String second = names.length > 1 ? names[1].trim() : "";
+        return new String[] {first.isEmpty() ? "Singer 1" : first, second.isEmpty() ? "Singer 2" : second};
+    }
+
+    private void describeSingers(String text) {
+        int first = 0, second = 0, both = 0;
+        List<Lrc.Line> lines = new ArrayList<>();
+        if (Lrc.hasTimestamps(text)) {
+            lines = Lrc.parse(text);
+        } else {
+            int[] singer = new int[1];
+            for (String l : Lrc.plainLines(text, java.util.Arrays.asList(singers()))) lines.add(new Lrc.Line(0, Lrc.stripMark(l, singer), singer[0]));
+        }
+        for (Lrc.Line l : lines) {
+            if (l.text.isEmpty()) continue;
+            if (l.singer == Lrc.SECOND) second++;
+            else if (l.singer == Lrc.BOTH) both++;
+            else first++;
+        }
+        if (first + second + both == 0) {
+            singersStatus.setText("With lyrics, the song gets a vocals part: every player with a microphone can sing or rap it. Mark the lines of two artists and each player picks whose lines to do.");
+        } else if (second == 0) {
+            singersStatus.setText("One vocals part for everybody (no lines marked for a second artist).");
+        } else {
+            String[] names = singers();
+            singersStatus.setText(names[0] + ": " + first + " lines.  " + names[1] + ": " + second + " lines." + (both > 0 ? "  Both: " + both + "." : "")
+                    + "  In the game, pick Harmonies as the instrument to choose an artist.");
+        }
+    }
+
+    private void openSingers() {
+        String text = lyricsBox.getText().toString();
+        if (text.trim().isEmpty()) {
+            message("Lyrics needed", "Find or paste the lyrics first, then choose who sings each line.");
+            return;
+        }
+        Intent i = new Intent(this, SingersActivity.class);
+        i.putExtra(SingersActivity.EXTRA_TEXT, text);
+        i.putExtra(SingersActivity.EXTRA_NAMES, singers());
+        startActivityForResult(i, REQ_SINGERS);
     }
 
     private void findLyrics() {
@@ -582,9 +735,9 @@ public final class MainActivity extends Activity {
         String text = lyricsBox.getText().toString();
         ArrayList<String> lines = new ArrayList<>();
         if (Lrc.hasTimestamps(text)) {
-            for (Lrc.Line l : Lrc.parse(text)) if (!l.text.isEmpty()) lines.add(l.text);
+            for (Lrc.Line l : Lrc.parse(text)) if (!l.text.isEmpty()) lines.add(Lrc.mark(l.singer) + l.text);
         } else {
-            lines.addAll(Lrc.plainLines(text));
+            lines.addAll(Lrc.plainLines(text, java.util.Arrays.asList(singers())));
         }
         if (lines.isEmpty()) {
             message("Lyrics needed", "Paste or find the lyrics first, one sung line per line.");
@@ -608,7 +761,7 @@ public final class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 30) {
             new AlertDialog.Builder(this)
                     .setTitle("Allow access to the YARG folder")
-                    .setMessage("To place songs in Internal storage/YARG/songs, turn on \"Allow access to manage all files\" for YARG Converter on the next screen, then come back and press Convert again.")
+                    .setMessage("To place songs in Internal storage/YARG/songs, turn on \"Allow access to manage all files\" for YARG Converter on the next screen, then come back and try again.")
                     .setPositiveButton("Open settings", new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
@@ -679,6 +832,8 @@ public final class MainActivity extends Activity {
         // "Fewer" keeps only the stronger sounds; "More" lets weaker ones through.
         options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
         final boolean useStems = stemsCheck.isChecked() && ModelStore.installed(this);
+        final boolean guessSingers = useStems && guessCheck.isChecked();
+        meta.singers = singers();
 
         setBusy(true);
         progress.setIndeterminate(false);
@@ -686,44 +841,43 @@ public final class MainActivity extends Activity {
         progress.setVisibility(View.VISIBLE);
         log.setText("Listening to the song…");
 
+        // Keeps going with the app in the background or the screen off, with a notification
+        askForNotifications();
+        ConversionService.begin(this, meta.titleOrDefault());
+        ConversionService.setTextAndProgress("Listening to the song… You can leave the app; it keeps going.", 0);
+
         new Thread(new Runnable() {
             @Override
             public void run() {
                 String summary;
                 boolean ok = false;
                 try {
-                    summary = runConversion(uri, name, meta, lyrics, lrcText, options, useStems);
+                    summary = runConversion(uri, name, meta, lyrics, lrcText, options, useStems, guessSingers);
                     ok = true;
                 } catch (IOException e) {
                     summary = "Conversion failed: " + e.getMessage();
                 } catch (RuntimeException | OutOfMemoryError e) {
                     summary = "Conversion failed unexpectedly: " + e;
                 }
-                final String text = summary;
-                final boolean success = ok;
-                main.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        setBusy(false);
-                        progress.setVisibility(View.GONE);
-                        log.setText(text);
-                        if (!success) message("Conversion failed", text);
-                    }
-                });
+                // Shown here if the app is open, otherwise as a notification and when it's next opened
+                ConversionService.finish(ok, summary);
             }
         }, "convert").start();
     }
 
-    private void status(final String text) {
-        main.post(new Runnable() {
-            @Override
-            public void run() {
-                log.setText(text);
-            }
-        });
+    private void askForNotifications() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+        }
     }
 
-    private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options, boolean useStems) throws IOException {
+    private void status(final String text) {
+        ConversionService.setText(text);
+    }
+
+    private String runConversion(Uri uri, String name, SongMeta meta, List<Lrc.Line> lyrics, String lrcText, GuitarCharter.Options options,
+                                 boolean useStems, boolean guessSingers) throws IOException {
         File songs = new File(new File(Environment.getExternalStorageDirectory(), "YARG"), "songs");
         File dir = new File(new File(songs, SUBFOLDER), meta.folderName());
         if (!dir.isDirectory() && !dir.mkdirs()) {
@@ -743,7 +897,7 @@ public final class MainActivity extends Activity {
 
         // When splitting into instruments, the decoded audio is also parked in a temporary
         // file as 44.1 kHz stereo, which is what the separation model reads.
-        final File pcmFile = new File(getCacheDir(), "mix44k.pcm");
+        final File pcmFile = new File(app.getCacheDir(), "mix44k.pcm");
         final long[] pcmFrames = {0};
         OutputStream pcmOut = null;
         AudioDecoder.StereoSink stereo = null;
@@ -779,20 +933,10 @@ public final class MainActivity extends Activity {
         long separationMs = 0;
         try {
             try {
-                features = AudioDecoder.decode(this, uri, copyAsIs ? null : new File(dir, audioFile), stereo, new AudioDecoder.Progress() {
+                features = AudioDecoder.decode(app, uri, copyAsIs ? null : new File(dir, audioFile), stereo, new AudioDecoder.Progress() {
                     @Override
                     public void onProgress(final float fraction) {
-                        main.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (fraction < 0) {
-                                    progress.setIndeterminate(true);
-                                } else {
-                                    progress.setIndeterminate(false);
-                                    progress.setProgress(Math.round(fraction * 1000));
-                                }
-                            }
-                        });
+                        ConversionService.setProgress(fraction < 0 ? -1 : Math.round(fraction * 1000));
                     }
                 });
             } finally {
@@ -817,7 +961,13 @@ public final class MainActivity extends Activity {
         }
 
         status("Finding the beat and writing the charts…");
+        if (stems != null) stems.guessSingers = guessSingers;
         SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems);
+        if (result.singerGuess != null) {
+            // Saved with the song and shown back in the app, where the guess can be corrected.
+            lrcText = Lrc.format(result.lyricsOut);
+            ConversionService.setMarkedLyrics(lrcText);
+        }
         if (result.noteCount(GuitarCharter.EXPERT) == 0) {
             throw new IOException("No notes could be found in this audio. Is it silent, or speech only?");
         }
@@ -825,7 +975,7 @@ public final class MainActivity extends Activity {
 
         if (copyAsIs) {
             status("Copying the audio…");
-            try (InputStream in = getContentResolver().openInputStream(uri);
+            try (InputStream in = app.getContentResolver().openInputStream(uri);
                  OutputStream out = new FileOutputStream(new File(dir, audioFile))) {
                 if (in == null) throw new IOException("The audio file could not be opened.");
                 byte[] buf = new byte[1 << 16];
@@ -866,25 +1016,55 @@ public final class MainActivity extends Activity {
         }
         sb.append("Recognised ").append(result.chart.soundGroups).append(" different notes and chords, and ")
                 .append(result.chart.repeatedMeasures).append(" measures that repeat\n");
-        sb.append(result.lyricLines > 0 ? "Lyrics: " + result.lyricLines + " lines\n" : "Lyrics: none\n");
+        describeVocals(sb, result, meta, stems != null && stems.voice != null);
         if (!copyAsIs) sb.append("Audio saved as WAV so YARG can play it.\n");
         sb.append("\nTo play it in YARG:\n")
                 .append("1. Open YARG (allow All files access if it asks).\n")
                 .append("2. Settings > Songs > Scan Songs (or in the music library: More Options > Scan Songs).\n")
                 .append("3. In the music library, Search for \"").append(meta.titleOrDefault())
                 .append("\", or sort by Charter: this one is under \"").append(meta.charter).append("\".");
+        if (result.lyricLines > 0) {
+            sb.append("\n4. To sing: give a profile a microphone, then pick Vocals as its instrument")
+                    .append(result.vocals.twoParts() ? " (or Harmonies, to choose one artist's lines)." : ".");
+        }
         return sb.toString();
+    }
+
+    /** What the vocals part turned out like, in words. */
+    private static void describeVocals(StringBuilder sb, SongWriter.Result result, SongMeta meta, boolean listened) {
+        VocalCharter.Chart v = result.vocals;
+        if (result.lyricLines == 0) {
+            sb.append("Vocals: none (no lyrics)\n");
+            return;
+        }
+        sb.append("Vocals: ").append(v.lines).append(" lines, ").append(v.sungLines).append(" sung (the note counts), ")
+                .append(v.spokenLines).append(" rapped or spoken (any sound in time counts)\n");
+        if (!listened) {
+            sb.append("  The words were spread at speaking pace. Tick \"Split the song into instruments\" to place them where they are sung and get the real notes.\n");
+        } else if (!v.heard) {
+            sb.append("  The voice could not be heard where the lyrics say it is, so the words were spread at speaking pace. Check the lyric timings.\n");
+        }
+        if (v.twoParts()) {
+            sb.append("  ").append(meta.singerName(0)).append(": ").append(v.partLines[VocalCharter.PART_FIRST]).append(" lines, ")
+                    .append(meta.singerName(1)).append(": ").append(v.partLines[VocalCharter.PART_SECOND]).append(" lines");
+            if (v.partLines[VocalCharter.PART_BOTH] > 0) sb.append(", both: ").append(v.partLines[VocalCharter.PART_BOTH]);
+            sb.append(result.singerGuess != null ? " (guessed from their voices: check with \"Choose who sings what\" and convert again if it is wrong)\n" : "\n");
+        } else if (result.singersGuessTried) {
+            sb.append("  The two voices could not be told apart. Mark the lines yourself with \"Choose who sings what\".\n");
+        }
     }
 
     /**
      * Runs the separation model over the parked audio and measures the guitar, the pitched
-     * instruments together, and the bass as they come out. Only the measurements are kept;
-     * the separated audio itself is not stored.
+     * instruments together, the bass and the voice as they come out. Only the measurements are
+     * kept; the separated audio itself is not stored.
      */
     private SongWriter.Stems separate(File pcmFile, long frames) throws Exception {
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer bass = new AudioAnalyzer(StemSplitter.SAMPLE_RATE, true);
+        final VocalAnalyzer voice = new VocalAnalyzer(StemSplitter.SAMPLE_RATE);
+        final float[] vox = new float[StemSplitter.SEGMENT];
         final double[] energy = new double[4];
         final float[] g = new float[StemSplitter.SEGMENT];
         final float[] m = new float[StemSplitter.SEGMENT];
@@ -892,16 +1072,9 @@ public final class MainActivity extends Activity {
         int cores = Runtime.getRuntime().availableProcessors();
         int threads = Math.max(2, Math.min(6, cores - 2));
         final long started = System.currentTimeMillis();
-        status("Loading the separation model…");
-        main.post(new Runnable() {
-            @Override
-            public void run() {
-                progress.setIndeterminate(false);
-                progress.setProgress(0);
-            }
-        });
+        ConversionService.setTextAndProgress("Loading the separation model…", 0);
 
-        try (OrtStemModel model = new OrtStemModel(ModelStore.file(this).getAbsolutePath(), threads);
+        try (OrtStemModel model = new OrtStemModel(ModelStore.file(app).getAbsolutePath(), threads);
              InputStream in = new BufferedInputStream(new FileInputStream(pcmFile), 1 << 16)) {
             final byte[] bytes = new byte[1 << 16];
             StemSplitter.Source source = new StemSplitter.Source() {
@@ -928,7 +1101,9 @@ public final class MainActivity extends Activity {
                 public void accept(float[] mixLeft, float[] mixRight, float[][][] stems, int count) {
                     float[][] gt = stems[StemSplitter.GUITAR], ot = stems[StemSplitter.OTHER];
                     float[][] pn = stems[StemSplitter.PIANO], bs = stems[StemSplitter.BASS];
+                    float[][] vc = stems[StemSplitter.VOCALS];
                     for (int i = 0; i < count; i++) {
+                        vox[i] = (vc[0][i] + vc[1][i]) * 0.5f;
                         float gv = (gt[0][i] + gt[1][i]) * 0.5f;
                         float mv = gv + (ot[0][i] + ot[1][i] + pn[0][i] + pn[1][i]) * 0.5f;
                         float bv = (bs[0][i] + bs[1][i]) * 0.5f;
@@ -944,6 +1119,7 @@ public final class MainActivity extends Activity {
                     guitar.feed(g, 0, count);
                     melodic.feed(m, 0, count);
                     bass.feed(b, 0, count);
+                    voice.feed(vox, 0, count);
                 }
             };
             StemSplitter.Progress report = new StemSplitter.Progress() {
@@ -951,25 +1127,20 @@ public final class MainActivity extends Activity {
                 public boolean onSegment(final int done, final int total) {
                     long elapsed = System.currentTimeMillis() - started;
                     long left = done > 0 ? elapsed * (total - done) / done : 0;
-                    final String text = String.format(Locale.US, "Splitting into instruments: part %d of %d%s. Keep this screen open.",
+                    final String text = String.format(Locale.US, "Splitting into instruments: part %d of %d%s. You can leave the app; it keeps going.",
                             done, total, done < total ? String.format(Locale.US, " (about %d min %02d s left)", left / 60000, (left / 1000) % 60) : "");
-                    main.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            progress.setProgress(done * 1000 / total);
-                            log.setText(text);
-                        }
-                    });
+                    ConversionService.setTextAndProgress(text, done * 1000 / total);
                     return true;
                 }
             };
-            status("Splitting into instruments… Keep this screen open.");
+            status("Splitting into instruments… You can leave the app; it keeps going.");
             StemSplitter.split(source, frames, model, sink, report);
         }
         SongWriter.Stems out = new SongWriter.Stems();
         out.guitar = guitar.finish();
         out.melodic = melodic.finish();
         out.bass = bass.finish();
+        out.voice = voice.finish();
         out.guitarEnergy = energy[0];
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];
@@ -981,7 +1152,7 @@ public final class MainActivity extends Activity {
     private void saveAlbumArt(Uri uri, File dir) {
         MediaMetadataRetriever r = new MediaMetadataRetriever();
         try {
-            r.setDataSource(this, uri);
+            r.setDataSource(app, uri);
             byte[] art = r.getEmbeddedPicture();
             if (art == null || art.length < 16) return;
             boolean png = (art[0] & 0xFF) == 0x89 && art[1] == 'P';
