@@ -165,6 +165,9 @@ final class AlignTest {
         check(Math.abs(Lrc.parse(Lrc.shiftText(moved, -0.5)).get(2).time - 13.0) < 0.011, "and back again");
         check(Lrc.keepsTiming("[offset:500]\n[00:01.00]x"), "an [offset:] line also means the times are meant");
         check(Lrc.shiftText("no times here", 1).equals("no times here"), "lyrics without times are not touched");
+        List<Lrc.Line> labelled = Lrc.parse("[00:12.09][Hook]\n[00:32.07]I know\n[01:02.55][Verse 2: Somebody]\n[01:05.00](Yeah yeah)");
+        check(labelled.size() == 4 && labelled.get(0).text.isEmpty() && labelled.get(2).text.isEmpty(), "timed section labels are gaps, not sung words");
+        check(labelled.get(3).text.equals("(Yeah yeah)"), "an ad-lib in brackets is still sung");
     }
 
     /** Korean, Japanese and Chinese lyrics: read, counted and cut into notes properly. */

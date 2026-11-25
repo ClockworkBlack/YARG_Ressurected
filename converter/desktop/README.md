@@ -16,6 +16,15 @@ and `notes.mid` is read back by the game's rules (`core-test/MidiCheck`) before 
 which line from their voices. The folder appears in `songs/Artist - Title/`; copy it into
 `Internal storage/YARG/songs/` on the phone.
 
+**Finding lyrics as the app does.** The app's lookup (LRCLIB, then NetEase when its box is ticked,
+then untimed words from Lyrics.ovh) can be run here too; NetEase often has timed lyrics LRCLIB lacks.
+
+**Checking found lyrics against the voice.** Given a timed `.lrc` instead of plain words,
+`time_lyrics.py` keeps its times except where the voice clearly disagrees: a line heard starting
+more than 0.8 s away takes the heard time, and a run of lines crammed together (less room than it
+takes to sing them) is spread out between the nearest lines the voice confirmed. Every change is
+listed.
+
 **Lyrics with no times anywhere online.** `--vocals-out vocals.wav --wait-for-lyrics timed.lrc` writes
 the separated voice and waits for a timed lyrics file. `time_lyrics.py` makes one: it recognises the
 words in the voice with faster-whisper (`pip install faster-whisper`) and matches them to the plain

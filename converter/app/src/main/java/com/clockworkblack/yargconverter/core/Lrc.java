@@ -44,6 +44,9 @@ public final class Lrc {
     /** "v1:", "v2:", "vb:" (ours), and the older karaoke marks "M:", "F:", "D:" (male, female, duet). */
     private static final Pattern MARK = Pattern.compile("^(?:([vV])\\s?([12bB]|12)|([MFD]))\\s?:\\s*");
 
+    /** A line that is only a label in square brackets: "[Hook]", "[Verse 2: Travis Scott]". */
+    private static final Pattern SECTION = Pattern.compile("^\\[[^\\]]{1,60}\\]$");
+
     /** True when the text carries at least one "[mm:ss]" time stamp. */
     public static boolean hasTimestamps(String text) {
         return text != null && STAMP.matcher(text).find();
@@ -76,6 +79,9 @@ public final class Lrc {
             }
             if (times.isEmpty()) continue;
             String words = WORD_STAMP.matcher(raw.substring(end)).replaceAll(" ").replaceAll("\\s+", " ").trim();
+            // A section label with a time ("[01:02.55][Verse 1]", as NetEase writes them) is not
+            // sung: it marks a gap, so the words would otherwise show "Verse 1" as a lyric
+            if (SECTION.matcher(words).matches()) words = "";
             // Letters written as a base plus a separate accent, and Korean written as loose
             // parts, are put together: the game draws each character on its own
             words = java.text.Normalizer.normalize(words, java.text.Normalizer.Form.NFC);
