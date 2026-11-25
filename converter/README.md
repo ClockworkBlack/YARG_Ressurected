@@ -132,7 +132,12 @@ is converted with those lyrics and those marks. A song you don't mark is still s
 artists by the sound of their voices when it is set to Split or R&B and "Two artists: ... guess
 it from their voices" is ticked.
 
-For a song whose lyrics need fixing or tapping in by hand, use the single-song steps above.
+**Everything the single-song steps offer, per song.** Each song's **Edit** button opens its own
+page: title, artist, album, year and genre; how many notes (or "as in step 3"); and its lyrics,
+which can be found online there and then, opened from a `.lrc` file, pasted, timed with **Tap to
+sync** (it plays that song), and marked with **Who sings what**. A song's row shows when its
+lyrics are ready or still need times. Lyrics without times give that song no vocals, and the
+summary says so.
 
 ## Adding a converted song to YARG
 

@@ -72,6 +72,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private static final int REQ_SINGERS = 6;
     private static final int REQ_BATCH = 7;
     private static final int REQ_BATCH_SINGERS = 8;
+    private static final int REQ_BATCH_LRC = 9;
+    private static final int REQ_BATCH_TAP = 10;
+    /** The song in the list being edited, and its dialog's lyrics box, while the dialog is open. */
+    private Queued editing;
+    private EditText editingLyrics;
+    private TextView editingStatus;
     /** The song in the list whose singers are being chosen. */
     private Queued singersFor;
 
@@ -93,6 +99,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
         String lrcText;
         /** The lines have been marked by hand with the Singers button. */
         boolean singersMarked;
+        /** "How many notes" for this song alone (0 = as chosen in step 3). */
+        int density;
     }
 
     private static String modeName(int mode) {
@@ -718,6 +726,21 @@ public final class MainActivity extends Activity implements ConversionService.Li
         if (resultCode != RESULT_OK || data == null) return;
         if (requestCode == REQ_BATCH) {
             addToBatch(data);
+        } else if (requestCode == REQ_BATCH_LRC && data.getData() != null && editingLyrics != null) {
+            try {
+                String text = new String(readAll(data.getData(), 2 * 1024 * 1024), StandardCharsets.UTF_8);
+                if (text.startsWith("\uFEFF")) text = text.substring(1);
+                editingLyrics.setText(text);
+                if (editingStatus != null) describeEditLyrics(editingStatus, text);
+            } catch (IOException e) {
+                message("Could not read file", String.valueOf(e.getMessage()));
+            }
+        } else if (requestCode == REQ_BATCH_TAP && editingLyrics != null) {
+            String lrc = data.getStringExtra(TapSyncActivity.EXTRA_RESULT);
+            if (lrc != null && !lrc.isEmpty()) {
+                editingLyrics.setText(lrc);
+                if (editingStatus != null) describeEditLyrics(editingStatus, lrc);
+            }
         } else if (requestCode == REQ_BATCH_SINGERS) {
             Queued q = singersFor;
             singersFor = null;
@@ -727,6 +750,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 q.lrcText = text;
                 q.singersMarked = true;
                 if (names != null) q.meta.singers = names;
+                // Opened from the Edit dialog: show the marks there too
+                if (editingLyrics != null) {
+                    editingLyrics.setText(text);
+                    if (editingStatus != null) describeEditLyrics(editingStatus, text);
+                }
                 showBatch();
             }
         } else if (requestCode == REQ_AUDIO && data.getData() != null) {
@@ -1413,7 +1441,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
             TextView t = new TextView(this);
             String who = q.meta.artist == null || q.meta.artist.isEmpty() ? "" : q.meta.artist + " - ";
             String len = q.seconds > 0 ? String.format(Locale.US, "  (%d:%02d)", (int) q.seconds / 60, (int) q.seconds % 60) : "";
-            t.setText((i + 1) + ". " + who + q.meta.titleOrDefault() + len + (q.read ? "" : "  (reading…)"));
+            String extra = "";
+            if (q.lrcText != null) extra += Lrc.hasTimestamps(q.lrcText) ? "  · lyrics ready" : "  · lyrics need times";
+            if (q.density != 0) extra += q.density == DENSITY_FEWER ? "  · fewer notes" : q.density == DENSITY_MORE ? "  · more notes" : "  · standard notes";
+            t.setText((i + 1) + ". " + who + q.meta.titleOrDefault() + len + (q.read ? "" : "  (reading…)") + extra);
             t.setPadding(0, dp(6), 0, dp(2));
             r.addView(t);
             r.addView(buttons);
@@ -1438,6 +1469,14 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 }
             });
             buttons.addView(singersButton, gapped());
+            Button edit = button("Edit", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    editSong(q);
+                }
+            });
+            buttons.addView(edit, gapped());
             Button remove = button("Remove", new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -1515,6 +1554,244 @@ public final class MainActivity extends Activity implements ConversionService.Li
         startActivityForResult(i, REQ_BATCH_SINGERS);
     }
 
+    // ---------------------------------------------------------------- editing one song of the list
+
+    /**
+     * Everything the single-song screen offers, for one song of the list: its details, how many
+     * notes, its lyrics (found online, opened from a .lrc file, pasted, or tapped in time), and
+     * who sings what.
+     */
+    private void editSong(final Queued q) {
+        if (!q.read) {
+            message("One moment", "The song's details are still being read. Try again in a second.");
+            return;
+        }
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(8), dp(18), dp(8));
+        // The screen's own dark colours, so its light text reads whatever the dialog's theme is
+        scroll.setBackgroundColor(INK);
+        scroll.addView(box);
+
+        final EditText title = field(box, "Title");
+        title.setText(q.meta.title);
+        final EditText artist = field(box, "Artist (e.g. \"A feat. B\")");
+        artist.setText(q.meta.artist);
+        final EditText album = field(box, "Album (optional)");
+        album.setText(q.meta.album);
+        LinearLayout r = row();
+        final EditText year = new EditText(this);
+        year.setHint("Year");
+        year.setSingleLine(true);
+        year.setInputType(InputType.TYPE_CLASS_NUMBER);
+        year.setText(q.meta.year);
+        r.addView(year, weighted());
+        final EditText genre = new EditText(this);
+        genre.setHint("Genre");
+        genre.setSingleLine(true);
+        genre.setText(q.meta.genre);
+        r.addView(genre, weighted());
+        box.addView(r);
+
+        TextView notesLabel = new TextView(this);
+        notesLabel.setText("How many notes");
+        notesLabel.setPadding(0, dp(10), 0, 0);
+        box.addView(notesLabel);
+        final RadioGroup notes = new RadioGroup(this);
+        notes.setOrientation(RadioGroup.HORIZONTAL);
+        String[] names = {"As in step 3", "Fewer", "Standard", "More"};
+        int[] ids = {100, 100 + DENSITY_FEWER, 100 + DENSITY_STANDARD, 100 + DENSITY_MORE};
+        for (int i = 0; i < names.length; i++) {
+            RadioButton rb = new RadioButton(this);
+            rb.setId(ids[i]);
+            rb.setText(names[i]);
+            notes.addView(rb, new RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        notes.check(100 + q.density);
+        box.addView(notes);
+
+        TextView lyricsLabel = new TextView(this);
+        lyricsLabel.setText("Lyrics");
+        lyricsLabel.setPadding(0, dp(10), 0, 0);
+        box.addView(lyricsLabel);
+        final EditText lyrics = new EditText(this);
+        lyrics.setHint("Empty: found online when converting. Or paste them here, open a .lrc file, or find them now.");
+        lyrics.setMinLines(4);
+        lyrics.setMaxLines(10);
+        lyrics.setGravity(Gravity.TOP);
+        lyrics.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        lyrics.setText(q.lrcText == null ? "" : q.lrcText);
+        box.addView(lyrics, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        final TextView status = new TextView(this);
+        status.setPadding(0, dp(2), 0, dp(4));
+        box.addView(status);
+        describeEditLyrics(status, lyrics.getText().toString());
+
+        LinearLayout lr1 = row();
+        lr1.addView(button("Find online", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                findForEdit(q, title.getText().toString(), artist.getText().toString(), album.getText().toString(), lyrics, status);
+            }
+        }), gapped());
+        lr1.addView(button("Open .lrc", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startEditActivity(q, lyrics, status, REQ_BATCH_LRC);
+            }
+        }), gapped());
+        box.addView(lr1);
+        LinearLayout lr2 = row();
+        lr2.addView(button("Tap to sync", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startEditActivity(q, lyrics, status, REQ_BATCH_TAP);
+            }
+        }), gapped());
+        lr2.addView(button("Who sings what", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                q.meta.artist = artist.getText().toString().trim();
+                q.meta.singers = Lrc.artists(q.meta.artist, title.getText().toString()).toArray(new String[0]);
+                String text = lyrics.getText().toString();
+                if (text.trim().isEmpty()) {
+                    message("Lyrics needed", "Find, open or paste the lyrics first.");
+                    return;
+                }
+                q.lrcText = text;
+                editingLyrics = lyrics;
+                editingStatus = status;
+                openBatchSingers(q);
+            }
+        }), gapped());
+        box.addView(lr2);
+        style(box);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Edit song " + (batch.indexOf(q) + 1))
+                .setView(scroll)
+                .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        String oldArtist = q.meta.artist;
+                        q.meta.title = title.getText().toString().trim();
+                        q.meta.artist = artist.getText().toString().trim();
+                        q.meta.album = album.getText().toString().trim();
+                        q.meta.year = year.getText().toString().trim();
+                        q.meta.genre = genre.getText().toString().trim();
+                        if (!q.singersMarked || !q.meta.artist.equals(oldArtist)) {
+                            q.meta.singers = Lrc.artists(q.meta.artist, q.meta.title).toArray(new String[0]);
+                        }
+                        int picked = notes.getCheckedRadioButtonId() - 100;
+                        q.density = picked > 0 ? picked : 0;
+                        String text = lyrics.getText().toString();
+                        if (!text.equals(q.lrcText == null ? "" : q.lrcText)) {
+                            q.lrcText = text.trim().isEmpty() ? null : text;
+                            q.singersMarked = q.lrcText != null && hasMarks(q.lrcText);
+                        }
+                        editing = null;
+                        editingLyrics = null;
+                        editingStatus = null;
+                        showBatch();
+                    }
+                })
+                .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        editing = null;
+                        editingLyrics = null;
+                        editingStatus = null;
+                    }
+                })
+                .show();
+    }
+
+    private void describeEditLyrics(TextView status, String text) {
+        if (text.trim().isEmpty()) {
+            status.setText("No lyrics yet: they are looked up online when the list is converted.");
+        } else if (!Lrc.hasTimestamps(text)) {
+            status.setText(Lrc.plainLines(text).size() + " lines without times. Press \"Tap to sync\" to time them; without times the song gets no vocals.");
+        } else {
+            int lines = 0;
+            for (Lrc.Line l : Lrc.parse(text)) if (!l.text.isEmpty()) lines++;
+            status.setText(lines + " timed lines" + (hasMarks(text) ? ", with who sings what." : "."));
+        }
+    }
+
+    private void findForEdit(final Queued q, final String title, final String artist, final String album, final EditText lyrics, final TextView status) {
+        status.setText("Searching…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                LrcLib.Found f = null;
+                String error = null;
+                try {
+                    f = LrcLib.find(title, artist, album, q.seconds, q.fileName);
+                } catch (IOException e) {
+                    error = e.getMessage();
+                }
+                final LrcLib.Found found = f;
+                final String why = error;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (found == null) {
+                            status.setText(why != null ? "Lookup failed: " + why : "Nothing found. Check the title and artist, or paste the lyrics.");
+                            return;
+                        }
+                        if (found.synced != null) {
+                            List<String> names = findSingers(title, artist, q.credit, found);
+                            lyrics.setText(markedLyrics(found, names));
+                        } else if (found.plain != null) {
+                            lyrics.setText(found.plain);
+                        } else {
+                            status.setText("Listed as instrumental (no lyrics).");
+                            return;
+                        }
+                        describeEditLyrics(status, lyrics.getText().toString());
+                        status.setText(status.getText() + " From " + found.source + ".");
+                    }
+                });
+            }
+        }, "edit-lyrics").start();
+    }
+
+    /** Opens a .lrc file or the tap-in-time screen for the song being edited; the result goes back into its box. */
+    private void startEditActivity(Queued q, EditText lyrics, TextView status, int request) {
+        editing = q;
+        editingLyrics = lyrics;
+        editingStatus = status;
+        if (request == REQ_BATCH_LRC) {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            try {
+                startActivityForResult(i, REQ_BATCH_LRC);
+            } catch (RuntimeException e) {
+                message("No file picker", "This phone has no file picker app available.");
+            }
+            return;
+        }
+        String text = lyrics.getText().toString();
+        ArrayList<String> lines = new ArrayList<>();
+        List<String> names = java.util.Arrays.asList(q.meta.singers);
+        if (Lrc.hasTimestamps(text)) {
+            for (Lrc.Line l : Lrc.parse(text)) if (!l.text.isEmpty()) lines.add(Lrc.mark(l.singer) + l.text);
+        } else {
+            lines.addAll(Lrc.plainLines(text, names));
+        }
+        if (lines.isEmpty()) {
+            message("Lyrics needed", "Paste or find the lyrics first, one sung line per line.");
+            return;
+        }
+        Intent i = new Intent(this, TapSyncActivity.class);
+        i.setData(q.uri);
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        i.putStringArrayListExtra(TapSyncActivity.EXTRA_LINES, lines);
+        startActivityForResult(i, REQ_BATCH_TAP);
+    }
+
     private void onBatchPressed() {
         if (busy || batch.isEmpty()) return;
         if (!hasStorageAccess()) {
@@ -1553,8 +1830,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         List<Lrc.Line> lyrics = new ArrayList<>();
                         String lrcText = "";
                         String lyricsNote = "no lyrics";
-                        if (q.lrcText != null) {
-                            // Found (and maybe marked) already with the Singers button
+                        if (q.lrcText != null && !Lrc.hasTimestamps(q.lrcText)) {
+                            // Words without times cannot be placed: the song gets no vocals
+                            lyricsNote = "its lyrics have no times, so no vocals (tap them in with Edit > Tap to sync)";
+                        } else if (q.lrcText != null) {
+                            // Found, opened, tapped or marked already, with Edit or the Singers button
                             lrcText = q.lrcText;
                             lyrics = Lrc.parse(lrcText);
                             lyricsNote = q.singersMarked ? "with lyrics, singers marked" : "with lyrics";
@@ -1582,7 +1862,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         boolean useStems = q.mode != MODE_NORMAL && model;
                         boolean rnb = useStems && q.mode == MODE_RNB;
                         boolean guessSingers = voicesDecide(useStems, guessWanted, q.meta.singers);
-                        runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, options.copy(), useStems, guessSingers, rnb);
+                        GuitarCharter.Options own = options.copy();
+                        if (q.density != 0) {
+                            own.threshold = q.density == DENSITY_FEWER ? 1.5 : q.density == DENSITY_MORE ? 0.65 : 1.0;
+                        }
+                        runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, own, useStems, guessSingers, rnb);
                         ok++;
                         done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(modeName(useStemsNote(q, model)))
                                 .append(", ").append(lyricsNote).append(")\n");
