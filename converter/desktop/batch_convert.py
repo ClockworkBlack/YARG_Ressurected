@@ -65,11 +65,12 @@ def main():
             while proc.poll() is None:
                 if not wrote and os.path.exists(base + ".lrc.needed"):
                     # No lyrics anywhere: write them from the voice
-                    song = "a song"
+                    song = None
                     for line in open(base + ".log", encoding="utf-8", errors="replace"):
-                        if line.startswith("Song: "): song = line[6:].strip()
+                        if line.startswith("Hint: "): song = line[6:].strip()
                     print("    no lyrics online: writing them from the voice", flush=True)
-                    env = dict(os.environ, NOVAD="1", HINT=song, DEVICE="cuda" if args.gpu else "cpu")
+                    env = dict(os.environ, NOVAD="1", DEVICE="cuda" if args.gpu else "cpu")
+                    if song: env["HINT"] = song
                     r = subprocess.run([sys.executable, os.path.join(HERE, "transcribe_lyrics.py"), base + ".vocals.wav",
                                         base + ".lrc.tmp", args.whisper, "auto"], env=env, capture_output=True, text=True)
                     if r.returncode != 0 or not os.path.exists(base + ".lrc.tmp"):
