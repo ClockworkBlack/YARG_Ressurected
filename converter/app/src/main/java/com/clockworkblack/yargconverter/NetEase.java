@@ -84,7 +84,7 @@ final class NetEase {
                     f.plain = text.replaceAll("\\[[^\\]]*\\]", "").trim();
                     if (f.plain.length() >= 40) plain = f;
                 }
-            } catch (IOException | JSONException | RuntimeException e) {
+            } catch (Exception e) {
                 // Unofficial and liable to change: any trouble is simply "not found here"
             }
         }

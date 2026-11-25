@@ -154,7 +154,13 @@ public final class SongWriter {
                     r.wordTiming = byWord;
                 }
             }
-            if (!keepLyricTimes && (byWord == null || !byWord.moved())) {
+            if (stems != null && stems.lyricTimesUnknown && (byWord == null || !byWord.moved())) {
+                // Words without times that could not be matched to the voice: no vocals part,
+                // rather than one with every line in the wrong place
+                lyrics = new ArrayList<>();
+                r.lyricTimingNote = "The lyrics found had no times and could not be matched to the voice, so there is no vocals part.";
+            }
+            if (!keepLyricTimes && !lyrics.isEmpty() && (byWord == null || !byWord.moved())) {
                 LyricAligner.Result placed = voice != null ? LyricAligner.align(lyrics, voice) : LyricAligner.alignToStart(lyrics, f);
                 if (placed.moved()) {
                     lyrics = placed.lines;

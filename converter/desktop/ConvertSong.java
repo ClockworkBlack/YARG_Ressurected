@@ -32,7 +32,13 @@ import java.util.Map;
  *       --title "..." --artist "..." [--album --year --genre] [--lyrics lyrics.lrc] \
  *       [--model htdemucs_6s.onnx] [--words-model wav2vec2-base-960h.onnx] [--two-singers] [--vocals-out vocals.wav --wait-for-lyrics lyrics.lrc]
  *
- * --vocals-out writes the separated voice to a WAV file; with --wait-for-lyrics the run then waits
+ * --find-details fills what the tags and file name leave out from MusicBrainz; --find-lyrics looks
+ * the lyrics up as the app does (timed, or words only, which are then timed from the voice with
+ * --words-model). --gpu runs both models on an NVIDIA card (with onnxruntime_gpu).
+ * --summary file.json writes one line of JSON about the result.
+ *
+ * --vocals-out writes the separated voice to a WAV file; with --wait-for-lyrics (and no lyrics found,
+ * which it signals by creating "<that file>.needed") the run then waits
  * until that lyrics file exists (made from the voice, for instance) and uses it.
  */
 public final class ConvertSong {
@@ -50,13 +56,45 @@ public final class ConvertSong {
         boolean rnb = mode.equals("rnb");
         String notes = a.getOrDefault("notes", "standard").toLowerCase(Locale.US);
 
+        if (a.containsKey("gpu")) System.setProperty("yarg.cuda", "1");
+
         SongMeta meta = new SongMeta();
         meta.title = a.getOrDefault("title", "");
         meta.artist = a.getOrDefault("artist", "");
         meta.album = a.getOrDefault("album", "");
         meta.year = a.getOrDefault("year", "");
         meta.genre = a.getOrDefault("genre", "");
+        // What was not given: from the file's own tags, then its name ("Artist - Title (Official Video)")
+        Map<String, String> tags = tags(audio);
+        if (meta.title.isEmpty()) meta.title = tags.getOrDefault("title", "");
+        if (meta.artist.isEmpty()) meta.artist = tags.getOrDefault("artist", "");
+        if (meta.album.isEmpty()) meta.album = tags.getOrDefault("album", "");
+        if (meta.year.isEmpty()) meta.year = tags.getOrDefault("date", "").replaceAll("^(\\d{4}).*", "$1");
+        if (meta.genre.isEmpty()) meta.genre = tags.getOrDefault("genre", "");
+        if (meta.title.isEmpty() || meta.artist.isEmpty()) {
+            String base = audio.getName().replaceAll("\\.[^.]+$", "").replaceAll("^[0-9a-f]{8}-", "").replace('_', ' ').trim();
+            int dash = base.indexOf(" - ");
+            if (dash > 0) {
+                if (meta.artist.isEmpty()) meta.artist = base.substring(0, dash).trim();
+                if (meta.title.isEmpty()) meta.title = base.substring(dash + 3).trim();
+            } else if (meta.title.isEmpty()) {
+                meta.title = base;
+            }
+        }
+        meta.title = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title).isEmpty() ? meta.title
+                : com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title);
+        if (a.containsKey("find-details")) {
+            String[] found = com.clockworkblack.yargconverter.Lookup.details(meta.title, meta.artist);
+            if (found != null) {
+                if (meta.artist.isEmpty() && !found[1].isEmpty()) meta.artist = found[1];
+                if (meta.album.isEmpty()) meta.album = found[2];
+                if (meta.year.isEmpty()) meta.year = found[3];
+                if (meta.genre.isEmpty()) meta.genre = found[4];
+                log("Details from MusicBrainz: " + String.join(" | ", found));
+            }
+        }
         meta.singers = Lrc.artists(meta.artist, meta.title).toArray(new String[0]);
+        log("Song: \"" + meta.title + "\" by " + meta.artist + " (" + meta.album + ", " + meta.year + ", " + meta.genre + ")");
 
         GuitarCharter.Options options = new GuitarCharter.Options();
         options.threshold = notes.equals("fewer") ? 1.5 : notes.equals("more") ? 0.65 : 1.0;
@@ -93,14 +131,45 @@ public final class ConvertSong {
         }
 
         String lyricsPath = a.get("lyrics");
-        if (a.containsKey("wait-for-lyrics")) {
+        String lyricsSource = lyricsPath != null ? "given" : "none";
+        boolean untimed = false;
+        String foundText = null;
+        if (lyricsPath == null && a.containsKey("find-lyrics")) {
+            com.clockworkblack.yargconverter.Lookup.Lyrics found = com.clockworkblack.yargconverter.Lookup.lyrics(
+                    meta.title, meta.artist, meta.album, features.duration, audio.getName(), java.util.Arrays.asList(meta.singers));
+            if (found != null && found.timed != null) {
+                foundText = found.timed;
+                lyricsSource = found.source + " (timed)";
+            } else if (found != null && stems != null && stems.letters != null) {
+                // Words only: spread out for now, then matched to the voice word by word
+                StringBuilder lrc = new StringBuilder();
+                List<String> lines = new ArrayList<>();
+                for (String l : found.plain.split("\\r?\\n")) {
+                    String t = l.trim();
+                    if (!t.isEmpty() && !t.matches("^\\[[^\\]]{1,60}\\]$")) lines.add(t);
+                }
+                for (int i = 0; i < lines.size(); i++) {
+                    lrc.append(Lrc.stamp(features.duration * (i + 0.5) / lines.size())).append(lines.get(i)).append('\n');
+                }
+                foundText = lrc.toString();
+                untimed = true;
+                lyricsSource = found.source + " (words only, timed from the voice)";
+            }
+            if (foundText != null) log("Lyrics found: " + lyricsSource);
+        }
+        if (foundText == null && lyricsPath == null && a.containsKey("wait-for-lyrics")) {
+            lyricsSource = "written from the voice (speech to text)";
             File wait = new File(a.get("wait-for-lyrics"));
+            // No lyrics anywhere: whoever runs this writes them from the separated voice (vocals-out)
+            Files.write(new File(wait.getPath() + ".needed").toPath(), new byte[0]);
             log("Waiting for " + wait + "…");
             while (!wait.exists()) Thread.sleep(2000);
             Thread.sleep(1000);
             lyricsPath = wait.getPath();
         }
-        String lrcText = lyricsPath == null ? null : Lrc.decode(Files.readAllBytes(new File(lyricsPath).toPath()));
+        String lrcText = foundText != null ? foundText : lyricsPath == null ? null : Lrc.decode(Files.readAllBytes(new File(lyricsPath).toPath()));
+        if (stems != null) stems.lyricTimesUnknown = untimed;
+
         List<Lrc.Line> lyrics = lrcText == null ? new ArrayList<>() : Lrc.parse(lrcText);
 
         log("Finding the beat and writing the charts…");
@@ -168,6 +237,40 @@ public final class ConvertSong {
             sb.append("Vocals: none (no timed lyrics)\n");
         }
         System.out.print(sb);
+        if (a.containsKey("summary")) {
+            // One line of JSON for batch runs
+            String json = String.format(Locale.US,
+                    "{\"folder\":%s,\"title\":%s,\"artist\":%s,\"lyrics\":%s,\"vocalLines\":%d,\"guitarExpert\":%d,\"bassExpert\":%d,\"timing\":%s}",
+                    q(dir.getName()), q(meta.title), q(meta.artist), q(r.lyricLines > 0 ? lyricsSource : "none"), r.lyricLines,
+                    r.noteCount(GuitarCharter.EXPERT), r.bassChart == null ? 0 : r.bassChart.notes.get(GuitarCharter.EXPERT).size(),
+                    q(r.lyricTimingNote == null ? "" : r.lyricTimingNote));
+            Files.write(new File(a.get("summary")).toPath(), (json + "\n").getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private static String q(String s) {
+        StringBuilder b = new StringBuilder("\"");
+        for (char c : s.toCharArray()) {
+            if (c == '"' || c == '\\') b.append('\\').append(c);
+            else if (c < 0x20) b.append(String.format("\\u%04x", (int) c));
+            else b.append(c);
+        }
+        return b.append('"').toString();
+    }
+
+    /** The file's own tags, names in lower case. */
+    private static Map<String, String> tags(File audio) {
+        Map<String, String> out = new HashMap<>();
+        try {
+            Process p = new ProcessBuilder("ffprobe", "-v", "error", "-show_entries", "format_tags", "-of", "default=nw=1", audio.getPath()).start();
+            for (String line : new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
+                int eq = line.indexOf('=');
+                if (line.startsWith("TAG:") && eq > 4) out.put(line.substring(4, eq).toLowerCase(Locale.US), line.substring(eq + 1).trim());
+            }
+            p.waitFor();
+        } catch (Exception ignored) {
+        }
+        return out;
     }
 
     private static SongWriter.Stems separate(File audio, String modelPath, boolean rnb, String vocalsOut, String wordsModel) throws Exception {
