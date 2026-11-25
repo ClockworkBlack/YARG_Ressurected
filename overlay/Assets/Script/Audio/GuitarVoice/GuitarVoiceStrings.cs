@@ -359,6 +359,11 @@ namespace YARG.Audio.GuitarVoice
         // up. None of it at the low E, all of it from the E an octave above.
         private const double FULL_SHARE = 1.0 / 3.0, FULL_MOST = 12.0, FULL_AT = 1.5, FULL_Q = 0.8;
         private const int FULL_FROM = 40, FULL_OVER = 12;
+        // High up the neck the speaker and amp thin a note further (its fundamental falls in the
+        // speaker's dip), so there it has to carry more: this share from FULL_HIGH on, rising
+        // to it over the octave below
+        private const double FULL_SHARE_HIGH = 2.0 / 3.0;
+        private const int FULL_HIGH = 74;
 
         private const double STEP = 0.5;
         private const int OVERTONES = 16;
@@ -441,6 +446,8 @@ namespace YARG.Audio.GuitarVoice
                 double part = Math.Min(1.0, Math.Max(0.0, (take.Pitch - FULL_FROM) / FULL_OVER));
                 double most = Math.Floor(FULL_MOST * part / STEP) * STEP;
                 int low = Math.Min(8, count);
+                double high = Math.Min(1.0, Math.Max(0.0, (take.Pitch - (FULL_HIGH - 12)) / 12.0));
+                double wanted = FULL_SHARE + (FULL_SHARE_HIGH - FULL_SHARE) * high;
                 double full = 0;
                 while (full < most)
                 {
@@ -449,7 +456,7 @@ namespace YARG.Audio.GuitarVoice
                     {
                         Apply(trial, Filter.LowShelf(FULL_AT * hz, FULL_Q, full, RATE), hz);
                     }
-                    if (trial[0] >= FULL_SHARE * Sum(trial, 0, low))
+                    if (trial[0] >= wanted * Sum(trial, 0, low))
                     {
                         break;
                     }

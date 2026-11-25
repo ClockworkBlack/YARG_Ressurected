@@ -808,7 +808,7 @@ namespace RemoteServerTests
                 // speaker gives almost nothing.
                 foreach (var tone in new[] { GuitarVoiceTone.Rock, GuitarVoiceTone.Heavy })
                 {
-                    int[] neck = { 48, 50, 52, 55, 57, 59, 62, 64, 67, 69 };
+                    int[] neck = { 48, 50, 52, 55, 57, 59, 62, 64, 67, 69, 72, 74, 76 };
                     const int TAKES = 4;
                     double thinnest = 0, brightest = 0, fizziest = 0, biteAll = 0;
                     int thinnestNote = 0, brightestNote = 0;
