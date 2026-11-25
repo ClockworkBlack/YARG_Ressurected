@@ -130,6 +130,29 @@ Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pau
 Any button can be remapped in the profile's binding menu. For a guitar controller, pick
 **CRKD Guitar** or **Other guitar** instead of Gamepad.
 
+### Finding songs, rap mode, artist cards, explanations (build 42)
+
+- **Browse by Artist / Genre / Album / Year / Charter**: in the song list open **More Options**
+  (L1 / orange fret) and pick one. A list of every artist (or genre...) in your library comes up,
+  with how many songs each has; pick one to see just those songs. No typing needed.
+- **Rap Mode** (on the screen before a song, for a singer): **Whole song**, **<Artist>'s verses**
+  (on a song with each artist marked, such as converted two-artist songs), or **Trade every 4 / 8
+  / 16 bars**, which splits the song evenly between two singers, a block of bars each, scored head
+  to head like a sing-off.
+- **Artist card**: when a singer is choosing (Rap Mode, Whose Lines, the setup screen), the artist's
+  picture and a short bio show on the right. They come from Wikipedia the first time (the artist's
+  name is looked up there) and are kept on the phone. Turn it off in **Settings > General >
+  Artist Pictures and Bios**.
+- **Light blue explanations**: on the screen before a song, the option under the cursor (each
+  modifier such as All Taps, each level, Rap Mode, Sing-Off...) is explained in a light blue box
+  on the right. The controller profile list says what the profile's engine (Casual, Precision...)
+  does, and can change the engine and the instrument type.
+- **Left / right** on that screen changes the song speed, 5% at a time.
+- **Gibson Les Paul (CRKD) guitar in the menus**: green fret confirms, red goes back, strum moves
+  up and down, yellow / blue / orange are the other menu buttons, as on the PS5 controller
+  (Cross, Circle, Triangle, Square, L1). R2 / L2 song skipping only listens to gamepads, so the
+  guitar's whammy bar doesn't skip songs.
+
 ### Controller extras (build 41)
 
 - **Profiles screen on a controller**: up/down moves through the profiles, **Cross** opens a list
