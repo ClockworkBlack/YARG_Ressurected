@@ -167,6 +167,10 @@ Songs are played in a venue, with a crowd in front of the stage dancing in time 
 
 Everything here is drawn by code from simple shapes, so it is cartoon-like rather than realistic.
 
+Up to build 36 none of this could be seen on a phone: the note highways were drawn on a layer that
+is see-through on a computer but solid black on phones, and it covered the venue, the crowd and
+any background picture or video. Build 37 fixes that layer.
+
 ## Menu music: pick a startup song and a playlist
 
 The menus play songs from your library in the background. You choose what plays:
@@ -192,6 +196,13 @@ The menus play songs from your library in the background. You choose what plays:
 
 If the playlist is empty, deleted, or none of its songs are in the library, the whole library
 plays instead.
+
+## Lyrics and names in any language
+
+The game's own fonts cover Latin letters and Japanese. For everything else (Korean, Chinese, Thai,
+Arabic, Hebrew, Hindi and more) the fonts already on the phone are used, so lyrics, song titles and
+artist names in those languages are drawn instead of empty boxes. Arabic and Indian scripts are
+shown letter by letter, not joined up as they should be.
 
 ## Vocals: sing or rap, pick an artist, sing-off
 

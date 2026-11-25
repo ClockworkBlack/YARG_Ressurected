@@ -76,6 +76,9 @@ public final class Lrc {
             }
             if (times.isEmpty()) continue;
             String words = WORD_STAMP.matcher(raw.substring(end)).replaceAll(" ").replaceAll("\\s+", " ").trim();
+            // Letters written as a base plus a separate accent, and Korean written as loose
+            // parts, are put together: the game draws each character on its own
+            words = java.text.Normalizer.normalize(words, java.text.Normalizer.Form.NFC);
             int[] singer = new int[1];
             words = stripMark(words, singer);
             for (double t : times) out.add(new Line(Math.max(0, t + offset), words, singer[0]));
@@ -312,6 +315,106 @@ public final class Lrc {
             sb.append(stamp(l.time)).append(l.text.isEmpty() ? "" : mark(l.singer)).append(l.text).append('\n');
         }
         return sb.toString();
+    }
+
+    /** A line of its own in lyrics text saying the times were set by hand and must be left alone. */
+    public static final String KEEP_TIMES = "[timing:manual]";
+
+    /**
+     * True when the lyrics' times were set on purpose (moved by hand in the app, or carrying an
+     * "[offset:]" line), so the converter must not line them up with the voice by itself.
+     */
+    public static boolean keepsTiming(String text) {
+        if (text == null) return false;
+        return text.toLowerCase(Locale.US).contains(KEEP_TIMES) || OFFSET.matcher(text).find();
+    }
+
+    /**
+     * The same timed lyrics with every line moved by {@code seconds} (more than 0 is later), marked
+     * so the converter keeps these times. Text without time stamps is returned as it is.
+     */
+    public static String shiftText(String text, double seconds) {
+        List<Line> lines = parse(text);
+        if (lines.isEmpty()) return text;
+        List<Line> moved = new ArrayList<>(lines.size());
+        for (Line l : lines) moved.add(new Line(Math.max(0, l.time + seconds), l.text, l.singer));
+        return KEEP_TIMES + "\n" + format(moved);
+    }
+
+    /**
+     * Reads the bytes of a lyrics file as text. Most are UTF-8, but Korean, Japanese, Chinese and
+     * Russian files are often in the older encodings of their countries, or in UTF-16; read as
+     * UTF-8 those turn into boxes and question marks.
+     */
+    public static String decode(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) return "";
+        int n = bytes.length;
+        if (n >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF) {
+            return new String(bytes, 3, n - 3, java.nio.charset.StandardCharsets.UTF_8);
+        }
+        if (n >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE) {
+            return new String(bytes, 2, n - 2, java.nio.charset.StandardCharsets.UTF_16LE);
+        }
+        if (n >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF) {
+            return new String(bytes, 2, n - 2, java.nio.charset.StandardCharsets.UTF_16BE);
+        }
+        String utf8 = strict(bytes, "UTF-8");
+        if (utf8 != null) return utf8;
+
+        // Not UTF-8: the encoding whose reading has the most letters of the script it is for
+        String[] names = {"EUC-KR", "Shift_JIS", "GB18030", "Big5", "windows-1251"};
+        String best = null;
+        double bestScore = 0.6;
+        for (String name : names) {
+            String text = strict(bytes, name);
+            if (text == null) continue;
+            int other = 0, home = 0, plain = 0;
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c < 0x80) {
+                    if (Character.isLetter(c)) plain++;
+                    continue;
+                }
+                other++;
+                Character.UnicodeScript script = Character.UnicodeScript.of(c);
+                boolean fits;
+                switch (name) {
+                    case "EUC-KR": fits = script == Character.UnicodeScript.HANGUL; break;
+                    case "Shift_JIS": fits = script == Character.UnicodeScript.HIRAGANA || script == Character.UnicodeScript.KATAKANA; break;
+                    case "windows-1251": fits = script == Character.UnicodeScript.CYRILLIC; break;
+                    default: fits = script == Character.UnicodeScript.HAN; break;
+                }
+                if (fits) home++;
+            }
+            if (other == 0) continue;
+            // A few accented letters in English, French or Spanish words also read as "valid"
+            // Chinese; real lyrics in these languages are mostly not plain letters
+            if (other * 3 < plain) continue;
+            // Japanese is part kana, part Chinese characters: a third kana is plenty
+            double score = (double) home / other * ("Shift_JIS".equals(name) ? 2.5 : 1.0);
+            if (score > bestScore) {
+                bestScore = score;
+                best = text;
+            }
+        }
+        if (best != null) return best;
+        try {
+            return new String(bytes, "windows-1252");
+        } catch (java.io.UnsupportedEncodingException e) {
+            return new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1);
+        }
+    }
+
+    /** The bytes read in the named encoding, or null when they are not valid in it. */
+    private static String strict(byte[] bytes, String charset) {
+        try {
+            return java.nio.charset.Charset.forName(charset).newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+        } catch (java.nio.charset.CharacterCodingException | IllegalArgumentException e) {
+            return null;
+        }
     }
 
     public static String stamp(double seconds) {

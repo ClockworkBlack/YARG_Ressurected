@@ -544,19 +544,48 @@ public final class VocalCharter {
         return s;
     }
 
-    /** A rough count of the syllables in a word: each run of vowels is one. Good enough to share out time. */
-    static int syllables(String word) {
-        String w = word.toLowerCase(java.util.Locale.US).replaceAll("[^a-z]", "");
-        if (w.isEmpty()) return Math.max(1, word.length() / 3);
+    /**
+     * A rough count of the syllables in a word, good enough to share out time. In English and other
+     * languages written with letters each run of vowels is one; in Korean, Chinese and Japanese
+     * every character is one.
+     */
+    public static int syllables(String word) {
+        int blocks = 0, letters = 0;
+        for (int i = 0; i < word.length(); ) {
+            int c = word.codePointAt(i);
+            i += Character.charCount(c);
+            if (isSyllableCharacter(c)) blocks++;
+            else if (Character.isLetter(c)) letters++;
+        }
+        if (blocks > 0 && letters == 0) return blocks;
+
+        String w = word.toLowerCase(java.util.Locale.ROOT);
         int count = 0;
-        boolean inVowels = false;
+        boolean inVowels = false, latin = false;
         for (int i = 0; i < w.length(); i++) {
-            boolean vowel = "aeiouy".indexOf(w.charAt(i)) >= 0;
+            char c = w.charAt(i);
+            if (c >= 'a' && c <= 'z') latin = true;
+            if (!Character.isLetter(c)) continue;
+            boolean vowel = VOWELS.indexOf(c) >= 0;
             if (vowel && !inVowels) count++;
             inVowels = vowel;
         }
-        if (count > 1 && w.endsWith("e") && !w.endsWith("le")) count--;
-        return Math.max(1, count);
+        if (count == 0) return Math.max(1, blocks + (letters + 1) / 3);
+        if (latin && count > 1 && w.endsWith("e") && !w.endsWith("le")) count--;
+        return Math.max(1, count + blocks);
+    }
+
+    /** Vowels of the Latin (with accents), Cyrillic and Greek alphabets. */
+    private static final String VOWELS = "aeiouy\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef"
+            + "\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00ff\u0153\u0131"
+            + "\u0430\u0435\u0451\u0438\u043e\u0443\u044b\u044d\u044e\u044f\u0456\u0457\u0454"
+            + "\u03b1\u03b5\u03b7\u03b9\u03bf\u03c5\u03c9\u03ac\u03ad\u03ae\u03af\u03cc\u03cd\u03ce";
+
+    /** True for a character that is a syllable by itself: Korean blocks, Chinese characters, Japanese kana. */
+    static boolean isSyllableCharacter(int c) {
+        Character.UnicodeScript script = Character.UnicodeScript.of(c);
+        return script == Character.UnicodeScript.HANGUL || script == Character.UnicodeScript.HAN
+                || script == Character.UnicodeScript.HIRAGANA || script == Character.UnicodeScript.KATAKANA;
     }
 
     /**
@@ -720,15 +749,68 @@ public final class VocalCharter {
     public static List<String> words(String text) {
         List<String> out = new ArrayList<>();
         if (text == null) return out;
-        for (String raw : text.trim().split("\\s+")) {
-            String w = raw.replace("\"", "").replace("“", "").replace("”", "")
+        for (String raw : text.trim().split("[\\s\u3000]+")) {
+            String w = raw.replace("\"", "").replace("\u201c", "").replace("\u201d", "")
                     .replace("[", "").replace("]", "");
             // These characters are control codes in vocal charts (joins, pitch flags, hidden text).
             w = w.replaceAll("^[$]+", "");
-            w = w.replaceAll("[+#^%$/§_*]+$", "");
+            w = w.replaceAll("[+#^%$/\u00a7_*]+$", "");
             if (w.endsWith("-")) w = w.substring(0, w.length() - 1) + "=";
-            if (!w.isEmpty()) out.add(w);
+            if (w.isEmpty()) continue;
+            if (!splitUnspaced(w, out)) out.add(w);
         }
         return out;
+    }
+
+    /** Characters of Chinese or Japanese sung to one note when a line is written without spaces. */
+    static final int UNSPACED_GROUP = 2;
+
+    /**
+     * Chinese and Japanese are written without spaces, so a whole line would be one "word" on one
+     * note. Such a run is cut into pieces of two characters, each ending in "-", which a vocal
+     * chart shows joined to the next piece with no space.
+     *
+     * @return false when the word is not such a run and was left alone
+     */
+    private static boolean splitUnspaced(String w, List<String> out) {
+        int count = 0;
+        for (int i = 0; i < w.length(); ) {
+            int c = w.codePointAt(i);
+            i += Character.charCount(c);
+            Character.UnicodeScript script = Character.UnicodeScript.of(c);
+            if (script == Character.UnicodeScript.HAN || script == Character.UnicodeScript.HIRAGANA
+                    || script == Character.UnicodeScript.KATAKANA) count++;
+        }
+        if (count < 2 * UNSPACED_GROUP) return false;
+
+        StringBuilder piece = new StringBuilder();
+        int inPiece = 0;
+        List<String> pieces = new ArrayList<>();
+        for (int i = 0; i < w.length(); ) {
+            int c = w.codePointAt(i);
+            i += Character.charCount(c);
+            boolean syllable = isSyllableCharacter(c);
+            // Punctuation and small marks stay with the piece before them
+            if (syllable && inPiece >= UNSPACED_GROUP) {
+                pieces.add(piece.toString());
+                piece.setLength(0);
+                inPiece = 0;
+            }
+            piece.appendCodePoint(c);
+            if (syllable) inPiece++;
+        }
+        if (piece.length() > 0) pieces.add(piece.toString());
+        for (int k = 0; k < pieces.size(); k++) {
+            String p = pieces.get(k);
+            boolean lastPiece = k == pieces.size() - 1;
+            if (!lastPiece) {
+                // The join mark must follow a character, not a "-" or "=" of the text's own
+                while (p.endsWith("-") || p.endsWith("=")) p = p.substring(0, p.length() - 1);
+                if (p.isEmpty()) continue;
+                p = p + "-";
+            }
+            out.add(p);
+        }
+        return true;
     }
 }

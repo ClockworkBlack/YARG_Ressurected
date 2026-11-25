@@ -352,6 +352,23 @@ public final class MainActivity extends Activity implements ConversionService.Li
         lyricsStatus = new TextView(this);
         lyricsStatus.setPadding(0, dp(4), 0, dp(4));
         root.addView(lyricsStatus);
+        // For words that come up too early or too late in the game
+        LinearLayout nudgeButtons = row();
+        nudgeButtons.addView(button("Words earlier", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyricsBox, -NUDGE_SEC);
+                if (note != null) describeLyrics(note);
+            }
+        }), gapped());
+        nudgeButtons.addView(button("Words later", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyricsBox, NUDGE_SEC);
+                if (note != null) describeLyrics(note);
+            }
+        }), weighted());
+        root.addView(nudgeButtons);
 
         final android.content.SharedPreferences prefs = getSharedPreferences("converter", MODE_PRIVATE);
         CheckBox netEaseCheck = new CheckBox(this);
@@ -744,8 +761,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             addToBatch(data);
         } else if (requestCode == REQ_BATCH_LRC && data.getData() != null && editingLyrics != null) {
             try {
-                String text = new String(readAll(data.getData(), 2 * 1024 * 1024), StandardCharsets.UTF_8);
-                if (text.startsWith("\uFEFF")) text = text.substring(1);
+                String text = Lrc.decode(readAll(data.getData(), 2 * 1024 * 1024));
                 editingLyrics.setText(text);
                 if (editingStatus != null) describeEditLyrics(editingStatus, text);
             } catch (IOException e) {
@@ -777,8 +793,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             setAudio(data.getData());
         } else if (requestCode == REQ_LRC && data.getData() != null) {
             try {
-                String text = new String(readAll(data.getData(), 2 * 1024 * 1024), StandardCharsets.UTF_8);
-                if (text.startsWith("﻿")) text = text.substring(1);
+                String text = Lrc.decode(readAll(data.getData(), 2 * 1024 * 1024));
                 lyricsBox.setText(text);
                 describeLyrics("Loaded from file.");
             } catch (IOException e) {
@@ -905,6 +920,27 @@ public final class MainActivity extends Activity implements ConversionService.Li
     }
 
     // ---------------------------------------------------------------- lyrics
+
+    /** How far one press of "Words earlier" or "Words later" moves the lyrics, in seconds. */
+    private static final double NUDGE_SEC = 0.5;
+
+    /**
+     * Moves every timed line in a lyrics box earlier or later, for a song whose words come up at
+     * the wrong moment in the game. Lyrics moved this way keep their times: the converter no
+     * longer lines them up with the voice by itself.
+     *
+     * @return what to tell the user, or null when a message was shown instead
+     */
+    private String nudgeLyrics(EditText box, double seconds) {
+        String text = box.getText().toString();
+        if (!Lrc.hasTimestamps(text)) {
+            message("Timed lyrics needed", "Find, open or tap in the lyrics first: only lines with times like [01:23.45] can be moved.");
+            return null;
+        }
+        box.setText(Lrc.shiftText(text, seconds));
+        return String.format(Locale.US, "All lines moved %.1f seconds %s. These times are now used as they are; convert the song again to hear the difference.",
+                Math.abs(seconds), seconds > 0 ? "later" : "earlier");
+    }
 
     private void describeLyrics(String prefix) {
         String text = lyricsBox.getText().toString();
@@ -1778,6 +1814,22 @@ public final class MainActivity extends Activity implements ConversionService.Li
             }
         }), gapped());
         box.addView(lr2);
+        LinearLayout lr3 = row();
+        lr3.addView(button("Words earlier", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyrics, -NUDGE_SEC);
+                if (note != null) status.setText(note);
+            }
+        }), gapped());
+        lr3.addView(button("Words later", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String note = nudgeLyrics(lyrics, NUDGE_SEC);
+                if (note != null) status.setText(note);
+            }
+        }), gapped());
+        box.addView(lr3);
         style(box);
 
         new AlertDialog.Builder(this)
@@ -1993,6 +2045,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                                 lyricsNote += "; the two voices could not be told apart, so one part for everybody";
                             }
                         }
+                        if (res != null && res.lyricsMoved) lyricsNote += "; lyrics re-timed to fit this audio";
                         done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(modeName(useStemsNote(q, model)))
                                 .append(", ").append(lyricsNote).append(")\n");
                     } catch (IOException e) {
@@ -2131,12 +2184,18 @@ public final class MainActivity extends Activity implements ConversionService.Li
                     && !named[0].startsWith("Singer ") && !named[1].startsWith("Singer ");
             stems.singerNames = two ? named : null;
         }
-        SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems);
+        // Lyrics timed for another cut of the song are lined up with this audio, unless their
+        // times were set by hand ("Words earlier" / "Words later", or an [offset:] line)
+        boolean timesSetByHand = Lrc.keepsTiming(lrcText);
+        SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems, timesSetByHand);
         lastResult = result;
         if (result.singerGuess != null) {
             // Saved with the song and shown back in the app, where the guess can be corrected.
             lrcText = Lrc.format(result.lyricsOut);
             ConversionService.setMarkedLyrics(lrcText);
+        } else if (result.lyricsMoved) {
+            // Saved with the song as they were used
+            lrcText = Lrc.format(result.lyricsOut);
         }
         if (result.noteCount(GuitarCharter.EXPERT) == 0) {
             throw new IOException("No notes could be found in this audio. Is it silent, or speech only?");
@@ -2210,6 +2269,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
         }
         sb.append("Vocals: ").append(v.lines).append(" lines, ").append(v.sungLines).append(" sung (the note counts), ")
                 .append(v.spokenLines).append(" rapped or spoken (any sound in time counts)\n");
+        if (result.lyricTimingNote != null) {
+            sb.append("  ").append(result.lyricTimingNote).append(" If the words now come too early or too late, use \"Words earlier\" or \"Words later\" under the lyrics and convert again.\n");
+        }
         if (!listened) {
             sb.append("  The words were spread at speaking pace. Tick \"Split the song into instruments\" to place them where they are sung and get the real notes.\n");
         } else if (!v.heard) {

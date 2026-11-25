@@ -33,6 +33,10 @@ public final class SongWriter {
         public int vocalTier = -1;
         /** The lyric lines as charted, carrying who sings each (including a guess made from the voices). */
         public List<Lrc.Line> lyricsOut = new ArrayList<>();
+        /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
+        public boolean lyricsMoved;
+        /** What was done to the lyrics' timing, for the user; null when nothing. */
+        public String lyricTimingNote;
         /** True when the app was asked to tell two singers apart by voice. */
         public boolean singersGuessTried;
         /** What it came up with; null when it was not asked or the voices could not be told apart. */
@@ -88,6 +92,16 @@ public final class SongWriter {
      * @param stems separated instruments, or null to chart everything from the full mix
      */
     public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems) {
+        return analyze(f, lyrics, options, stems, false);
+    }
+
+    /**
+     * @param keepLyricTimes true when the lyrics' times were set by hand and must be used as they
+     *                       are; otherwise lyrics timed for another cut of the song (a longer
+     *                       intro, silence at the start) are lined up with this audio
+     */
+    public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems,
+                                 boolean keepLyricTimes) {
         Result r = new Result();
         BeatTracker.Result beats = BeatTracker.track(f);
         r.bpm = beats.bpm;
@@ -106,6 +120,14 @@ public final class SongWriter {
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
+            if (!keepLyricTimes) {
+                LyricAligner.Result placed = voice != null ? LyricAligner.align(lyrics, voice) : LyricAligner.alignToStart(lyrics, f);
+                if (placed.moved()) {
+                    lyrics = placed.lines;
+                    r.lyricsMoved = true;
+                    r.lyricTimingNote = placed.note;
+                }
+            }
             r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb, times);
             r.lyricLines = r.vocals.lines;
             r.lyricsOut = lyrics;

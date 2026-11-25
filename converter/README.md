@@ -70,6 +70,33 @@ the one-time download of the instrument-separation model.
    Open the app again at any time to see where it is.
 6. Add the song to the game (next section).
 
+## Lyrics that start too early or too late
+
+Lyric files are timed against one recording of a song, usually the album version. If your audio
+is another cut (a music video with a scene or a few seconds of nothing before the song, a longer
+intro, a break in the middle) the words would come up while nobody is singing yet.
+
+- **Split and R&B mode** hear the voice on its own, so they line the lyrics up with it: the
+  pattern of sung lines and pauses is slid along the voice until the two agree. One later part of
+  the song may be moved by a different amount than the start (a break the album does not have).
+  Lyrics that already fit, and lyrics that fit nowhere (the wrong song), are left as they are.
+- **Normal mode** cannot hear the voice. It only moves the lyrics later by silence at the very
+  start of the file (two seconds or more).
+- **By hand:** **Words earlier** and **Words later**, under the lyrics (and on a batch song's
+  **Edit** page), move every line half a second per press. Lyrics moved this way are used exactly
+  as they are; so are lyrics carrying an `[offset:]` line.
+
+The summary says when lyrics were moved and by how much, and the `lyrics.lrc` saved with the song
+has the times that were used.
+
+## Lyrics in other languages
+
+Korean, Japanese, Chinese, Russian and other lyrics work like English ones. `.lrc` files in the
+older encodings (EUC-KR, Shift-JIS, GBK, Big5, Windows-1251) and in UTF-16 are recognised when
+opened. Chinese and Japanese lines, written without spaces, are cut into two-character pieces so
+each gets a note. The game needs build 37 or newer to draw these characters (older builds show
+boxes).
+
 ## Finding the lyrics
 
 **Find online** (and the lookup for every song in a list) asks LRCLIB for the song several ways
