@@ -503,7 +503,7 @@ namespace YARG.Audio
             // can be a little ahead: hand it over when that moment has come
             if (_useVoiceInput)
             {
-                if (!_frameQueue.TryPeek(out frame) || frame.Time > InputManager.CurrentInputTime)
+                if (!_frameQueue.TryPeek(out frame) || frame.Time > InputManager.InputUpdateTime)
                 {
                     frame = default;
                     return false;

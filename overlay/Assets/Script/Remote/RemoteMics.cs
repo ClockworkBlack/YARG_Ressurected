@@ -473,7 +473,7 @@ namespace YARG.Remote
             // (Only the game's main thread takes frames out, so peeking first is safe.)
             if (_gateFrames)
             {
-                if (!_frameQueue.TryPeek(out frame) || frame.Time > InputManager.CurrentInputTime)
+                if (!_frameQueue.TryPeek(out frame) || frame.Time > InputManager.InputUpdateTime)
                 {
                     frame = default;
                     return false;
