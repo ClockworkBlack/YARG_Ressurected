@@ -215,9 +215,9 @@ final class StemTest {
             }
             check(split.bassTier >= 0, "bass difficulty rating set");
         }
-        java.io.StringWriter sw = new java.io.StringWriter();
-        SongWriter.writeChart(sw, new com.clockworkblack.yargconverter.core.SongMeta(), split, "song.mp3");
-        check(sw.toString().contains("[ExpertDoubleBass]") && sw.toString().contains("[EasyDoubleBass]"), "bass sections are in the chart file");
+        byte[] midi = com.clockworkblack.yargconverter.core.MidiSong.build(split);
+        for (String problem : MidiCheck.verify(midi, split)) check(false, "notes.mid: " + problem);
+        check(new MidiCheck(midi).track("PART BASS") != null, "the bass part is in the song file");
         java.io.StringWriter ini = new java.io.StringWriter();
         SongWriter.writeIni(ini, new com.clockworkblack.yargconverter.core.SongMeta(), split);
         check(ini.toString().contains("diff_bass = " + split.bassTier) && !ini.toString().contains("diff_bass = -1"), "song.ini lists the bass part");

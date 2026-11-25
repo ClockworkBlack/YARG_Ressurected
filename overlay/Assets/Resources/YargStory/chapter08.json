@@ -1,0 +1,181 @@
+{
+  "id": "ch08",
+  "number": 8,
+  "side": "Side C",
+  "title": "Ask Your Grandmother",
+  "subtitle": "Montreux, Switzerland, and Johannesburg, South Africa",
+  "focus": "Jazz as the conservatory of the whole tradition, the expatriate story, and South African kwaito, house and amapiano answering back across the ocean",
+  "intro": [
+    {"s": "title", "t": "TRACK 8", "sub": "Ask Your Grandmother", "bg": "black"},
+    {"s": "narrator", "t": "Switzerland, early November. A lake so flat it looks ironed, mountains with snow on their heads, and a lawn stage at the water's edge with folding chairs set out in rows.", "bg": "montreux-lakeside"},
+    {"s": "narrator", "t": "Here they play me rubato. Nobody ever let me take my time before."},
+    {"s": "cross", "t": "Listen. I got a cousin who has SEEN Switzerland.", "mood": "hype"},
+    {"s": "tuesday", "t": "Seen it where?", "mood": "sly"},
+    {"s": "cross", "t": "On television. It counts. It was a two-hour special.", "mood": "proud"},
+    {"s": "tuesday", "t": "Fun fact: this festival was founded in 1967. The same year as-", "mood": "hype"},
+    {"s": "ruth", "t": "Tuesday. Not now, baby. I'm looking for somebody.", "mood": "stern"},
+    {"s": "narrator", "t": "Ruth had been looking since the train. Every man on the platform with a cane. Every scarf on the promenade. Every pair of tinted glasses at the cafe tables."},
+    {"s": "ruth", "t": "He'd be eighty-five. He'd be thin. He'd be complaining about the tempo of something.", "mood": "laugh"},
+    {"s": "you", "t": "We'll find him."},
+    {"s": "ruth", "t": "I know we will, child. That man left in '69 without saying goodbye. I been mad about it so long I forgot how to stop.", "mood": "sad"}
+  ],
+  "outro": [
+    {"s": "narrator", "t": "She didn't hang up. She was waiting to see if you would. You didn't.", "bg": "johannesburg-festival"},
+    {"s": "odessa", "t": "Pocket. Where do y'all land next?", "mood": "neutral"},
+    {"s": "you", "t": "New Orleans. First weekend of December."},
+    {"s": "odessa", "t": "Then tell that van to meet my train. I'm done pointing.", "mood": "proud"},
+    {"s": "cross", "t": "Lady W? It's Cross. I need a favour, and it's about two thousand miles long.", "mood": "hype"},
+    {"s": "title", "t": "END OF SIDE C", "bg": "black"},
+    {"s": "narrator", "t": "Side C. Oakland made me own my trunk. Compton put chrome on me. Inglewood auditioned me in an empty room, and Las Vegas made me do it twice a night.", "bg": "wave"},
+    {"s": "narrator", "t": "London ran me at 165. Tokyo listened to me without breathing. Bucharest kept only my drums. A lake let me take my time."},
+    {"s": "narrator", "t": "And Johannesburg sang me back across an ocean. I went home before any of them did."},
+    {"s": "narrator", "t": "They're coming, though. I can hear the train."}
+  ],
+  "gigs": [
+    {
+      "id": "g23-the-afternoon-lawn",
+      "title": "The Afternoon Lawn",
+      "venue": "montreux-lakeside",
+      "stamp": "rubato",
+      "blurb": "An afternoon stage by the lake. In the third row, an old man with a cane and his arms folded.",
+      "vibe": {"label": "Jazz, soul-jazz and jazz-funk", "genres": ["jazz", "soul", "funk", "rnb"], "yearFrom": 1955, "yearTo": 1985, "keywords": ["jazz"]},
+      "songs": 2,
+      "starsToPass": 7,
+      "challenge": {"type": "accuracy", "value": 93, "text": "Stay for the applause: 93% on every song.", "badge": "Arms Folded"},
+      "rewards": ["ln-g23"],
+      "before": [
+        {"s": "narrator", "t": "The afternoon lawn. Blankets, a bottle sweating in an ice bucket, a little boy asleep on his father's coat. Swans, who were not invited and came anyway.", "bg": "montreux-lakeside"},
+        {"s": "narrator", "t": "Third row, on the aisle: an old man in a scarf and round tinted glasses, a cane between his knees, arms folded like he paid for the seat and intends to be disappointed in it."},
+        {"s": "ruth", "t": "Aurelius.", "mood": "shock"},
+        {"s": "narrator", "t": "He did not turn around. The lake moved more than he did."},
+        {"s": "finch", "t": "Ruth. You are still rushing.", "mood": "stern"},
+        {"s": "ruth", "t": "I ain't played a note yet!", "mood": "laugh"},
+        {"s": "finch", "t": "You were rushing across the lawn. I heard you coming from the gate.", "mood": "sly"},
+        {"s": "tuesday", "t": "That's him. That's the Professor. That's the man in the footnote.", "mood": "shock"},
+        {"s": "cross", "t": "He looks just like I pictured. I pictured somebody who'd give me a C-minus and mean it as a kindness.", "mood": "worried"},
+        {"s": "you", "t": "Sir? We came a long way."},
+        {"s": "finch", "t": "Everyone on this lawn came a long way. So did the swans. Play.", "mood": "stern"},
+        {"s": "ruth", "t": "Same Aurelius. Fifty-some years and he still ain't learned to say hello.", "mood": "sly"},
+        {"s": "narrator", "t": "Two songs, one lake and one pair of folded arms. I know which of the three we have to move."}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "The lawn stood up. The swans did not, on principle. And the seat in the third row, on the aisle, was empty.", "bg": "montreux-lakeside"},
+        {"s": "ruth", "t": "Left before the applause. He always did. Said clapping was bad for the next tempo.", "mood": "sad"},
+        {"s": "cross", "t": "So we lost him?", "mood": "worried"},
+        {"s": "narrator", "t": "On the seat, a white card in fountain pen. Tuesday picked it up with her gloves on, by the corners, like it might still be wet."},
+        {"s": "tuesday", "t": "'Midnight. The club under the hotel. Bring it played right. - A.F.'", "mood": "shock"},
+        {"s": "ruth", "t": "Played right. That's his idea of a love letter.", "mood": "laugh"},
+        {"s": "you", "t": "What does he mean, played right?"},
+        {"s": "ruth", "t": "Baby, I been asking that since 1967.", "mood": "laugh"},
+        {"s": "cross", "t": "Midnight. Pocket, I'm gonna need a nap and a nicer shirt.", "mood": "warm"}
+      ],
+      "afterLose": [
+        {"s": "ruth", "t": "He always left early. Come on. He'll be back tomorrow, he's too proud not to be.", "mood": "warm", "bg": "montreux-lakeside"},
+        {"s": "narrator", "t": "Those arms have been folded since 1969. One afternoon won't do it. Run it back."}
+      ]
+    },
+    {
+      "id": "g24-play-it-right",
+      "title": "Play It Right",
+      "venue": "montreux-lakeside",
+      "stamp": "rubato, after midnight",
+      "blurb": "The Professor's midnight session. He will hear it played right, or he will not hear it at all.",
+      "vibe": {"label": "Late-night jazz and slow soul", "genres": ["jazz", "soul", "gospel", "rnb"], "yearFrom": 1955, "yearTo": 1980, "keywords": ["jazz", "piano"]},
+      "songs": 3,
+      "starsToPass": 11,
+      "challenge": {"type": "allFive", "text": "Play it right: five stars on every song.", "badge": "Play It Right"},
+      "rewards": ["ln-g24", "k-chart"],
+      "before": [
+        {"s": "narrator", "t": "Midnight. The club under the hotel. A low ceiling, a long bar, a piano older than the building, and a window at street level full of lights from the far shore.", "bg": "montreux-lakeside"},
+        {"s": "narrator", "t": "His students sat along the walls: young players from a dozen countries with their cases on their knees, every one of them politely terrified of him."},
+        {"s": "narrator", "t": "A girl at the piano was most of the way through something difficult. He let her get almost to the end."},
+        {"s": "finch", "t": "Play it wrong once more, so I can be certain it isn't an accident.", "mood": "stern"},
+        {"s": "narrator", "t": "She played it right. She did not breathe until he nodded. He nods the way other men pay compliments: rarely, and in small change."},
+        {"s": "finch", "t": "Every music you love went to school in a room like this. Most of it was never allowed to graduate.", "mood": "neutral"},
+        {"s": "ruth", "t": "Aurelius. You could at least say hello.", "mood": "sly"},
+        {"s": "finch", "t": "Hello, Ruth. You came down those stairs on the wrong beat. You always did. It was always better.", "mood": "warm"},
+        {"s": "cross", "t": "Professor. Cross, from the Bronx. I, uh. I looped you. Professionally. For about forty years.", "mood": "worried"},
+        {"s": "finch", "t": "So the radio has informed me. In every language this continent speaks.", "mood": "sly"},
+        {"s": "tuesday", "t": "Sir, we have the reel, the ledger, Sister's hymnal page and Deacon's snare head. We need one piece of paper Gus Lark didn't write.", "mood": "worried"},
+        {"s": "finch", "t": "I know precisely what you need, young lady. I am deciding whether you have earned it.", "mood": "stern"},
+        {"s": "finch", "t": "In this town they put my name on the poster in letters larger than the piano. Fifty-eight years. I will hear it played right, or I will not hear it at all.", "mood": "proud"},
+        {"s": "you", "t": "Then listen."},
+        {"s": "finch", "t": "Midnight is the only hour I do. Begin.", "mood": "neutral"}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "He did not clap. He stood up, which at eighty-five costs more, and opened the piano bench.", "bg": "montreux-lakeside"},
+        {"s": "finch", "t": "I have been sitting on this since 1969. Literally. Do not laugh, Ruth.", "mood": "sly"},
+        {"s": "tuesday", "t": "Item six. One chart, pencil, manuscript paper. 'WATCH NIGHT - arr. by all of us; tune: Dess's mama's hymn - 12/31/67.' This is it. This is the paper Gus Lark didn't write.", "mood": "shock"},
+        {"s": "narrator", "t": "Somebody just sat down at the organ in me. Sixty years I had keys and never once knew whose hands were on them."},
+        {"s": "you", "t": "Why did you leave?"},
+        {"s": "finch", "t": "Because I went back for my scarf, and the coat rack was in the hallway. Gus Lark would pay nobody unless all five signed. He offered her a record of her own if she brought him four signatures.", "mood": "stern"},
+        {"s": "finch", "t": "She brought him four signatures. And he never even released the record. He put it on a shelf. She sold us for a shelf.", "mood": "stern"},
+        {"s": "tuesday", "t": "'D. got paper. We got a plate.' It parses. It always parsed. We just didn't want it to.", "mood": "sad"},
+        {"s": "narrator", "t": "Ruth sat down. Not on a chair: on the edge of the little stage, slowly, like an old woman, which in eighty-six years she has never once been."},
+        {"s": "ruth", "t": "She held my hand while I signed. I thought she was being sweet.", "mood": "sad"},
+        {"s": "finch", "t": "I left the country rather than look at her. Take the chart. I will not be coming with it.", "mood": "sad"},
+        {"s": "narrator", "t": "Sunday. Nine o'clock in Harlem. You held the phone the whole hour. Nobody called home.", "bg": "black"}
+      ],
+      "afterLose": [
+        {"s": "finch", "t": "Again. I have all night. I have had fifty-eight years of them.", "mood": "stern", "bg": "montreux-lakeside"},
+        {"s": "narrator", "t": "He has not left his chair. From him, that is a standing ovation. Run it back."}
+      ]
+    },
+    {
+      "id": "g25-five-notes-back",
+      "title": "Five Notes Back",
+      "venue": "johannesburg-festival",
+      "stamp": "113",
+      "blurb": "Sixty thousand people on a festival field, and five notes they've known all their lives.",
+      "vibe": {"label": "Amapiano, kwaito and South African house", "genres": ["afro", "dance", "hiphop", "rnb"], "yearFrom": 1995, "yearTo": 2025, "keywords": ["amapiano", "kwaito", "house"]},
+      "songs": 3,
+      "starsToPass": 11,
+      "challenge": {"type": "streak", "value": 600, "text": "Answer the field: 600 notes in a row.", "badge": "Five Notes Back"},
+      "rewards": ["ln-g25"],
+      "before": [
+        {"s": "title", "t": "THE SECOND SUNDAY", "sub": "Nine o'clock in Harlem. Four in the morning in Johannesburg.", "bg": "black"},
+        {"s": "narrator", "t": "Everybody was awake. Tuesday had her phone face up on the hotel bed. Ruth had her church hat on at four in the morning, for no reason she would say. Nobody dialed.", "bg": "wave"},
+        {"s": "narrator", "t": "Johannesburg, late November: spring here, nearly summer. The afternoon storm has been and gone. Jacaranda petals all over the car park, braai smoke drifting across the field.", "bg": "johannesburg-festival"},
+        {"s": "ruth", "t": "Baby. It was Sunday.", "mood": "sad"},
+        {"s": "you", "t": "I know what day it was."},
+        {"s": "tuesday", "t": "I called Ren. Not to post anything. Just to tell her what 'D. got paper' means.", "mood": "sad"},
+        {"s": "cross", "t": "What she say?", "mood": "worried"},
+        {"s": "tuesday", "t": "Nothing, for a long time. I could hear her fixing something. Then she said, 'Thank you for calling instead of posting.' Then she hung up.", "mood": "sad"},
+        {"s": "cross", "t": "Listen. First city I ever been where I ain't got a cousin.", "mood": "sad"},
+        {"s": "narrator", "t": "Nobody laughed. That is how you know a running joke has run out of road."},
+        {"s": "zee", "t": "You have cousins here, Uncle. You only lost the paperwork.", "mood": "warm"},
+        {"s": "narrator", "t": "Zee Mokoena: producer, host of this field, owner of the loudest log drum in the province and, that afternoon, the only smile in our dressing room."},
+        {"s": "zee", "t": "You don't know? That holler in bar four. In the nineties it was the drop in a kwaito record my parents danced to at their wedding. Everybody's parents. Every wedding.", "mood": "laugh"},
+        {"s": "zee", "t": "Kwaito was my mother's music: house slowed down, with swagger. Mine is amapiano: log drum, piano, patience. Different cousins, same table. And every one of them knows those five notes.", "mood": "proud"},
+        {"s": "zee", "t": "Nobody here knows whose voice it is, Uncle. We only know it's ours too. Go and play. Leave a little room.", "mood": "warm"}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "In the quiet between two numbers, somebody near the front hollered five notes. Then the next row did. Then the whole field.", "bg": "johannesburg-festival"},
+        {"s": "narrator", "t": "Sixty thousand people sang them into the dark, in a voice they have known all their lives without knowing whose. Nobody had played them. Nobody had to."},
+        {"s": "narrator", "t": "On the big screen my waveform went still. I had nothing to add. That has never happened to me before."},
+        {"s": "ruth", "t": "Baby. Call her. It ain't Sunday. Call her anyway.", "mood": "warm"},
+        {"s": "narrator", "t": "She picked up on the first ring, like she had been sitting by it for two Sundays."},
+        {"s": "odessa", "t": "Who showed up?", "mood": "neutral"},
+        {"s": "you", "t": "Sixty thousand people. They sang you, Nana. They don't even know it's you."},
+        {"s": "narrator", "t": "Silence on the line. Eleven seconds of it. I counted."},
+        {"s": "odessa", "t": "Then I'll tell it, Pocket. Once. He caught me in the hallway. Said they'd sign if I asked. If one didn't, nobody got paid, not even Wendell with his baby coming. And I'd get a record of my own.", "mood": "sad"},
+        {"s": "odessa", "t": "I wanted that record more than I wanted to be decent. For about an hour. That's all it takes.", "mood": "sad"},
+        {"s": "odessa", "t": "He put it on a shelf. Seven years I couldn't sing for anybody else. By then I'd decided I hadn't earned a stage. So I stood next to one. Forty years. Pointing other people up.", "mood": "stern"}
+      ],
+      "afterLose": [
+        {"s": "zee", "t": "The field is patient. It has been waiting for that holler for thirty years. Again.", "mood": "warm", "bg": "johannesburg-festival"},
+        {"s": "narrator", "t": "Sixty thousand people, and not one of them is going home yet. Run it back."}
+      ],
+      "afterChallenge": [
+        {"s": "narrator", "t": "Twelve fifty in the morning, Watch Night, 1967. The hallway behind the control room. The party upstairs was loud enough to shake the light fixture.", "bg": "tape"},
+        {"s": "narrator", "t": "Gus Lark still had his dinner jacket on. He held the papers out to Dess the way a waiter holds out a menu."},
+        {"s": "narrator", "t": "'Baby girl, they'll sign if you ask them. They won't if I do. You bring me four names on my paper, you get a record of your own.'"},
+        {"s": "narrator", "t": "'And if one of them don't sign, nobody gets paid tonight. Not the drummer with the baby coming. Nobody.'"},
+        {"s": "narrator", "t": "Through the control-room glass she could see the drummer showing Low a photograph of his wife. The baby was due in February."},
+        {"s": "narrator", "t": "The smell of fried chicken was coming down the stairs. Somebody up there was laughing at the end of a joke she never heard the start of."},
+        {"s": "narrator", "t": "At the far end of the hallway, by the coat rack, the Professor had come back for his scarf. Nobody saw him. He heard every word."},
+        {"s": "narrator", "t": "Dess stood there for the length of a bar, maybe two. She was nineteen. Then she took the papers and went back in."}
+      ]
+    }
+  ]
+}

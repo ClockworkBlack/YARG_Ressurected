@@ -1,0 +1,557 @@
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index 7b1f01a..52c1471 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -364,6 +364,17 @@ namespace YARG.Menu.DifficultySelect
+                 }
+             }
+ 
++            // Plug something in after picking the song: no need to go back to Profiles
++            if (!player.Profile.IsBot)
++            {
++                CreateItem("Devices", "Add Controller or Mic", false, () => AddDeviceHere(player));
++            }
++
++            if (PlayerContainer.Profiles.Any(e => !e.IsBot && !PlayerContainer.IsProfileTaken(e)))
++            {
++                CreateItem("Players", "Add Another Player", false, AddPlayerHere);
++            }
++
+             // Only show if there is more than one play, only if there is instruments available
+             if (_possibleInstruments.Count <= 0 || PlayerContainer.Players.Count != 1)
+             {
+@@ -399,6 +410,72 @@ namespace YARG.Menu.DifficultySelect
+             }
+         }
+ 
++        private async void AddDeviceHere(YargPlayer player)
++        {
++            try
++            {
++                await YARG.Menu.ProfileList.ProfileView.PromptAddDeviceFor(player.Profile);
++                await Cysharp.Threading.Tasks.UniTask.Yield();
++                await DialogManager.Instance.WaitUntilCurrentClosed();
++            }
++            catch (Exception e)
++            {
++                YARG.Core.Logging.YargLogger.LogException(e, "Adding a device before the song failed");
++            }
++
++            if (this == null || !isActiveAndEnabled) return;
++
++            // The instruments on offer depend on what is plugged in
++            if (_playerIndex < PlayerContainer.Players.Count)
++            {
++                UpdateForPlayer();
++            }
++        }
++
++        private void AddPlayerHere()
++        {
++            var dialog = DialogManager.Instance.ShowList("Add Another Player");
++            foreach (var profile in PlayerContainer.Profiles.OrderBy(e => e.Name))
++            {
++                if (profile.IsBot || PlayerContainer.IsProfileTaken(profile)) continue;
++
++                var chosen = profile;
++                dialog.AddListButton(chosen.Name, () => ConnectHere(chosen));
++            }
++        }
++
++        private async void ConnectHere(YargProfile profile)
++        {
++            try
++            {
++                await Cysharp.Threading.Tasks.UniTask.Yield();
++                await DialogManager.Instance.WaitUntilCurrentClosed();
++
++                var added = PlayerContainer.CreatePlayerFromProfile(profile, true);
++                if (added is null) return;
++
++                if (added.Bindings.Empty &&
++                    !await YARG.Menu.ProfileList.ProfileView.PromptAddDeviceFor(profile))
++                {
++                    // Nothing to play on: don't leave an empty player in the band
++                    PlayerContainer.DisposePlayer(added);
++                    return;
++                }
++
++                ToastManager.ToastSuccess($"{profile.Name} joined. Their turn to choose comes after yours.");
++            }
++            catch (Exception e)
++            {
++                YARG.Core.Logging.YargLogger.LogException(e, "Adding a player before the song failed");
++            }
++
++            if (this == null || !isActiveAndEnabled) return;
++            if (_playerIndex < PlayerContainer.Players.Count)
++            {
++                UpdateForPlayer();
++            }
++        }
++
+         private void ShowWarning(string message)
+         {
+             if (string.IsNullOrEmpty(message))
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+index 8d5dcfa..e41aac0 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+@@ -507,7 +507,7 @@ namespace YARG.Menu.MusicLibrary
+             UpdateSearch(true);
+         }
+ 
+-        private void OpenFilters()
++        public void OpenFilters()
+         {
+             // Stop any library preview audio so the Filters menu doesn't inherit it
+             StopPreview();
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+index 56957b6..7b32ad1 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+@@ -354,13 +354,48 @@ namespace YARG.Menu.MusicLibrary
+                     SettingsManager.Settings.EnablePlayAShow.Value ?
+                         new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.PlayShow", EnterShowMode) :
+                         new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.PlayShow", () => { }, hide: true),
+-                new NavigationScheme.Entry(MenuAction.Blue, "Menu.MusicLibrary.Filters", OpenFilters),
++                // Square / blue: favorite the song under the cursor (Filters moved into More Options)
++                new NavigationScheme.Entry(MenuAction.Blue, "Menu.MusicLibrary.Favorite", ToggleFavorite),
+                 new NavigationScheme.Entry(MenuAction.Orange, "Menu.MusicLibrary.MoreOptions",
+                     OnOrangeHit, OnOrangeRelease),
+             }, false));
+ 
+         }
+ 
++        private void ToggleFavorite()
++        {
++            var selection = CurrentSelection;
++            if (selection == null || !selection.GetFavoriteInfo().ShowFavoriteButton)
++            {
++                return;
++            }
++
++            bool wasFavorite = selection.GetFavoriteInfo().IsFavorited;
++            string name = selection is SongViewType songView ? songView.SongEntry.Name.ToString() : "Song";
++            selection.FavoriteClick();
++
++            if (wasFavorite)
++            {
++                ToastManager.ToastInformation($"{name}: removed from Favorites");
++                return;
++            }
++
++            // The first favorites become the menu music, unless a playlist was already chosen for it
++            var source = SettingsManager.Settings.MenuMusicSource;
++            if (string.IsNullOrEmpty(source.Value) || source.Value == MenuMusic.SOURCE_ALL)
++            {
++                source.SetValueWithoutNotify(MenuMusic.SOURCE_FAVORITES);
++                SettingsManager.SaveSettings();
++                ToastManager.ToastSuccess($"{name}: added to Favorites.\nThe menus now play your Favorites.");
++            }
++            else
++            {
++                ToastManager.ToastSuccess($"{name}: added to Favorites");
++            }
++
++            RefreshViewsObjects();
++        }
++
+         protected override void OnSelectedIndexChanged()
+         {
+             const double PREVIEW_SCROLL_DELAY = .6f;
+diff --git a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+index 354abcd..623a14e 100644
+--- a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+@@ -122,6 +122,12 @@ namespace YARG.Menu.MusicLibrary
+                 gameObject.SetActive(false);
+             });
+ 
++            CreateItem("Filters", () =>
++            {
++                gameObject.SetActive(false);
++                _musicLibrary.OpenFilters();
++            });
++
+             CreateItem("ScanSongs", () =>
+             {
+                 _musicLibrary.RefreshSongs();
+diff --git a/Assets/Script/Menu/Persistent/MusicPlayer.cs b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+index 63e5ca2..88dbe9c 100644
+--- a/Assets/Script/Menu/Persistent/MusicPlayer.cs
++++ b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+@@ -33,12 +33,44 @@ namespace YARG.Menu.Persistent
+         [SerializeField]
+         private Sprite _pauseSprite;
+ 
++        // The song keeps its place while another screen has the player hidden (the song list,
++        // a dialog), and carries on from there when the menu comes back
++        private bool _heldForLater;
++        private bool _pausedByUser;
++
++        // Songs played before this one, for going back with L2
++        private static readonly System.Collections.Generic.List<SongEntry> _history = new();
++        private SongEntry _forcedNext;
++
+         private async void OnEnable()
+         {
++            lock (_lock)
++            {
++                if (_mixer != null && _nowPlaying != null)
++                {
++                    // Carry on with the song that was playing
++                    StemSettings.ApplySettings = false;
++                    _heldForLater = false;
++                    _songText.text = _nowPlaying.Name;
++                    _artistText.text = _nowPlaying.Artist;
++                    if (!_pausedByUser)
++                    {
++                        _mixer.Play();
++                        _playPauseButton.sprite = _pauseSprite;
++                    }
++                    else
++                    {
++                        _playPauseButton.sprite = _playSprite;
++                    }
++                    return;
++                }
++            }
++
+             _songText.text = _artistText.text = string.Empty;
+ 
+             // Wait until the loading is done
+             await UniTask.WaitUntil(() => !LoadingScreen.IsActive);
++            if (!isActiveAndEnabled) return;
+ 
+             // Disable if there are no songs to play
+             if (SongContainer.Count <= 0)
+@@ -55,11 +87,54 @@ namespace YARG.Menu.Persistent
+             StemSettings.ApplySettings = SettingsManager.Settings.ApplyVolumesInMusicLibrary.Value; // reset to default value
+             lock (_lock)
+             {
+-                _mixer?.Dispose();
++                if (_mixer == null) return;
++
++                if (GlobalVariables.Instance != null && GlobalVariables.Instance.CurrentScene == SceneIndex.Menu)
++                {
++                    // Still in the menus: keep the song, paused, to pick up where it was
++                    if (!_mixer.IsPaused) _mixer.Pause();
++                    _heldForLater = true;
++                    return;
++                }
++
++                // Going off to play a song: let it go
++                _mixer.Dispose();
+                 _mixer = null;
++                _heldForLater = false;
++            }
++        }
++
++        private void Update()
++        {
++            // R2 skips to the next song, L2 goes back one, on any controller, wherever the player shows
++            foreach (var pad in UnityEngine.InputSystem.Gamepad.all)
++            {
++                if (pad.rightTrigger.wasPressedThisFrame)
++                {
++                    NextSong();
++                    return;
++                }
++
++                if (pad.leftTrigger.wasPressedThisFrame)
++                {
++                    PreviousSong();
++                    return;
++                }
+             }
+         }
+ 
++        public void PreviousSong()
++        {
++            if (_history.Count == 0)
++            {
++                return;
++            }
++
++            _forcedNext = _history[^1];
++            _history.RemoveAt(_history.Count - 1);
++            NextSong();
++        }
++
+         private static Task<StemMixer> _current;
+         public async void NextSong()
+         {
+@@ -67,7 +142,10 @@ namespace YARG.Menu.Persistent
+             for (int tries = 0; tries < MAX_TRIES; tries++)
+             {
+                 // Startup song first, then the chosen playlist / favorites / whole library
+-                var entry = MenuMusic.PickNext(_nowPlaying, out int poolSize);
++                bool goingBack = _forcedNext != null;
++                int poolSize = 2;
++                var entry = _forcedNext ?? MenuMusic.PickNext(_nowPlaying, out poolSize);
++                _forcedNext = null;
+                 if (entry == null)
+                 {
+                     break;
+@@ -76,7 +154,13 @@ namespace YARG.Menu.Persistent
+                 {
+                     continue;
+                 }
++                if (!goingBack && _nowPlaying != null)
++                {
++                    _history.Add(_nowPlaying);
++                    if (_history.Count > 50) _history.RemoveAt(0);
++                }
+                 _nowPlaying = entry;
++                _pausedByUser = false;
+ 
+                 Task<StemMixer> task;
+                 lock (_lock)
+@@ -93,12 +177,19 @@ namespace YARG.Menu.Persistent
+ 
+                 lock (_lock)
+                 {
+-                    if (_current != task || !gameObject.activeSelf)
++                    if (_current != task)
+                     {
+                         mixer.Dispose();
+                         continue;
+                     }
+ 
++                    if (!isActiveAndEnabled)
++                    {
++                        // Hidden while the song was loading: start afresh when the menu comes back
++                        mixer.Dispose();
++                        return;
++                    }
++
+                     _mixer?.Dispose();
+                     _mixer = mixer;
+                     _mixer.SongEnd += () =>
+@@ -107,6 +198,7 @@ namespace YARG.Menu.Persistent
+                         _mixer = null;
+                         NextSong();
+                     };
++                    _heldForLater = false;
+                     _mixer.Play();
+ 
+                     _songText.text = _nowPlaying.Name;
+@@ -138,11 +230,13 @@ namespace YARG.Menu.Persistent
+                 if (!_mixer.IsPaused)
+                 {
+                     _mixer.Pause();
++                    _pausedByUser = true;
+                     _playPauseButton.sprite = _playSprite;
+                 }
+                 else
+                 {
+                     _mixer.Play();
++                    _pausedByUser = false;
+                     _playPauseButton.sprite = _pauseSprite;
+                 }
+             }
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index e157e94..45eeb1c 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -49,7 +49,13 @@ namespace YARG.Menu.ProfileList
+ 
+             Navigator.Instance.PushScheme(new NavigationScheme(new()
+             {
++                // On a controller: up and down move through the profiles, confirm lists what can be
++                // done with the one that is lit up
++                NavigationScheme.Entry.NavigateUp,
++                NavigationScheme.Entry.NavigateDown,
++                new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", OpenSelectedProfileActions),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu(), hide: true),
++                new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfile),
+             }, true));
+ 
+             PlayerContainer.PlayerAdded += OnPlayerAdded;
+@@ -133,6 +139,21 @@ namespace YARG.Menu.ProfileList
+             return newName;
+         }
+ 
++        private void OpenSelectedProfileActions()
++        {
++            var views = _profileList.GetComponentsInChildren<ProfileView>();
++            var view = views.FirstOrDefault(e => e.Selected);
++            if (view == null)
++            {
++                // Nothing lit up yet: light up the first profile
++                view = views.FirstOrDefault();
++                if (view != null) view.SetSelected(true, SelectionOrigin.Navigation);
++                return;
++            }
++
++            view.ShowActions();
++        }
++
+         public void AddProfile()
+         {
+             PlayerContainer.AddProfile(new YargProfile
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 2033658..2864733 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -146,12 +146,23 @@ namespace YARG.Menu.ProfileList
+             }
+         }
+ 
+-        public async UniTask<bool> PromptAddDevice()
++        public UniTask<bool> PromptAddDevice() => PromptAddDeviceFor(Profile);
++
++        /// <summary>
++        /// Lets the player behind a connected profile pick a controller or microphone to add.
++        /// Also used from the screen before a song, so a device can be added without going back to Profiles.
++        /// </summary>
++        public static async UniTask<bool> PromptAddDeviceFor(YargProfile profile)
+         {
+             var dialog = DialogManager.Instance.ShowList("Add Device\n" +
+                 "<alpha=#44><size=65%><line-height=50%>\nIf your device does not show up, try hitting a button/pad on " +
+                 "it first, and then retry.</size>");
+-            var player = PlayerContainer.GetPlayerFromProfile(Profile);
++            var player = PlayerContainer.GetPlayerFromProfile(profile);
++            if (player is null)
++            {
++                DialogManager.Instance.ClearDialog();
++                return false;
++            }
+ 
+             bool devicesAvailable = false;
+             bool selectedDevice = false;
+@@ -417,6 +428,113 @@ namespace YARG.Menu.ProfileList
+             return selectedDevice;
+         }
+ 
++        /// <summary>
++        /// Confirm on a controller: a list of what can be done with this profile, since the buttons
++        /// on the row and in the sidebar can only be reached by touch.
++        /// </summary>
++        public void ShowActions()
++        {
++            var dialog = DialogManager.Instance.ShowList(Profile.Name);
++
++            if (!PlayerContainer.IsProfileTaken(Profile))
++            {
++                if (_profileListMenu.CanConnectProfile)
++                {
++                    dialog.AddListButton(Profile.IsBot ? "Add this bot to the band" : "Connect (play as this profile)",
++                        () => After(() => Connect(true)));
++                }
++                dialog.AddListButton("Delete this profile", () => After(() =>
++                {
++                    RemoveProfile();
++                    return UniTask.CompletedTask;
++                }));
++                return;
++            }
++
++            if (!Profile.IsBot)
++            {
++                dialog.AddListButton("Add Device (controller or microphone)", () => After(async () =>
++                {
++                    await PromptAddDevice();
++                    _profileListMenu.RefreshList(Profile);
++                }));
++                dialog.AddListButton("Remove Device", () => After(async () =>
++                {
++                    await PromptRemoveDevice();
++                    _profileListMenu.RefreshList(Profile);
++                }));
++            }
++
++            dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (faster)", () =>
++            {
++                Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed + 0.5f, 0.5f, 100f);
++                After(Reopen);
++            });
++            dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (slower)", () =>
++            {
++                Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed - 0.5f, 0.5f, 100f);
++                After(Reopen);
++            });
++            dialog.AddListButton(Profile.LeftyFlip ? "Lefty Flip: On" : "Lefty Flip: Off", () =>
++            {
++                Profile.LeftyFlip = !Profile.LeftyFlip;
++                After(Reopen);
++            });
++            dialog.AddListButton("More Settings and Button Bindings", () => After(() =>
++            {
++                _profileSidebar.UpdateSidebar(Profile, this);
++                _profileSidebar.EditProfile();
++                return UniTask.CompletedTask;
++            }));
++
++            int index = PlayerContainer.GetPlayerIndex(PlayerContainer.GetPlayerFromProfile(Profile));
++            if (index > 0)
++            {
++                dialog.AddListButton("Move Up (earlier player)", () => After(() =>
++                {
++                    MoveUp();
++                    return UniTask.CompletedTask;
++                }));
++            }
++            if (index < PlayerContainer.Players.Count - 1)
++            {
++                dialog.AddListButton("Move Down (later player)", () => After(() =>
++                {
++                    MoveDown();
++                    return UniTask.CompletedTask;
++                }));
++            }
++
++            dialog.AddListButton("Disconnect", () => After(() =>
++            {
++                Disconnect();
++                return UniTask.CompletedTask;
++            }));
++        }
++
++        private UniTask Reopen()
++        {
++            _profileSidebar.UpdateSidebar(Profile, this);
++            ShowActions();
++            return UniTask.CompletedTask;
++        }
++
++        // Runs once the list that was just chosen from has closed, so a new dialog can open
++        private async void After(System.Func<UniTask> action)
++        {
++            try
++            {
++                await UniTask.Yield();
++                await DialogManager.Instance.WaitUntilCurrentClosed();
++                if (this == null) return;
++                await action();
++            }
++            catch (System.Exception e)
++            {
++                YargLogger.LogException(e, "Profile action failed");
++            }
++        }
++
+         public void ConnectButtonAction()
+         {
+             if (_profileListMenu.CanConnectProfile)
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index a4f6dbb..c18c478 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -328,6 +328,7 @@
+                     "RandomSong": "Random Song",
+                     "BackToTop": "Back to Top",
+                     "ScanSongs": "Scan Songs",
++                    "Filters": "Filters",
+                     "SortBy": "Sort By: {0}",
+                     "GoToSection": "Go To Section...",
+                     "AddToFavorites": "Add To Favorites",
+@@ -368,6 +369,7 @@
+             "StartSet": "Start The Set",
+             "PlayShow": "Play A Show",
+             "Filters": "Filters",
++            "Favorite": "Favorite",
+             "NoSongsInPlaylist": "No Songs In Playlist",
+             "CannotAddToSelf": "No, I will not create an ouroboros for you. Nice try, Jaden.",
+             "AddToShow": "Add To Show",

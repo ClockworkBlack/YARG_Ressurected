@@ -1,0 +1,175 @@
+diff --git a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
+index 8fe4246..1e8e34c 100644
+--- a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
++++ b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
+@@ -13,7 +13,7 @@ namespace YARG.Input
+             return device switch
+             {
+                 Keyboard keyboard => SetDefaultBindings(keyboard),
+-                Gamepad gamepad => SetDefaultBindings(gamepad, GamepadBindingMode.Gamepad),
++                Gamepad gamepad => SetDefaultBindings(gamepad, ControllerLayout.GuitarBindingMode),
+ 
+                 FiveFretGuitar guitar => SetDefaultBindings(guitar),
+                 SixFretGuitar guitar => SetDefaultBindings(guitar),
+diff --git a/Assets/Script/Input/Bindings/Defaults/BindingCollection.Gamepad.cs b/Assets/Script/Input/Bindings/Defaults/BindingCollection.Gamepad.cs
+index 98a35c1..a7fcd2c 100644
+--- a/Assets/Script/Input/Bindings/Defaults/BindingCollection.Gamepad.cs
++++ b/Assets/Script/Input/Bindings/Defaults/BindingCollection.Gamepad.cs
+@@ -15,6 +15,9 @@ namespace YARG.Input
+             return mode switch
+             {
+                 GamepadBindingMode.Gamepad => SetDefaultGameplayBindings_Gamepad(gamepad),
++                GamepadBindingMode.Gamepad_FaceButtons => Mode == GameMode.FiveFretGuitar
++                    ? SetDefaultFiveFretBindings_GamepadFace(gamepad)
++                    : SetDefaultGameplayBindings_Gamepad(gamepad),
+ 
+                 GamepadBindingMode.CrkdGuitar_Mode1 => SetDefaultGameplayBindings_CrkdGuitar(gamepad),
+                 GamepadBindingMode.CrkdGuitar_Mode1_Fw30 => SetDefaultGameplayBindings_CrkdGuitarFw300(gamepad),
+@@ -38,6 +41,7 @@ namespace YARG.Input
+             return mode switch
+             {
+                 GamepadBindingMode.Gamepad => SetDefaultMenuBindings_Gamepad(gamepad),
++                GamepadBindingMode.Gamepad_FaceButtons => SetDefaultMenuBindings_Gamepad(gamepad),
+ 
+                 GamepadBindingMode.CrkdGuitar_Mode1 => SetDefaultMenuBindings_CrkdGuitar(gamepad),
+                 GamepadBindingMode.CrkdGuitar_Mode1_Fw30 => SetDefaultMenuBindings_CrkdGuitar(gamepad),
+@@ -94,6 +98,39 @@ namespace YARG.Input
+             return true;
+         }
+ 
++        // Frets on the face buttons, on the same buttons as the menu colors (and the button icons):
++        // Cross green, Circle red, Triangle yellow, Square blue on a PlayStation pad, L1 orange.
++        // The left thumb strums on the D-pad, the right index finger has Star Power (R1) and the
++        // whammy bar (R2, the further it's pressed the more it bends).
++        private bool SetDefaultFiveFretBindings_GamepadFace(Gamepad gamepad)
++        {
++            if (Mode != GameMode.FiveFretGuitar)
++                return false;
++
++            foreach (var button in new[] { PadButton.South, PadButton.East, PadButton.North, PadButton.West })
++            {
++                var fret = ControllerLayout.ToMenuAction(button) switch
++                {
++                    MenuAction.Green  => GuitarAction.GreenFret,
++                    MenuAction.Red    => GuitarAction.RedFret,
++                    MenuAction.Yellow => GuitarAction.YellowFret,
++                    _                 => GuitarAction.BlueFret,
++                };
++                AddBinding(fret, ControllerLayout.GetControl(gamepad, button));
++            }
++            AddBinding(GuitarAction.OrangeFret, gamepad.leftShoulder);
++
++            AddBinding(GuitarAction.StrumUp, gamepad.dpad.up);
++            AddBinding(GuitarAction.StrumDown, gamepad.dpad.down);
++
++            AddBinding(GuitarAction.StarPower, gamepad.rightShoulder);
++            AddBinding(GuitarAction.StarPower, gamepad.selectButton);
++
++            AddBinding(GuitarAction.Whammy, gamepad.rightTrigger);
++
++            return true;
++        }
++
+         private bool SetDefaultSixFretBindings_Gamepad(Gamepad gamepad)
+         {
+             if (Mode != GameMode.SixFretGuitar)
+diff --git a/Assets/Script/Input/Bindings/GamepadBindingMode.cs b/Assets/Script/Input/Bindings/GamepadBindingMode.cs
+index 223e05f..7b60a77 100644
+--- a/Assets/Script/Input/Bindings/GamepadBindingMode.cs
++++ b/Assets/Script/Input/Bindings/GamepadBindingMode.cs
+@@ -13,5 +13,9 @@ namespace YARG.Input
+         RB4InstrumentMapper_Guitar,
+         RB4InstrumentMapper_GHLGuitar,
+         RB4InstrumentMapper_Drums,
++
++        // An ordinary gamepad with the frets on the face buttons (see SetDefaultFiveFretBindings_GamepadFace).
++        // Last, so the values of the modes above stay as they were.
++        Gamepad_FaceButtons,
+     }
+ }
+diff --git a/Assets/Script/Input/InputManager.cs b/Assets/Script/Input/InputManager.cs
+index 4a7a65f..b94122e 100644
+--- a/Assets/Script/Input/InputManager.cs
++++ b/Assets/Script/Input/InputManager.cs
+@@ -95,7 +95,7 @@ namespace YARG.Input
+                 if (device is Gamepad gamepad && !player.Bindings.ContainsBindingsForDevice(gamepad) &&
+                     ControllerLayout.IsStandardGamepad(gamepad) && DialogManager.Instance is { IsDialogShowing: false })
+                 {
+-                    player.Bindings.SetDefaultBinds(gamepad, GamepadBindingMode.Gamepad);
++                    player.Bindings.SetDefaultBinds(gamepad, ControllerLayout.GuitarBindingMode);
+                     ToastManager.ToastInformation($"{gamepad.displayName} set up as a gamepad for {player.Profile.Name}");
+                     return false;
+                 }
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index d2736cb..e07d179 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -199,7 +199,7 @@ namespace YARG.Menu.ProfileList
+                             if (YARG.Input.ControllerLayout.IsStandardGamepad(androidPad))
+                             {
+                                 // A PlayStation or Xbox pad: no need to ask
+-                                mode = GamepadBindingMode.Gamepad;
++                                mode = YARG.Input.ControllerLayout.GuitarBindingMode;
+                             }
+                             else
+                             {
+@@ -302,7 +302,8 @@ namespace YARG.Menu.ProfileList
+             GamepadBindingMode? mode = null;
+ 
+             var dialog = DialogManager.Instance.ShowList("Which kind of controller is this?");
+-            dialog.AddListButton("Gamepad: PS5 / PS4 / Xbox / other (frets L2 L1 R1 R2 Cross, strum D-pad, Star Power Create, pause Options)", () => mode = GamepadBindingMode.Gamepad);
++            dialog.AddListButton("Gamepad, frets on the face buttons (Cross Circle Triangle Square L1, strum D-pad)", () => mode = GamepadBindingMode.Gamepad_FaceButtons);
++            dialog.AddListButton("Gamepad, frets on the shoulder buttons (L2 L1 R1 R2 Cross: Guitar Hero 2 style)", () => mode = GamepadBindingMode.Gamepad);
+             dialog.AddListButton("CRKD Guitar (Mode 1)", () => mode = GamepadBindingMode.CrkdGuitar_Mode1);
+             dialog.AddListButton("CRKD Guitar (Mode 1, FW3.0+)", () => mode = GamepadBindingMode.CrkdGuitar_Mode1_Fw30);
+             dialog.AddListButton("Other guitar (PS3/360 dongle)", () => mode = GamepadBindingMode.RB4InstrumentMapper_Guitar);
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index d6dd27c..6b57862 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -158,6 +158,14 @@ namespace YARG.Settings
+                 };
+             public ToggleSetting ShowControllerButtonNames { get; } = new(true);
+ 
++            // Where the frets are when guitar is played on an ordinary gamepad
++            public DropdownSetting<YARG.Input.GamepadGuitarLayout> GamepadGuitarLayout { get; }
++                = new(YARG.Input.GamepadGuitarLayout.FaceButtons, YARG.Input.ControllerLayout.OnGuitarLayoutChanged)
++                {
++                    YARG.Input.GamepadGuitarLayout.FaceButtons,
++                    YARG.Input.GamepadGuitarLayout.ShoulderButtons
++                };
++
+             // The on-screen fret / strum buttons during a song (Android)
+             public DropdownSetting<YARG.Input.Touch.TouchControlsMode> TouchControls { get; }
+                 = new(YARG.Input.Touch.TouchControlsMode.Auto)
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index cf24edd..45e7e59 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -62,6 +62,7 @@ namespace YARG.Settings
+ 
+                 new HeaderMetadata("Controller"),
+                 nameof(Settings.ControllerLayout),
++                nameof(Settings.GamepadGuitarLayout),
+                 nameof(Settings.ShowControllerButtonNames),
+                 nameof(Settings.TouchControls),
+ 
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index be11976..6fc4ea3 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1674,6 +1674,14 @@
+                     "PlayStationJapan": "PlayStation, Japan style (Circle = OK)"
+                 }
+             },
++            "GamepadGuitarLayout": {
++                "Name": "Gamepad Guitar Layout",
++                "Description": "Where the frets are when you play guitar or bass on an ordinary gamepad. Face buttons: the frets are the same buttons as the menu colors (on a PlayStation controller Cross green, Circle red, Triangle yellow, Square blue, L1 orange), strum with D-pad up or down, R1 is Star Power and R2 the whammy bar. Shoulder buttons: the Guitar Hero 2 controller layout, L2 green, L1 red, R1 yellow, R2 blue, Cross orange, strum with the D-pad. Changing this re-does the guitar buttons of PlayStation and Xbox controllers already in a profile.",
++                "Dropdown": {
++                    "FaceButtons": "Face buttons (Cross, Circle, Triangle, Square, L1)",
++                    "ShoulderButtons": "Shoulder buttons (L2, L1, R1, R2, Cross)"
++                }
++            },
+             "TouchControls": {
+                 "Name": "Touch Buttons",
+                 "Description": "The colored fret buttons and strum bar on the screen during a song. Automatic shows them only when the guitar player has no controller, so they stay out of the way when you play with a gamepad or guitar.",

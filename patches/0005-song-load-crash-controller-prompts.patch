@@ -1,0 +1,540 @@
+diff --git a/Assets/Script/Audio/Bass/BassAudioManager.cs b/Assets/Script/Audio/Bass/BassAudioManager.cs
+index 233ab02..0121ba4 100644
+--- a/Assets/Script/Audio/Bass/BassAudioManager.cs
++++ b/Assets/Script/Audio/Bass/BassAudioManager.cs
+@@ -713,7 +713,14 @@ namespace YARG.Audio.BASS
+             // the fork's leftover debug logging is dropped.)
+             var procs = new BassStreamProcedures(stream);
+             var handle = GCHandle.Alloc(procs);
+-            streamHandle = Bass.CreateStream(StreamSystem.NoBuffer, streamFlags, procs, GCHandle.ToIntPtr(handle));
++            // Straight to BASS: ManagedBass's CreateStream also registers a callback of its own that
++            // IL2CPP can't marshal, which made every song fail to load (see BassDirect).
++            // A plain FileProcedures is passed so only its four function pointers are marshalled.
++            var nativeProcs = new FileProcedures
++            {
++                Close = procs.Close, Length = procs.Length, Read = procs.Read, Seek = procs.Seek
++            };
++            streamHandle = BassDirect.CreateStream(StreamSystem.NoBuffer, streamFlags, nativeProcs, GCHandle.ToIntPtr(handle));
+             if (streamHandle == 0)
+             {
+                 YargLogger.LogFormatError("Failed to create source stream: {0}!", Bass.LastError);
+diff --git a/Assets/Script/Audio/Bass/BassMicDevice.cs b/Assets/Script/Audio/Bass/BassMicDevice.cs
+index bdd0d54..1fc29db 100644
+--- a/Assets/Script/Audio/Bass/BassMicDevice.cs
++++ b/Assets/Script/Audio/Bass/BassMicDevice.cs
+@@ -46,7 +46,11 @@ namespace YARG.Audio.BASS
+             }
+ 
+             // Apply gain to the playback
++#if UNITY_ANDROID
++            int applyGain = BassDirect.ChannelSetDSP(monitorPlaybackHandle, ApplyGain);
++#else
+             int applyGain = Bass.ChannelSetDSP(monitorPlaybackHandle, ApplyGain);
++#endif
+             if (applyGain == 0)
+             {
+                 YargLogger.LogFormatError("Failed to add gain to monitor stream: {0}!", Bass.LastError);
+@@ -129,7 +133,11 @@ namespace YARG.Audio.BASS
+             var devPeriod = Bass.GetConfig(Configuration.DevicePeriod);
+             foreach (int sampleRate in _sampleRates)
+             {
++#if UNITY_ANDROID
++                int handle = BassDirect.RecordStart(sampleRate, 1, BassFlags.Default, devPeriod, procedure, user);
++#else
+                 int handle = Bass.RecordStart(sampleRate, 1, BassFlags.Default, devPeriod, procedure, user);
++#endif
+                 if (handle == 0)
+                 {
+                     YargLogger.LogFormatTrace("Failed to start clean recording at {0} Hz: {1}!", sampleRate, Bass.LastError);
+diff --git a/Assets/Script/Audio/Bass/BassSampleChannel.cs b/Assets/Script/Audio/Bass/BassSampleChannel.cs
+index e910526..b379fff 100644
+--- a/Assets/Script/Audio/Bass/BassSampleChannel.cs
++++ b/Assets/Script/Audio/Bass/BassSampleChannel.cs
+@@ -222,7 +222,7 @@ namespace YARG.Audio.BASS
+             {
+                 _endCallbackGCHandle = GCHandle.Alloc(this);
+             }
+-            _syncHandle = Bass.ChannelSetSync(_channel, SyncFlags.End, 0,
++            _syncHandle = BassDirect.ChannelSetSync(_channel, SyncFlags.End, 0,
+                 StaticEndCallback, GCHandle.ToIntPtr(_endCallbackGCHandle));
+ #else
+             _syncHandle = Bass.ChannelSetSync(_channel, SyncFlags.End, 0, EndCallback);
+diff --git a/Assets/Script/Audio/Bass/BassStemMixer.cs b/Assets/Script/Audio/Bass/BassStemMixer.cs
+index be73491..726efa8 100644
+--- a/Assets/Script/Audio/Bass/BassStemMixer.cs
++++ b/Assets/Script/Audio/Bass/BassStemMixer.cs
+@@ -162,7 +162,7 @@ namespace YARG.Audio.BASS
+                     {
+                         _songEndGCHandle = GCHandle.Alloc(this);
+                     }
+-                    _songEndHandle = BassMix.ChannelSetSync(_longestHandle, SyncFlags.End, 0,
++                    _songEndHandle = BassDirect.MixerChannelSetSync(_longestHandle, SyncFlags.End, 0,
+                         StaticSongEndCallback, GCHandle.ToIntPtr(_songEndGCHandle));
+ #else
+                     void sync(int _, int __, int ___, IntPtr _____)
+@@ -246,7 +246,7 @@ namespace YARG.Audio.BASS
+             {
+                 _gainDspGCHandle = GCHandle.Alloc(this);
+             }
+-            _gainDspHandle = Bass.ChannelSetDSP(_mixerHandle, StaticGainDSP,
++            _gainDspHandle = BassDirect.ChannelSetDSP(_mixerHandle, StaticGainDSP,
+                 GCHandle.ToIntPtr(_gainDspGCHandle));
+ #else
+             _gainDspHandle = Bass.ChannelSetDSP(_mixerHandle, (handle, channel, buffer, length, user) =>
+diff --git a/Assets/Script/Menu/Common/Data/NavigationIcons.cs b/Assets/Script/Menu/Common/Data/NavigationIcons.cs
+index d5cb1a6..8ab0ec1 100644
+--- a/Assets/Script/Menu/Common/Data/NavigationIcons.cs
++++ b/Assets/Script/Menu/Common/Data/NavigationIcons.cs
+@@ -34,6 +34,14 @@ namespace YARG.Menu.Data
+ 
+         public Sprite GetIcon(MenuAction action)
+         {
++            // With a gamepad connected: the controller's own button (Cross, Circle, A, B...)
++            // instead of the plain colored pill, everywhere an action icon is shown
++            var glyph = YARG.Input.ControllerGlyphs.GetSprite(action);
++            if (glyph != null)
++            {
++                return glyph;
++            }
++
+             return GetIconByAction(action)?.Sprite;
+         }
+ 
+diff --git a/Assets/Script/Menu/Common/Dialogs/Dialog.cs b/Assets/Script/Menu/Common/Dialogs/Dialog.cs
+index e763b18..cb80f79 100644
+--- a/Assets/Script/Menu/Common/Dialogs/Dialog.cs
++++ b/Assets/Script/Menu/Common/Dialogs/Dialog.cs
+@@ -15,6 +15,7 @@ namespace YARG.Menu.Dialogs
+         private Transform _dialogButtonContainer;
+         [SerializeField]
+         private NavigationGroup _navigationGroup;
++        protected NavigationGroup NavGroup => _navigationGroup;
+         [SerializeField]
+         private ColoredButton _dialogButtonPrefab;
+ 
+diff --git a/Assets/Script/Menu/Common/Dialogs/ListDialog.cs b/Assets/Script/Menu/Common/Dialogs/ListDialog.cs
+index 9ce857f..3e10683 100644
+--- a/Assets/Script/Menu/Common/Dialogs/ListDialog.cs
++++ b/Assets/Script/Menu/Common/Dialogs/ListDialog.cs
+@@ -1,6 +1,11 @@
++using System.Collections.Generic;
+ using UnityEngine;
+ using UnityEngine.Events;
++using UnityEngine.UI;
++using YARG.Core.Input;
+ using YARG.Helpers.Extensions;
++using YARG.Menu.Data;
++using YARG.Menu.Navigation;
+ using YARG.Menu.Persistent;
+ 
+ namespace YARG.Menu.Dialogs
+@@ -13,6 +18,13 @@ namespace YARG.Menu.Dialogs
+         [SerializeField]
+         private ColoredButton _listButtonPrefab;
+ 
++        // The list's own buttons, in order, so a controller or keyboard can move through them.
++        // (Only the buttons under the list, like Close, are in the dialog's navigation group.)
++        private readonly List<ColoredButton> _listButtons = new();
++
++        // Which list button is highlighted; -1 while the highlight is on the buttons below the list
++        private int _cursor = -1;
++
+         public ColoredButton AddListButton(string text, UnityAction handler, bool closeOnClick = true)
+         {
+             var button = AddListEntry(_listButtonPrefab);
+@@ -31,6 +43,14 @@ namespace YARG.Menu.Dialogs
+                 button.OnClick.AddListener(handler);
+             }
+ 
++            _listButtons.Add(button);
++            if (_listButtons.Count == 1)
++            {
++                // Start on the first choice, so Confirm picks it straight away
++                NavGroup.ClearSelection();
++                MoveCursorTo(0, false);
++            }
++
+             return button;
+         }
+ 
+@@ -42,6 +62,8 @@ namespace YARG.Menu.Dialogs
+ 
+         public void ClearList()
+         {
++            _listButtons.Clear();
++            _cursor = -1;
+             _listContainer.DestroyChildren();
+         }
+ 
+@@ -51,5 +73,147 @@ namespace YARG.Menu.Dialogs
+ 
+             ClearList();
+         }
++
++        protected override NavigationScheme GetNavigationScheme()
++        {
++            return new NavigationScheme(new()
++            {
++                new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", ConfirmCursor),
++                new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back",
++                    () => DialogManager.Instance.ClearDialog()),
++                new NavigationScheme.Entry(MenuAction.Up, "Menu.Common.Up", ctx => MoveCursor(-1, ctx.IsRepeat)),
++                new NavigationScheme.Entry(MenuAction.Down, "Menu.Common.Down", ctx => MoveCursor(1, ctx.IsRepeat)),
++            }, null);
++        }
++
++        private void ConfirmCursor()
++        {
++            if (_cursor >= 0 && _cursor < _listButtons.Count && _listButtons[_cursor] != null)
++            {
++                var unityButton = _listButtons[_cursor].GetComponentInChildren<Button>();
++                if (unityButton == null || unityButton.interactable)
++                {
++                    _listButtons[_cursor].OnClick.Invoke();
++                }
++                return;
++            }
++
++            NavGroup.ConfirmSelection();
++        }
++
++        private void MoveCursor(int direction, bool isRepeat)
++        {
++            _listButtons.RemoveAll(b => b == null);
++            if (_cursor >= _listButtons.Count)
++            {
++                _cursor = -1;
++            }
++
++            var group = NavGroup;
++
++            if (_cursor >= 0)
++            {
++                // In the list
++                int next = _cursor + direction;
++                if (next >= 0 && next < _listButtons.Count)
++                {
++                    MoveCursorTo(next, true);
++                }
++                else if (group.Count > 0 && !isRepeat)
++                {
++                    // Off either end: on to the buttons under the list (Close)
++                    MoveCursorTo(-1, false);
++                    if (direction > 0)
++                    {
++                        group.SelectFirst();
++                    }
++                    else
++                    {
++                        group.SelectLast();
++                    }
++                }
++                return;
++            }
++
++            // On the buttons under the list
++            int? selected = group.SelectedIndex;
++            bool leavingGroup = selected is null ||
++                (direction > 0 ? selected >= group.Count - 1 : selected <= 0);
++            if (leavingGroup && _listButtons.Count > 0)
++            {
++                if (isRepeat && selected is not null)
++                {
++                    return;
++                }
++
++                group.ClearSelection();
++                MoveCursorTo(direction > 0 ? 0 : _listButtons.Count - 1, true);
++            }
++            else if (direction > 0)
++            {
++                group.SelectNext(isRepeat);
++            }
++            else
++            {
++                group.SelectPrevious(isRepeat);
++            }
++        }
++
++        private void MoveCursorTo(int index, bool scroll)
++        {
++            // Un-highlight the old one
++            if (_cursor >= 0 && _cursor < _listButtons.Count && _listButtons[_cursor] != null)
++            {
++                var old = _listButtons[_cursor];
++                var unityButton = old.GetComponentInChildren<Button>();
++                if (unityButton == null || unityButton.interactable)
++                {
++                    old.EnableButton();
++                }
++            }
++
++            _cursor = index;
++            if (index < 0 || index >= _listButtons.Count || _listButtons[index] == null)
++            {
++                return;
++            }
++
++            var button = _listButtons[index];
++            button.SetBackgroundAndTextColor(MenuData.Colors.BrightButton);
++
++            if (scroll)
++            {
++                ScrollTo(button.transform as RectTransform);
++            }
++        }
++
++        // Scrolls the list so the highlighted button is in the middle (or as near as the ends allow)
++        private void ScrollTo(RectTransform item)
++        {
++            var scrollRect = _listContainer.GetComponentInParent<ScrollRect>();
++            if (item == null || scrollRect == null || scrollRect.content == null)
++            {
++                return;
++            }
++
++            Canvas.ForceUpdateCanvases();
++
++            var content = scrollRect.content;
++            var viewport = scrollRect.viewport != null ? scrollRect.viewport : (RectTransform) scrollRect.transform;
++
++            float scrollable = content.rect.height - viewport.rect.height;
++            if (scrollable <= 0f)
++            {
++                return;
++            }
++
++            // How far the item's middle is below the top of the content
++            var itemCenter = content.InverseTransformPoint(item.TransformPoint(item.rect.center));
++            float fromTop = content.rect.yMax - itemCenter.y;
++
++            float target = Mathf.Clamp(fromTop - viewport.rect.height / 2f, 0f, scrollable);
++            scrollRect.StopMovement();
++            scrollRect.verticalNormalizedPosition = 1f - target / scrollable;
++        }
+     }
+ }
+diff --git a/Assets/Script/Menu/Common/Dialogs/SongPickerListDialog.cs b/Assets/Script/Menu/Common/Dialogs/SongPickerListDialog.cs
+index 1a530d2..74fc3ea 100644
+--- a/Assets/Script/Menu/Common/Dialogs/SongPickerListDialog.cs
++++ b/Assets/Script/Menu/Common/Dialogs/SongPickerListDialog.cs
+@@ -51,6 +51,11 @@ namespace YARG.Menu.Dialogs
+ 
+         private Sequence _timerSequence;
+ 
++        private static readonly MenuAction[] _voteActions =
++        {
++            MenuAction.Green, MenuAction.Red, MenuAction.Yellow, MenuAction.Blue, MenuAction.Orange
++        };
++
+         public void Initialize(MusicLibraryMenu musicLibrary)
+         {
+             MusicLibrary = musicLibrary;
+@@ -61,11 +66,23 @@ namespace YARG.Menu.Dialogs
+             _votes = new int[_categories.Length];
+ 
+             _selectButton.ButtonText.text = Localize.Key("Menu.Dialog.ShowDialog.Select");
++            // Say which controller button that is ("Create" on a PlayStation pad)
++            if (YARG.Input.ControllerLayout.ShowButtonNames &&
++                YARG.Input.ControllerLayout.ButtonNameFor(MenuAction.Select) is { } selectName)
++            {
++                _selectButton.ButtonText.text += $"  <size=70%><alpha=#AA>{selectName}</size>";
++            }
+             Title.text = Localize.Key("Menu.Dialog.ShowDialog.Title");
+ 
+             for (int i = 0; i < _showCategoryViews.Length; i++)
+             {
+                 _showCategoryViews[i].CategoryText.text = _categories[i].CategoryText;
++                // Rows are voted for with Green, Red, Yellow, Blue, Orange, top to bottom:
++                // show each row's actual controller button
++                if (i < _voteActions.Length)
++                {
++                    _showCategoryViews[i].ShowAction(_voteActions[i]);
++                }
+             }
+ 
+             // Set up the dots
+@@ -230,6 +247,12 @@ namespace YARG.Menu.Dialogs
+             {
+                 _showCategoryViews[i].SetSelected(false);
+                 _showCategoryViews[i].CategoryText.text = _categories[i].CategoryText;
++                // Rows are voted for with Green, Red, Yellow, Blue, Orange, top to bottom:
++                // show each row's actual controller button
++                if (i < _voteActions.Length)
++                {
++                    _showCategoryViews[i].ShowAction(_voteActions[i]);
++                }
+             }
+ 
+             _timerSequence.Restart();
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+index 6208a3d..56957b6 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+@@ -350,7 +350,10 @@ namespace YARG.Menu.MusicLibrary
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", Back, hide: true),
+                 setListNotEmpty ?
+                     new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.StartSet", StartSetlist) :
+-                    new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.PlayShow", EnterShowMode),
++                    // Play A Show ("Choose Your Fate" voting) is opt-in: Settings > Songs > Play A Show
++                    SettingsManager.Settings.EnablePlayAShow.Value ?
++                        new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.PlayShow", EnterShowMode) :
++                        new NavigationScheme.Entry(MenuAction.Yellow, "Menu.MusicLibrary.PlayShow", () => { }, hide: true),
+                 new NavigationScheme.Entry(MenuAction.Blue, "Menu.MusicLibrary.Filters", OpenFilters),
+                 new NavigationScheme.Entry(MenuAction.Orange, "Menu.MusicLibrary.MoreOptions",
+                     OnOrangeHit, OnOrangeRelease),
+diff --git a/Assets/Script/Menu/MusicLibrary/ShowCategoryView.cs b/Assets/Script/Menu/MusicLibrary/ShowCategoryView.cs
+index 8fb886c..b27c7dd 100644
+--- a/Assets/Script/Menu/MusicLibrary/ShowCategoryView.cs
++++ b/Assets/Script/Menu/MusicLibrary/ShowCategoryView.cs
+@@ -23,6 +23,14 @@ namespace YARG.Menu.MusicLibrary
+         [SerializeField]
+         private GameObject _selectedVisual;
+ 
++        public void ShowAction(YARG.Core.Input.MenuAction action)
++        {
++            if (_pickerButton != null)
++            {
++                _pickerButton.ShowAction(action);
++            }
++        }
++
+         public void SetSelected(bool selected)
+         {
+             var image = _selectedVisual.GetComponent<Image>();
+diff --git a/Assets/Script/Menu/Persistent/HelpBarButton.cs b/Assets/Script/Menu/Persistent/HelpBarButton.cs
+index 8601421..e8552f6 100644
+--- a/Assets/Script/Menu/Persistent/HelpBarButton.cs
++++ b/Assets/Script/Menu/Persistent/HelpBarButton.cs
+@@ -80,8 +80,11 @@ namespace YARG.Menu.Persistent
+ 
+             // Label
+             _buttonLabel.text = entry.DisplayName;
+-            // With a gamepad connected, say which button it is ("Confirm  Cross")
+-            if (YARG.Input.ControllerLayout.ShowButtonNames &&
++            // With a gamepad connected the icon is the controller's own button (see ControllerGlyphs).
++            // Start and Select keep the game's icon, so those get the button's name instead ("Options").
++            bool hasGlyph = YARG.Input.ControllerGlyphs.HasSprite(entry.Action);
++            if (!hasGlyph && YARG.Input.ControllerLayout.ShowButtonNames &&
++                entry.Action is MenuAction.Start or MenuAction.Select &&
+                 YARG.Input.ControllerLayout.ButtonNameFor(entry.Action) is { } padButtonName)
+             {
+                 _buttonLabel.text = $"{entry.DisplayName} <size=70%><alpha=#AA>{padButtonName}</size>";
+@@ -96,6 +99,9 @@ namespace YARG.Menu.Persistent
+ 
+             // Set sprite and fill color, then apply idle state
+             _buttonImage.sprite = icons.GetIcon(entry.Action);
++            // The drawn button icons are round: don't stretch them, and hide the pill's own "-"
++            _buttonImage.preserveAspect = hasGlyph;
++            _buttonText.text = hasGlyph ? string.Empty : "-";
+             _buttonHoldFill.color = _buttonFillColor;
+             ApplyState(_defaultState);
+         }
+diff --git a/Assets/Script/Menu/Persistent/ShowPickerButton.cs b/Assets/Script/Menu/Persistent/ShowPickerButton.cs
+index b589e69..3e911bd 100644
+--- a/Assets/Script/Menu/Persistent/ShowPickerButton.cs
++++ b/Assets/Script/Menu/Persistent/ShowPickerButton.cs
+@@ -55,6 +55,24 @@ namespace YARG.Menu.Persistent
+             _buttonBackground.color = Color.clear;
+         }
+ 
++        /// <summary>
++        /// Shows which button this row is: the controller's own button when a gamepad is connected,
++        /// otherwise the game's colored icon for the action.
++        /// </summary>
++        public void ShowAction(MenuAction action)
++        {
++            var icons = MenuData.NavigationIcons;
++            if (!icons.HasIcon(action))
++            {
++                return;
++            }
++
++            _buttonBackgroundColor = icons.GetColor(action);
++            _buttonImage.sprite = icons.GetIcon(action);
++            _buttonImage.preserveAspect = YARG.Input.ControllerGlyphs.HasSprite(action);
++            _buttonImage.color = _buttonBackgroundColor;
++        }
++
+         public void OnPointerEnter(PointerEventData eventData)
+         {
+             _buttonBackground.color = _buttonBackgroundColor;
+diff --git a/Assets/Script/Menu/ProfileInfo/EditBinds/BindGroups/BindHeader.cs b/Assets/Script/Menu/ProfileInfo/EditBinds/BindGroups/BindHeader.cs
+index bad8378..20e684d 100644
+--- a/Assets/Script/Menu/ProfileInfo/EditBinds/BindGroups/BindHeader.cs
++++ b/Assets/Script/Menu/ProfileInfo/EditBinds/BindGroups/BindHeader.cs
+@@ -49,6 +49,7 @@ namespace YARG.Menu.ProfileInfo
+                 _bindingIcon.gameObject.SetActive(true);
+ 
+                 _bindingIcon.sprite = icons.GetIcon((MenuAction) binding.Action);
++                _bindingIcon.preserveAspect = YARG.Input.ControllerGlyphs.HasSprite((MenuAction) binding.Action);
+                 _bindingIcon.color = icons.GetColor((MenuAction) binding.Action);
+             }
+             else
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 61c1440..0a7279b 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -162,6 +162,11 @@ namespace YARG.Menu.ProfileList
+             {
+                 if (!device.enabled) continue;
+                 if (PlayerContainer.IsDeviceTaken(device)) continue;
++#if UNITY_ANDROID && !UNITY_EDITOR
++                // The phone's own touch screens, touchpads, pens and motion sensors can't play:
++                // leave them out so controllers aren't buried under them
++                if (device is Pointer or Sensor) continue;
++#endif
+ 
+                 devicesAvailable = true;
+                 dialog.AddListButton(device.displayName, async () =>
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index b742c6d..8d3d260 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -200,6 +200,8 @@ namespace YARG.Settings
+             public ToggleSetting ShowRecommendedSongs { get; } = new(true, ShowRecommendedSongsCallback);
+ 
+             public SliderSetting PlayAShowTimeout { get; } = new (10.0f, 1.0f, 30.0f);
++            // Off by default: the music library's "Play A Show" button and its "Choose Your Fate" voting
++            public ToggleSetting EnablePlayAShow { get; } = new(false, _ => MusicLibraryMenu.SetReload(MusicLibraryReloadState.Partial));
+             public ToggleSetting RequireAllDifficulties { get; } = new(true);
+ 
+             public DropdownSetting<DifficultyRingMode> DifficultyRings { get; }
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 7d1554d..71054b6 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -89,6 +89,7 @@ namespace YARG.Settings
+                 new FieldMetadata(nameof(Settings.ShowPercentDecimals), isAdvanced: true),
+                 nameof(Settings.HighScoreHistory),
+                 new HeaderMetadata("PlayAShow"),
++                nameof(Settings.EnablePlayAShow),
+                 nameof(Settings.PlayAShowTimeout),
+                 nameof(Settings.RequireAllDifficulties),
+             },
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index c4c3d8a..af201e9 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1365,6 +1365,10 @@
+                 "Name": "Output Device",
+                 "Description": "The interface to use when playing sounds."
+             },
++            "EnablePlayAShow": {
++                "Name": "Enable Play A Show",
++                "Description": "Adds the \"Play A Show\" button to the music library: build a show where the next song is voted for on a \"Choose Your Fate\" screen (each player votes with a button). Off by default."
++            },
+             "PlayAShowTimeout": {
+                 "Name": "Show Selection Timeout",
+                 "Description": "The amount of time to wait for votes before picking a song or refreshing the categories."
+@@ -1671,8 +1675,8 @@
+                 }
+             },
+             "ShowControllerButtonNames": {
+-                "Name": "Show Controller Button Names",
+-                "Description": "While a gamepad is connected, the bar at the bottom of the screen names the button for each action (for example \"Back Circle\")."
++                "Name": "Show Controller Buttons",
++                "Description": "While a gamepad is connected, button prompts show the controller's own buttons instead of plain colored pills: Cross, Circle, Triangle, Square and L1 on a PlayStation controller (A, B, X, Y on others, following Controller Layout). The color is still the action's color."
+             },
+             "ReconnectProfiles": {
+                 "Name": "Reconnect Profiles",

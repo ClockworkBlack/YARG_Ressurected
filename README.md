@@ -12,7 +12,9 @@ BASS callbacks, `/storage/emulated/0/YARG/songs`, touch controls, the all-files-
 - arm64 native libraries (BASS, STB2CSharp, sqlite3) built with the NDK,
 - **working menu text**: YARG-DROID's extractor read the APK through JNI into a C# array that Java never filled,
   so language files never unpacked and menus showed raw keys like `MENU.MAIN.OPTIONS.QUICKPLAY`,
-- the **phone's own mic** for vocals, plus **other phones as controllers and mics** over Wi-Fi (see below),
+- the **phone's own mic** for vocals, a **USB mic and the built-in mic at the same time**, plus **other phones as
+  controllers and mics** over Wi-Fi (see below),
+- **vocals as a game of their own**: pick an artist's lines on two-singer songs, and a **sing-off** mode,
 - a controller-type prompt on Android (gamepad / CRKD guitar / other guitar),
 - CI that publishes the APK as a GitHub Release.
 
@@ -21,6 +23,7 @@ copies `overlay/` on top, builds the native libraries (`android/native/`), then 
 
 `patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 `tests/RemoteServerTests` checks the phone remote server on every build (runs before the Unity build).
+`tests/GameReaderCheck` runs a song written by the converter through YARG's own song scanner and chart loader.
 
 > Status: **experimental.** Expect the first CI runs to need fixes from the logs.
 
@@ -39,14 +42,24 @@ Any connected gamepad moves around the menus straight away, before it's in a pro
 | Move | D-pad or left stick (hold to scroll) | same | same | same |
 | Confirm / select (green) | Cross | A | A (right) | Circle |
 | Back (red) | Circle | B | B (bottom) | Cross |
-| Yellow action (Play Show / Start Setlist) | Triangle | Y | Y | Triangle |
+| Yellow action (Start Setlist; Play A Show if enabled) | Triangle | Y | Y | Triangle |
 | Blue action (Filters) | Square | X | X | Square |
 | More Options (orange) | L1 or R1 | LB or RB | L or R | L1 or R1 |
 | Start / pause | Options | Menu | + | Options |
 | Select ("go to the song that's playing" on the main menu) | Create | View | − | Create |
 
-While a gamepad is connected, the bar at the bottom of the screen names the button next to each
-action (e.g. "Back  Circle"). Turn this off with **Settings > General > Show Controller Button Names**.
+While a gamepad is connected, every button prompt shows the controller's own button in the
+action's color: a green disc with a cross for Confirm, a red one with a circle for Back, then
+triangle, square and L1 (A / B / X / Y / LB with the Xbox or Nintendo layout). The same icons are
+used in the bar at the bottom, on the music library's Play button, on the "Choose Your Fate"
+rows and in the binding menu. Turn this off with **Settings > General > Show Controller Buttons**.
+
+Lists in pop-ups (Add Device, "Which kind of controller is this?") work with the controller too:
+D-pad or stick moves the highlight and scrolls the list, Cross picks, Circle closes. On Android
+the Add Device list leaves out the phone's own touch screens, touchpads and sensors.
+
+**Play A Show** (build a show and vote for the next song on a "Choose Your Fate" screen) is off
+by default. Turn it on with **Settings > Songs > Enable Play A Show**.
 
 A gamepad in a profile uses that profile's menu buttons. They are set from the Controller Layout
 when you add the gamepad to the profile, so after changing the layout, remove the gamepad from
@@ -54,8 +67,16 @@ its profile and add it again (or change the buttons in the profile's binding men
 
 ### Playing a song
 
-When you add a gamepad to a profile, pick **Gamepad: PS5 / PS4 / Xbox / other**. Guitar and bass
-use the Guitar Hero 2 layout on a DualShock / DualSense:
+Add the gamepad to a profile in **Profiles > Add Device**. PlayStation and Xbox controllers are
+set up straight away; anything else is asked about once (pick **Gamepad** for a pad, or the guitar
+it is). The controller keeps working in the menus the whole time, including while that question
+is on screen.
+
+Guitar and bass on a gamepad have two layouts, chosen in **Settings > General > Gamepad Guitar
+Layout**. Changing it re-does the guitar buttons of PlayStation and Xbox controllers already in
+a profile.
+
+**Guitar Hero 2 (default).** The same as playing Guitar Hero 2 on a PlayStation controller:
 
 | Guitar | PS5 / PS4 | Xbox |
 |---|---|---|
@@ -66,18 +87,124 @@ use the Guitar Hero 2 layout on a DualShock / DualSense:
 | Whammy | Left stick left/right | Left stick left/right |
 | Pause | Options | Menu |
 
+Easy uses green, red and yellow only: L2, L1, R1.
+
+**Face buttons.** The frets are the same buttons as the colors in the menus:
+
+| Guitar | PS5 / PS4 | Xbox |
+|---|---|---|
+| Green | Cross | A |
+| Red | Circle | B |
+| Yellow | Triangle | Y |
+| Blue | Square | X |
+| Orange | L1 | LB |
+| Strum | D-pad Up / Down | D-pad Up / Down |
+| Star Power | R1 (or Create) | RB (or View) |
+| Whammy | R2 | RT |
+| Pause | Options | Menu |
+
+With this layout Easy is Cross, Circle, Triangle.
+
+**No strumming.** On a gamepad, pressing the fret button plays the note: no strum needed. Hold
+the buttons of a chord together, and press again for a repeated note. This is **Settings >
+General > No Strumming On Gamepads** (on by default). It gives the profile the *All Taps*
+modifier and the *Casual* engine preset, both of which you can see and change on the screen
+before a song. Turn the setting off to play with strums (D-pad up / down) like on a guitar.
+
+**Which button is which fret.** During a song, each fret on the highway has the controller button
+that plays it shown just under it, in the fret's color: L2, L1, R1, R2 and Cross with the Guitar
+Hero 2 layout, or whatever the profile has bound. It follows **Settings > General > Show
+Controller Buttons** and only appears for a player with a gamepad.
+
+**Difficulty and what the notes look like.** New profiles start on **Easy**: colored notes on
+three frets, like Guitar Hero and Rock Band. **Beginner** is different on purpose: every note is a
+rainbow bar across the whole track, meaning "strum, any fret". Pick the difficulty on the screen
+before a song. The note style is per profile: **Profiles > (profile) > Theme**, where
+*Rectangular* is the Rock Band look and *Circular* the Guitar Hero look.
+
+**Touch buttons.** The big colored squares and strum bar are the on-screen controls for playing
+on the phone's screen. They now only appear when the guitar player has no controller. Change it
+in **Settings > General > Touch Buttons** (Automatic / Always show / Never show).
+
 Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pause menu the menu buttons above apply.
 Any button can be remapped in the profile's binding menu. For a guitar controller, pick
 **CRKD Guitar** or **Other guitar** instead of Gamepad.
+
+### Controller extras (build 41)
+
+- **Profiles screen on a controller**: up/down moves through the profiles, **Cross** opens a list
+  for the lit-up profile (Connect, Add Device, Remove Device, note speed, lefty flip, move, more
+  settings, Disconnect), **Triangle** adds a profile.
+- **Add a controller, a mic or another player after picking a song**: the screen where you choose
+  instrument and difficulty has **Add Controller or Mic** and **Add Another Player**.
+- **R2 / L2** skip to the next / previous menu song wherever the music player shows (main menu,
+  settings, profiles). The menu song keeps its place when you go into the song list or a dialog
+  and carries on when you come back, instead of starting a new one.
+- **Square** in the song list adds the song under the cursor to **Favorites** (again to remove).
+  The first time, the menu music switches to your Favorites (change it in Settings > Sound > Menu
+  Music Source). **Filters** moved into **More Options**.
+
+## Venues and crowd
+
+Songs are played in a venue, with a crowd in front of the stage dancing in time with the music.
+
+- **The venues** are stages drawn in the spirit of places that matter to Hip Hop and R&B history.
+  They are tributes, not copies: no logos or likenesses, and each one says what it is inspired by
+  when the song starts.
+  - *East:* a Harlem amateur-night theater (the Apollo), a Bronx park jam, a Midtown arena
+    (Madison Square Garden), a U Street theater (the Howard, Washington D.C.), a North Philly soul
+    hall, an uptown concert hall (Carnegie Hall), a capital arts center (the Kennedy Center).
+  - *South:* an Atlanta block party, a Crescent City blues house (House of Blues New Orleans) and
+    festival night (Essence), Houston slab Sunday, a Beale Street juke (Memphis), a Miami beach stage.
+  - *Midwest:* the Pontiac ballroom (the Crofoot, Michigan), a Motor City grand theater (the Fox,
+    Detroit), the South Side Regal (Chicago), a Minneapolis star-wall club (First Avenue).
+  - *West:* an Inglewood arena (the Forum), a Compton lot party, an Oakland deco theater, a Las
+    Vegas residency room.
+  - *International:* a London stadium night and a Bucharest open-air show (Michael Jackson's 1988
+    Wembley and 1992 Bucharest concerts), Tokyo Dome, a lakeside jazz festival (Montreux), a
+    Johannesburg festival field.
+- **Choosing one:** on the instrument and difficulty screen (Quickplay and the rest), the
+  **VENUE** bar above SONG SETUP shows where the next song is played and whether the crowd is on;
+  tap it to pick, or to switch the crowd. The same choice is in **Settings > General > Venue**. Random by default; or random among street and
+  club venues only, random among high-class rooms only, one venue in particular, or None for the
+  game's own background. A song that comes with its own background still uses that.
+- **Your own pictures or videos:** each venue has a folder in `Internal storage/YARG/venues/`
+  (made the first time a song is played). Put a `.jpg`, `.png`, `.mp4` or `.webm` in a venue's
+  folder and it is used as that venue's backdrop instead of the drawn stage, with the crowd in
+  front of it. Several files in a folder are picked from at random.
+- **The crowd** is seen from behind, three rows deep, with mixed skin tones, hair and clothes and
+  a strong Black presence; dressed up in the high-class rooms. Groups of neighbors dance simplified
+  versions of party dances from the mid-2000s on (Lean wit It, Crank That, Walk It Out, the Jerk,
+  the Dougie, Cat Daddy, the Nae Nae, the Whip, the Dab, Hit the Quan, the Milly Rock, the Woah,
+  Shmoney, the Griddy, Hit Dem Folks, the Wobble, the Stanky Leg, the Running Man, the Shimmy, the
+  Shoot, the Tootsie Slide, the Renegade), plus nodding, fist pumps and jumping. Each group
+  changes dance every sixteen beats on its own bar, blending into the new move, and now and then
+  the whole room swag surfs, jumps or puts its hands up. In slow songs people sway and hold their
+  phones up as lights. Every part of the body moves on a spring, so the head and forearms follow
+  the body a moment later and swing through, instead of snapping from pose to pose.
+  Turn it off with **Settings > General > Dancing Crowd**.
+
+Everything here is drawn by code from simple shapes, so it is cartoon-like rather than realistic.
+
+Up to build 36 none of this could be seen on a phone: the note highways were drawn on a layer that
+is see-through on a computer but solid black on phones, and it covered the venue, the crowd and
+any background picture or video. Build 37 fixes that layer.
 
 ## Menu music: pick a startup song and a playlist
 
 The menus play songs from your library in the background. You choose what plays:
 
-- **A song on startup.** In the music library, highlight a song, open **More Options**
-  (orange / LB) and choose **Play On Startup**. It plays first every time the game starts, then
-  the menu music carries on as below. Choose **Don't Play On Startup** on the same song, or set
-  **Settings > Sound > Startup Song** to **None**, to turn it off.
+- **Startup Songs.** Each time the game starts, the songs in the **Startup Songs** playlist play
+  first, in order, then the menu music carries on as below. It starts with **"No Pole" by Don
+  Toliver** as soon as that song is in your library (convert it or add its folder to
+  `YARG/songs`, then scan).
+  - **Add a song:** in the music library, highlight it, open **More Options** (L1) and choose
+    **Add To Startup Songs**. It goes to the end of the list.
+  - **Change the order:** music library > **Playlists** > **Startup Songs**, highlight a song and
+    press **Left / Right** on the D-pad to move it up or down.
+  - **Remove a song:** highlight it and choose **Remove From Startup Songs** in More Options.
+    Removing No Pole sticks: it isn't added back.
+  - **Turn them off:** **Settings > Sound > Play Startup Songs**.
 - **Which songs play after it.** **Settings > Sound > Menu Music**: *Whole library*, *Favorites*,
   or any of your playlists. Or in the music library's **Playlists** view, highlight a playlist
   (or Favorites), open **More Options** and choose **Use As Menu Music** (and **Stop Using As
@@ -88,6 +215,123 @@ The menus play songs from your library in the background. You choose what plays:
 
 If the playlist is empty, deleted, or none of its songs are in the library, the whole library
 plays instead.
+
+## Lyrics and names in any language
+
+The game's own fonts cover Latin letters and Japanese. For everything else (Korean, Chinese, Thai,
+Arabic, Hebrew, Hindi and more) the fonts already on the phone are used, so lyrics, song titles and
+artist names in those languages are drawn instead of empty boxes. Arabic and Indian scripts are
+shown letter by letter, not joined up as they should be.
+
+## Vocals: sing or rap, pick an artist, sing-off
+
+Any song with a vocals part can be sung: Rock Band style charts, and every song made with
+[YARG Converter](converter/README.md) from lyrics (convert it again with the newest converter to
+get one; songs converted before only have a lyric bar).
+
+**Getting set up**
+
+1. **Profiles** > pick or make a profile > set its **Game Mode** to **Vocals** (new profiles
+   start as Five Fret Guitar, and those are never offered Vocals) > **Add Device** > choose a
+   microphone (below).
+2. Pick a song, then on the screen before it choose **Vocals** as the instrument and a level.
+3. Sing. Notes scroll along the top with the words under them; your needle shows where your
+   voice is. Words in italics over a shaded block, with no note line to follow, are **rapped or
+   spoken**: there, any sound in time with the words counts and the note does not matter.
+
+**Levels: how exact you have to be**
+
+The level sets two things: how close to the note counts, and how much of each line you have to
+sing right for the line to count. The screen where you pick the level says both for each one.
+
+| Level | The note | Of each line |
+|---|---|---|
+| Beginner | any note counts | 23% |
+| Easy | within 1.7 semitones | 33% |
+| Medium | within 1.4 semitones | 40% |
+| Hard | within 1.1 semitones | 45% |
+| Expert | within 0.8 semitones | 58% |
+
+(A semitone is one key on a piano. Octaves never matter: sing it high or low.) Being closer than
+the limit earns more of the line: full marks inside 60% of it, less towards the edge. Harder
+levels are also worth more points per line. These numbers are YARG's own and can be changed
+under **Settings > Presets**.
+
+**Two artists on one song**
+
+Songs with a part for each artist (two-singer songs from the converter, Rock Band harmonies)
+offer a second instrument, **Harmonies**. Choose it and a **Whose Lines** row appears: pick the
+artist. Each player then gets only that artist's lines to sing, in their own color, with the
+other artist's words on the second line. Lines marked for both go to both. All singers have to
+choose the same instrument, Vocals or Harmonies. **Vocals** is always the whole song as one part.
+
+**Spoken and rapped lines have to be spoken.** Words with no note (rap, speech, and every word
+of a song converted in the converter's Normal mode) used to count for any sound at all, so one
+long "aaah" cleared a song. From Medium up, such a line now also counts syllables: every fresh
+start of your voice (after a tiny silence, a jump in loudness, or a clear move in pitch). Roughly
+half as many starts as the line has words, up to three a word, is full credit; a drone or a hum
+gets a fraction, and so does babbling as fast as you can. The game cannot check the words
+themselves, only the rhythm of saying them. Sung lines are judged on the note, as before, and
+Beginner and Easy are unchanged. For notes to sing, convert songs with **Split** or **R&B mode**.
+
+**Mic test.** On the Profiles screen, **MIC TEST** shows what the game hears from each active
+profile's microphone: how loud (it has to pass the white line, which is **Settings > Sound >
+Microphone Sensitivity**), the note you are on, a dot that follows your voice up and down, and
+the syllables it would count. **Hear myself** plays the microphone back; use headphones.
+
+**No vocals to pick?** Then the song has no vocals part: a message says so when the instrument
+screen opens. Songs from the converter only get one when they are converted with lyrics.
+
+**Hearing yourself.** Your voice is played back to you (**Settings > Sound > Vocal Monitoring
+Volume**) only while headphones are connected, wired, USB or Bluetooth. Through the phone's own
+speaker the microphone would hear it again and squeal, so without headphones it is silent.
+
+**Sing-off**
+
+With two or more singers, the screen before a song has a **Sing-Off** row (also **Settings >
+General > Vocals**). Switch it on and the vocals become a battle:
+
+- On **Vocals**, the lines are dealt out in turns, two each by default (**Sing-Off Turn Length**:
+  one, two or four). Your lines come in your color; the board under the lyrics says whose turn
+  it is and counts down to the next singer. Each exchange is a round with a winner.
+- On **Harmonies**, nobody is dealt anything: each player sings the artist they picked, and the
+  two artists' singers face off.
+- Every line is marked out of 100 for how much of it was sung right (a harder level earns up to
+  a tenth more, an easier one less). The board shows each side's average and a bar that leans
+  towards whoever is ahead, calls each round, and names the winner at the end.
+- More than two singers play as two teams: players alternate between the sides in the order they
+  joined.
+- A sing-off with turns leaves no high score (each singer has half the song). It is off in
+  practice and replays.
+
+**Two microphones on one phone**
+
+"This phone's mic" is whichever microphone Android prefers at the moment, which is a USB
+microphone as soon as one is plugged in. So for two singers, **Add Device** also lists each
+microphone on its own:
+
+- **Built-in mic**: the phone's own microphone, even while a USB mic is plugged in
+- **USB mic: (name)**: a microphone on USB or a USB-C adapter (a controller with a mic on a USB
+  cable shows up here too)
+- **Headset mic (plug)**: a wired headset's microphone
+
+Give one profile **USB mic** and the other **Built-in mic**, and both are recorded at once. If
+this phone can only listen to one microphone at a time, a message says so when the song starts;
+then a second phone as a mic (next section) is the way. Hearing yourself through the speakers is
+only offered for "This phone's mic".
+
+**Sound went quiet when the USB mic went in?** A USB microphone with a headphone jack (a Fifine
+AM8, for one) is also a sound card, and Android sends all sound to it the moment it is plugged
+in. Choose where the game plays in **Settings > Sound > Play Sound Through**: **Phone Speaker**,
+**TV (HDMI)** (through a USB-C hub's HDMI port), **USB Device**, **Bluetooth** or **Wired
+Headphones**. The microphone keeps working. A message says where the sound went, or that what
+you picked isn't connected (the sound then stays where Android puts it until it is plugged in).
+Playing somewhere other than Android's choice adds a few hundredths of a second of delay, so run
+**Settings > Calibration** once more for that setup.
+
+Not tried on a phone yet: all of this builds and the song files are checked against the game's
+own reader, but the sing-off board, the artist names, the level hints and the two-microphone
+recording have not been seen running.
 
 ## Phone remote: friends' phones as guitars and mics
 
@@ -129,8 +373,8 @@ Notes:
 
 Guitar Hero songs come with the guitar on its own audio track: it plays while you hit notes and
 cuts out when you miss. Songs you add yourself (and everything from the converter) are one
-recording, so there is nothing to cut. With **Settings > Sound > Guitar Sound On Notes** on
-(the default), the game makes that track while the song loads:
+recording, so there is nothing to cut. This is off unless you turn it on: set **Settings > Sound >
+Guitar Sound On Notes** to Clean, Rock or Heavy, and the game makes that track while the song loads:
 
 1. **It listens to the song.** It works out the recording's tuning (many songs are not at
    exactly A = 440 Hz), its scale, and which note the music is on at each moment, separately

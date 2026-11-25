@@ -9,8 +9,9 @@ using YARG.Song;
 namespace YARG.Menu.Persistent
 {
     /// <summary>
-    /// Chooses what the menu's music player plays: an optional song first on startup, then songs from
-    /// the chosen source (whole library, Favorites, or a playlist), shuffled or in playlist order.
+    /// Chooses what the menu's music player plays: first the "Startup Songs" playlist, in its order,
+    /// once per launch (it starts out holding "No Pole" by Don Toliver), then songs from the chosen
+    /// source (whole library, Favorites, or a playlist), shuffled or in playlist order.
     /// </summary>
     public static class MenuMusic
     {
@@ -18,8 +19,18 @@ namespace YARG.Menu.Persistent
         public const string SOURCE_FAVORITES = "Favorites";
         public const string PLAYLIST_PREFIX = "Playlist:";
 
-        // The startup song plays once per launch, not every time the menu comes back
-        private static bool _startupSongDone;
+        /// <summary>The fixed id of the Startup Songs playlist (a normal playlist the game made).</summary>
+        public static readonly Guid StartupPlaylistId = new("5a7e0b1e-0000-4000-8000-00000000057a");
+        public const string STARTUP_PLAYLIST_NAME = "Startup Songs";
+
+        // The song the Startup Songs playlist starts with, matched by title and artist
+        private const string DEFAULT_STARTUP_TITLE = "No Pole";
+        private const string DEFAULT_STARTUP_ARTIST = "Don Toliver";
+
+        // The startup songs play once per launch, not every time the menu comes back
+        private static List<SongEntry> _startupQueue;
+        private static int _startupIndex;
+        private static bool _startupDone;
 
         private static readonly Random _random = new();
 
@@ -32,15 +43,26 @@ namespace YARG.Menu.Persistent
         {
             var settings = SettingsManager.Settings;
 
-            if (!_startupSongDone)
+            if (!_startupDone)
             {
-                _startupSongDone = true;
-                var startup = FindSong(settings.MenuMusicStartupSong.Value);
-                if (startup != null)
+                if (_startupQueue == null)
                 {
-                    poolSize = 1;
-                    return startup;
+                    _startupQueue = settings.MenuMusicPlayStartupSongs.Value
+                        ? StartupPlaylist().ToList()
+                        : new List<SongEntry>();
+                    _startupIndex = 0;
                 }
+
+                if (_startupIndex < _startupQueue.Count)
+                {
+                    poolSize = _startupQueue.Count;
+                    var next = _startupQueue[_startupIndex++];
+                    // A one-song startup list still moves on to the menu music after it
+                    poolSize = Math.Max(poolSize, 2);
+                    return next;
+                }
+
+                _startupDone = true;
             }
 
             var pool = GetPool(settings.MenuMusicSource.Value);
@@ -134,16 +156,86 @@ namespace YARG.Menu.Persistent
             SettingsManager.SaveSettings();
         }
 
-        public static bool IsStartupSong(SongEntry song)
+        /// <summary>
+        /// The Startup Songs playlist, made on first use. The first time "No Pole" by Don Toliver is in
+        /// the library it's put at the top; a startup song chosen in builds 19-20 is moved in too.
+        /// After that it's an ordinary playlist: add, remove and reorder as you like.
+        /// </summary>
+        public static Playlist StartupPlaylist()
         {
-            return song != null &&
-                SettingsManager.Settings.MenuMusicStartupSong.Value == song.Hash.ToString();
+            var playlist = PlaylistContainer.GetOrCreatePlaylist(StartupPlaylistId, STARTUP_PLAYLIST_NAME);
+            var settings = SettingsManager.Settings;
+            bool changed = false;
+
+            // Move the old single startup song in
+            var oldSong = FindSong(settings.MenuMusicStartupSong.Value);
+            if (oldSong != null)
+            {
+                if (!playlist.ContainsSong(oldSong))
+                {
+                    playlist.SongHashes.Add(oldSong.Hash);
+                }
+                settings.MenuMusicStartupSong.SetValueWithoutNotify(string.Empty);
+                changed = true;
+            }
+
+            // Put the default opener at the top, once (so removing it sticks)
+            if (!settings.StartupSongsSeeded)
+            {
+                var opener = FindDefaultStartupSong();
+                if (opener != null)
+                {
+                    if (!playlist.ContainsSong(opener))
+                    {
+                        playlist.SongHashes.Insert(0, opener.Hash);
+                    }
+                    settings.StartupSongsSeeded = true;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                PlaylistContainer.SavePlaylist(playlist);
+                SettingsManager.SaveSettings();
+            }
+
+            return playlist;
         }
 
+        /// <summary>"No Pole" by Don Toliver, if it's in the library (any version: converted, charted...).</summary>
+        private static SongEntry FindDefaultStartupSong()
+        {
+            foreach (var song in SongContainer.Songs)
+            {
+                string title = song.Name;
+                string artist = song.Artist;
+                if (title != null && artist != null &&
+                    string.Equals(title.Trim(), DEFAULT_STARTUP_TITLE, StringComparison.OrdinalIgnoreCase) &&
+                    artist.IndexOf(DEFAULT_STARTUP_ARTIST, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return song;
+                }
+            }
+            return null;
+        }
+
+        public static bool IsStartupSong(SongEntry song)
+        {
+            return song != null && StartupPlaylist().ContainsSong(song);
+        }
+
+        /// <summary>Adds a song to the end of Startup Songs.</summary>
         public static void SetStartupSong(SongEntry song)
         {
-            SettingsManager.Settings.MenuMusicStartupSong.Value = song != null ? song.Hash.ToString() : string.Empty;
-            SettingsManager.SaveSettings();
+            if (song == null) return;
+            StartupPlaylist().AddSong(song);
+        }
+
+        public static void RemoveStartupSong(SongEntry song)
+        {
+            if (song == null) return;
+            StartupPlaylist().RemoveSong(song);
         }
 
         public static SongEntry FindSong(string hash)
@@ -213,6 +305,9 @@ namespace YARG.Menu.Persistent
             {
                 return;
             }
+
+            // A new choice of menu music plays now, not after the rest of the startup songs
+            _startupDone = true;
 
             var helpBar = HelpBar.Instance;
             // Nothing playing yet: the player will pick from the new settings when it starts

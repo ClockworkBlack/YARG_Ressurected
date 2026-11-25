@@ -1,0 +1,172 @@
+diff --git a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
+index aa46c3a..dd8f59a 100644
+--- a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
++++ b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
+@@ -15,6 +15,122 @@ namespace YARG.Core.Engine.Vocals.Engines
+         {
+         }
+ 
++        // ---- YARG Resurrected: spoken and rapped lines have to be spoken, not hummed ----
++        //
++        // A word with no pitch ("talkie": rap, speech, and every word of a song converted without
++        // listening to the voice) used to count for any sound at all, so one long "aaah", or
++        // noise at any speed, cleared a whole song. From Medium up, a line of such words now also
++        // looks at how the sound is broken up. Speech starts and stops: every unvoiced consonant
++        // is a short silence and the pitch moves from syllable to syllable. Each fresh start of
++        // the voice is counted as a syllable, and the line's credit is scaled by how well that
++        // count fits the number of words:
++        //   - far too few (a drone, a hum): the credit shrinks in proportion;
++        //   - far too many (babbling as fast as possible): likewise;
++        //   - anything from half as many starts as words to three for every word is full credit,
++        //     which leaves plenty of room for real speech, where words run together.
++        // A start is a sound after a short silence, a jump in loudness (what the microphone
++        // reports as a "hit"), or a clear move in pitch.
++        // The words themselves cannot be checked (that would take speech recognition); the rhythm
++        // of saying them can. Lines that are sung are judged on pitch as before, and Beginner and
++        // Easy are unchanged.
++
++        /// <summary>Longest silence, in seconds, that is still the same syllable (one missed mic frame).</summary>
++        private const double SYLLABLE_GAP = 0.07;
++        /// <summary>A move in pitch this big (semitones) without a silence is also a new syllable.</summary>
++        private const float SYLLABLE_PITCH_MOVE = 1.5f;
++        /// <summary>Two syllables cannot start closer together than this (seconds).</summary>
++        private const double SYLLABLE_MIN_SPACING = 0.09;
++
++        private double _lastSingTime = double.NegativeInfinity;
++        private double _lastSyllableTime = double.NegativeInfinity;
++        private float _syllablePitch;
++        private int _phraseSyllables;
++
++        /// <summary>Syllables heard so far in the current phrase (for the HUD and for tests).</summary>
++        public int PhraseSyllables => _phraseSyllables;
++
++        /// <summary>From Medium up (by the preset's pitch window), spoken lines are checked for syllables.</summary>
++        private bool SpokenLinesAreChecked => !IsBot && EngineParameters.PitchWindow < 1.6f;
++
++        public override void Reset(bool keepCurrentButtons = false)
++        {
++            _lastSingTime = double.NegativeInfinity;
++            _lastSyllableTime = double.NegativeInfinity;
++            _syllablePitch = 0f;
++            _phraseSyllables = 0;
++            base.Reset(keepCurrentButtons);
++        }
++
++        // Called for every mic reading that carries a voice
++        private void CountSyllable()
++        {
++            double time = CurrentTime;
++            bool afterSilence = time - _lastSingTime > SYLLABLE_GAP;
++            bool pitchMoved = Math.Abs(PitchSang - _syllablePitch) >= SYLLABLE_PITCH_MOVE;
++            if ((afterSilence || pitchMoved) && time - _lastSyllableTime >= SYLLABLE_MIN_SPACING)
++            {
++                _phraseSyllables++;
++                _lastSyllableTime = time;
++                _syllablePitch = PitchSang;
++            }
++            else if (afterSilence)
++            {
++                _syllablePitch = PitchSang;
++            }
++
++            _lastSingTime = time;
++        }
++
++        /// <summary>
++        /// How much of a spoken line's credit is kept, 0 to 1, from the number of syllables heard
++        /// against the number of words in it.
++        /// </summary>
++        public static double SpokenLineFactor(int words, int syllables)
++        {
++            if (words <= 0)
++            {
++                return 1.0;
++            }
++
++            // Half as many starts as words, and at least three (or one for each word of a very
++            // short line): a single unbroken sound then never clears a line of three words or more
++            double fewest = Math.Max(words * 0.5, Math.Min(words, 3));
++            double most = words * 3.0 + 3.0;
++            if (syllables < fewest)
++            {
++                return syllables / fewest;
++            }
++
++            if (syllables > most)
++            {
++                return most / syllables;
++            }
++
++            return 1.0;
++        }
++
++        // The number of spoken words in a phrase, or -1 when any of it is sung (then pitch decides)
++        private static int SpokenWords(VocalNote phrase)
++        {
++            int words = 0;
++            foreach (var note in phrase.ChildNotes)
++            {
++                if (note.IsPercussion)
++                {
++                    continue;
++                }
++
++                if (!note.IsNonPitched)
++                {
++                    return -1;
++                }
++
++                words++;
++            }
++
++            return words;
++        }
++
+         protected override void UpdateBot(double songTime)
+         {
+             if (!IsBot)
+@@ -56,6 +172,13 @@ namespace YARG.Core.Engine.Vocals.Engines
+             if (action is VocalsAction.Hit && gameInput.Button)
+             {
+                 HasHit = true;
++
++                // A jump in loudness is the start of a syllable
++                if (gameInput.Time - _lastSyllableTime >= SYLLABLE_MIN_SPACING)
++                {
++                    _phraseSyllables++;
++                    _lastSyllableTime = gameInput.Time;
++                }
+             }
+             else if (action is VocalsAction.Pitch)
+             {
+@@ -92,6 +215,18 @@ namespace YARG.Core.Engine.Vocals.Engines
+                 bool hasNotes = PhraseTicksTotal.Value != 0;
+                 bool isLastPhrase = NoteIndex == Notes.Count - 1;
+ 
++                // A spoken line hummed through, or babbled over, keeps only part of its credit
++                if (SpokenLinesAreChecked && hasNotes)
++                {
++                    int spokenWords = SpokenWords(phrase);
++                    if (spokenWords > 0)
++                    {
++                        PhraseTicksHit *= SpokenLineFactor(spokenWords, _phraseSyllables);
++                    }
++                }
++
++                _phraseSyllables = 0;
++
+                 var percentHit = PhraseTicksHit / PhraseTicksTotal.Value;
+                 if (!hasNotes)
+                 {
+@@ -140,6 +275,11 @@ namespace YARG.Core.Engine.Vocals.Engines
+             }
+ 
+             HasSang = false;
++            if (!IsBot)
++            {
++                CountSyllable();
++            }
++
+             var lastSingTick = LastSingTick;
+             LastSingTick = CurrentTick;
+ 
