@@ -149,7 +149,9 @@ Songs are played in a venue, with a crowd in front of the stage dancing in time 
   - *International:* a London stadium night and a Bucharest open-air show (Michael Jackson's 1988
     Wembley and 1992 Bucharest concerts), Tokyo Dome, a lakeside jazz festival (Montreux), a
     Johannesburg festival field.
-- **Choosing one:** **Settings > General > Venue**. Random by default; or random among street and
+- **Choosing one:** on the instrument and difficulty screen (Quickplay and the rest), the
+  **VENUE** bar above SONG SETUP shows where the next song is played and whether the crowd is on;
+  tap it to pick, or to switch the crowd. The same choice is in **Settings > General > Venue**. Random by default; or random among street and
   club venues only, random among high-class rooms only, one venue in particular, or None for the
   game's own background. A song that comes with its own background still uses that.
 - **Your own pictures or videos:** each venue has a folder in `Internal storage/YARG/venues/`
