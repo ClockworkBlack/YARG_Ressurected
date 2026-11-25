@@ -12,8 +12,9 @@
 //   - a power stage that clips evenly and sags under load, so a hard attack is squeezed and the
 //     note then blooms;
 //   - a speaker cabinet: a guitar speaker is very far from flat. It has a thump at the bottom,
-//     a peak around 2.5 to 4 kHz (the "bite") and falls away quickly above 5 kHz. The curves
-//     here were fitted to recordings of real amplified guitars, overtone by overtone;
+//     a broad rise around 2.5 to 4 kHz (the "bite"), falls away quickly above 5 kHz, and is
+//     full of small peaks and dips all the way. That cannot be drawn with a few tone controls,
+//     so the guitar amps here play through measurements of real cabinets (GuitarVoiceCabinets);
 //   - a little room, different left and right.
 //
 // The distorting stages run at four times the sample rate, because clipping makes overtones far
@@ -107,6 +108,32 @@ namespace YARG.Audio.GuitarVoice
             return new Filter { _b0 = (1 + p) / 2, _b1 = -(1 + p) / 2, _a1 = -p };
         }
 
+        /// <summary>
+        /// One pole and one zero: everything well below <paramref name="hz"/> comes out
+        /// <paramref name="lowDb"/> louder (quieter, if negative) than everything well above it,
+        /// changing over gently in between. The top is left as it is.
+        /// </summary>
+        public static Filter Tilt1(double hz, double lowDb, double rate)
+        {
+            double ratio = Math.Pow(10, lowDb / 40);
+            double pole = Math.Tan(Math.PI * hz / ratio / rate);
+            double zero = Math.Tan(Math.PI * hz * ratio / rate);
+            return new Filter
+            {
+                _b0 = (1 + zero) / (1 + pole), _b1 = (zero - 1) / (1 + pole),
+                _a1 = (pole - 1) / (1 + pole),
+            };
+        }
+
+        /// <summary>How much power gets through at <paramref name="hz"/> (1 = all of it).</summary>
+        public double Power(double hz, double rate)
+        {
+            double w = 2 * Math.PI * hz / rate, c1 = Math.Cos(w), c2 = Math.Cos(2 * w);
+            double top = _b0 * _b0 + _b1 * _b1 + _b2 * _b2 + 2 * (_b0 * _b1 + _b1 * _b2) * c1 + 2 * _b0 * _b2 * c2;
+            double bottom = 1 + _a1 * _a1 + _a2 * _a2 + 2 * (_a1 + _a1 * _a2) * c1 + 2 * _a2 * c2;
+            return top / bottom;
+        }
+
         public double Run(double x)
         {
             double o = _b0 * x + _z1;
@@ -198,6 +225,187 @@ namespace YARG.Audio.GuitarVoice
         }
     }
 
+    /// <summary>The fast Fourier transform, for one size (a power of two).</summary>
+    internal sealed class Fourier
+    {
+        private readonly int _size;
+        private readonly int[] _reverse;
+        private readonly double[] _cos, _sin;
+
+        public Fourier(int size)
+        {
+            if (size < 2 || (size & (size - 1)) != 0)
+            {
+                throw new ArgumentException("The size must be a power of two");
+            }
+            _size = size;
+            int bits = 0;
+            while (1 << bits < size)
+            {
+                bits++;
+            }
+            _reverse = new int[size];
+            for (int i = 0; i < size; i++)
+            {
+                int r = 0;
+                for (int b = 0; b < bits; b++)
+                {
+                    if ((i & (1 << b)) != 0)
+                    {
+                        r |= 1 << (bits - 1 - b);
+                    }
+                }
+                _reverse[i] = r;
+            }
+            _cos = new double[size / 2];
+            _sin = new double[size / 2];
+            for (int i = 0; i < size / 2; i++)
+            {
+                _cos[i] = Math.Cos(2 * Math.PI * i / size);
+                _sin[i] = -Math.Sin(2 * Math.PI * i / size);
+            }
+        }
+
+        /// <summary>
+        /// Transforms in place. Going <paramref name="back"/> also divides by the size, so there
+        /// and back again returns what went in. Safe to use from several threads at once.
+        /// </summary>
+        public void Run(double[] re, double[] im, bool back)
+        {
+            int n = _size;
+            for (int i = 0; i < n; i++)
+            {
+                int j = _reverse[i];
+                if (j > i)
+                {
+                    double t = re[i];
+                    re[i] = re[j];
+                    re[j] = t;
+                    t = im[i];
+                    im[i] = im[j];
+                    im[j] = t;
+                }
+            }
+
+            for (int size = 2; size <= n; size <<= 1)
+            {
+                int half = size >> 1;
+                int step = n / size;
+                for (int i = 0; i < n; i += size)
+                {
+                    for (int j = 0, k = 0; j < half; j++, k += step)
+                    {
+                        double wr = _cos[k], wi = back ? -_sin[k] : _sin[k];
+                        int a = i + j, b = a + half;
+                        double tr = re[b] * wr - im[b] * wi;
+                        double ti = re[b] * wi + im[b] * wr;
+                        re[b] = re[a] - tr;
+                        im[b] = im[a] - ti;
+                        re[a] += tr;
+                        im[a] += ti;
+                    }
+                }
+            }
+
+            if (back)
+            {
+                double scale = 1.0 / n;
+                for (int i = 0; i < n; i++)
+                {
+                    re[i] *= scale;
+                    im[i] *= scale;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A speaker cabinet with a microphone in front of it, as measured: what came out when a
+    /// single click went in. Any sound played through that answer comes out as that cabinet
+    /// would have made it.
+    /// </summary>
+    internal sealed class Speaker
+    {
+        // Doing that sample by sample would take a couple of thousand multiplications for every
+        // sample. Instead the sound goes through a stretch at a time: each stretch is turned
+        // into its spectrum, multiplied by the cabinet's spectrum and turned back, which gives
+        // that stretch followed by its ringing-on. The ringing is added to the stretches after.
+        private const int SIZE = 4096;
+        private static readonly Fourier Transform = new Fourier(SIZE);
+
+        private readonly int _stretch;
+        private readonly double[] _re = new double[SIZE];
+        private readonly double[] _im = new double[SIZE];
+
+        /// <summary>How long the cabinet rings on, in samples.</summary>
+        public int Length { get; }
+
+        public Speaker(float[] response)
+        {
+            if (response == null || response.Length == 0 || response.Length > SIZE / 2)
+            {
+                throw new ArgumentException("A speaker response has 1 to " + SIZE / 2 + " samples");
+            }
+            Length = response.Length;
+            _stretch = SIZE - Length;
+            for (int i = 0; i < Length; i++)
+            {
+                _re[i] = response[i];
+            }
+            Transform.Run(_re, _im, false);
+        }
+
+        /// <summary>
+        /// Plays <paramref name="input"/>[0 .. count) through the cabinet (silence before it) and
+        /// writes what comes out from sample <paramref name="first"/> on to
+        /// <paramref name="output"/>, starting at <paramref name="outputAt"/>. Safe to use from
+        /// several threads at once.
+        /// </summary>
+        public void Run(float[] input, int count, int first, float[] output, int outputAt)
+        {
+            var re = new double[SIZE];
+            var im = new double[SIZE];
+            var ringing = new double[Length];
+            double[] cabinetRe = _re, cabinetIm = _im;
+            int stretch = _stretch;
+
+            // Nothing earlier than this can still be heard at `first`
+            int start = Math.Max(0, first - (Length - 1));
+            for (int at = start; at < count; at += stretch)
+            {
+                int n = Math.Min(stretch, count - at);
+                for (int i = 0; i < n; i++)
+                {
+                    re[i] = input[at + i];
+                }
+                Array.Clear(re, n, SIZE - n);
+                Array.Clear(im, 0, SIZE);
+
+                Transform.Run(re, im, false);
+                for (int i = 0; i < SIZE; i++)
+                {
+                    double a = re[i], b = im[i];
+                    re[i] = a * cabinetRe[i] - b * cabinetIm[i];
+                    im[i] = a * cabinetIm[i] + b * cabinetRe[i];
+                }
+                Transform.Run(re, im, true);
+
+                // This stretch is complete once the ringing of the earlier ones is added
+                for (int i = Math.Max(0, first - at); i < n; i++)
+                {
+                    double v = i < ringing.Length ? re[i] + ringing[i] : re[i];
+                    output[outputAt + at + i - first] = (float) v;
+                }
+                // What rings on past it (together with what was already ringing that far)
+                for (int i = 0; i < ringing.Length; i++)
+                {
+                    double earlier = i + stretch < ringing.Length ? ringing[i + stretch] : 0.0;
+                    ringing[i] = re[stretch + i] + earlier;
+                }
+            }
+        }
+    }
+
     /// <summary>One valve stage: filters, gain into the valve, filters.</summary>
     internal sealed class AmpStage
     {
@@ -231,8 +439,11 @@ namespace YARG.Audio.GuitarVoice
         /// <summary>How much the power supply gives way under a loud signal.</summary>
         public double Sag, SagAttack = 0.008, SagRelease = 0.12;
 
-        /// <summary>Speaker and microphone (normal rate).</summary>
+        /// <summary>Speaker and microphone drawn with filters (normal rate): the bass amp's.</summary>
         public Func<Filter[]> Cabinet = () => Array.Empty<Filter>();
+
+        /// <summary>A measured speaker cabinet to play through after that (null: none).</summary>
+        public Speaker Speaker;
 
         /// <summary>How much room sound is mixed in, and how long it rings (seconds).</summary>
         public float RoomMix = 0.1f;
@@ -249,14 +460,19 @@ namespace YARG.Audio.GuitarVoice
             return tone == GuitarVoiceTone.Clean ? Clean : tone == GuitarVoiceTone.Heavy ? Heavy : Rock;
         }
 
-        // The tone-and-cabinet chains below were fitted, overtone by overtone, so that real
-        // direct-recorded guitar notes played through each amplifier come out with the same
-        // balance of low, middle and high as recordings of real amplified guitars playing the
-        // same notes (see tools/string-bank/README.md).
+        // The guitar amps play through measured cabinets. What is set here is what an amp's own
+        // controls set: how hard each valve stage is driven, how much bass is held back before
+        // it (bass through a distorting valve is what turns chords to mud), and the tone
+        // controls after it. The settings were chosen by measuring: the string bank's notes
+        // were played through each amp, and the balance of low, middle and high that came out
+        // was compared across the whole neck (see tools/string-bank/README.md).
+
+        private static readonly Speaker GreenbackCabinet = new Speaker(Cabinets.Greenback);
+        private static readonly Speaker Vintage30Cabinet = new Speaker(Cabinets.Vintage30);
 
         /// <summary>
-        /// A clean amp turned up to where it just starts to round the hardest notes off:
-        /// scooped middle, some sparkle around 4 kHz, the speaker rolling off above that.
+        /// A clean amp turned up to where it just starts to round the hardest notes off, with
+        /// the treble control up a little, through a 4x12 with Greenback speakers.
         /// </summary>
         public static readonly AmpSettings Clean = new AmpSettings
         {
@@ -270,26 +486,16 @@ namespace YARG.Audio.GuitarVoice
                     After = new[] { Filter.LowPass1(12000, HIGH_RATE) },
                 },
             },
-            Tone = () => new[] { Filter.HighPass1(40, HIGH_RATE) },
+            Tone = () => new[] { Filter.HighPass1(40, HIGH_RATE), Filter.HighShelf(3000, 0.7, 3.0, HIGH_RATE) },
             PowerGain = 0.9, PowerSharpness = 0.8, Sag = 0.3,
-            Cabinet = () => new[]
-            {
-                Filter.HighPass(60, 1.06, RATE),
-                Filter.Peak(131, 2.04, 4.4, RATE),
-                Filter.Peak(248, 1.76, -2.8, RATE),
-                Filter.Peak(826, 0.57, -4.8, RATE),
-                Filter.Peak(1201, 1.61, -4.2, RATE),
-                Filter.Peak(2364, 1.11, 4.1, RATE),
-                Filter.Peak(4268, 2.2, 6.0, RATE),
-                Filter.LowPass(7500, 0.5, RATE),
-                Filter.LowPass(9500, 0.5, RATE),
-            },
-            RoomMix = 0.10f, RoomSeconds = 1.2,
+            Speaker = GreenbackCabinet,
+            RoomMix = 0.14f, RoomSeconds = 1.2,
         };
 
         /// <summary>
-        /// A stack pushed into overdrive: crunchy chords, singing single notes, and it cleans
-        /// up as a note dies away. The bass is held back before the valves so chords stay clear.
+        /// A stack pushed into overdrive, through the same Greenback 4x12: crunchy chords, fat
+        /// singing single notes, and it cleans up as a note dies away. Only the deep bass is
+        /// held back before the valves, so a note keeps its body.
         /// </summary>
         public static readonly AmpSettings Rock = new AmpSettings
         {
@@ -298,8 +504,8 @@ namespace YARG.Audio.GuitarVoice
             {
                 new AmpStage
                 {
-                    Before = new[] { Filter.HighPass1(150, HIGH_RATE), Filter.LowShelf(600, 0.6, -8.0, HIGH_RATE) },
-                    Gain = 5.0, Bias = 0.15, Up = 1.3, Down = 0.75,
+                    Before = new[] { Filter.HighPass1(110, HIGH_RATE), Filter.LowShelf(400, 0.5, -6.0, HIGH_RATE) },
+                    Gain = 2.5, Bias = 0.15, Up = 1.3, Down = 0.75,
                     After = new[] { Filter.LowPass1(10000, HIGH_RATE) },
                 },
                 new AmpStage
@@ -309,26 +515,15 @@ namespace YARG.Audio.GuitarVoice
                     After = new[] { Filter.LowPass1(8000, HIGH_RATE) },
                 },
             },
-            Tone = () => new[] { Filter.HighPass1(40, HIGH_RATE) },
+            Tone = () => new[] { Filter.HighPass1(40, HIGH_RATE), Filter.HighShelf(2500, 0.7, 3.0, HIGH_RATE) },
             PowerGain = 2.0, PowerSharpness = 1.0, Sag = 0.45,
-            Cabinet = () => new[]
-            {
-                Filter.HighPass(85, 0.68, RATE),
-                Filter.Peak(158, 2.2, -3.4, RATE),
-                Filter.Peak(239, 1.34, -4.1, RATE),
-                Filter.Peak(791, 0.7, -5.3, RATE),
-                Filter.Peak(1402, 1.53, -3.7, RATE),
-                Filter.Peak(2422, 1.72, 5.4, RATE),
-                Filter.Peak(3466, 1.24, 4.0, RATE),
-                Filter.LowPass(4791, 0.82, RATE),
-                Filter.LowPass(9409, 0.9, RATE),
-            },
+            Speaker = GreenbackCabinet,
             RoomMix = 0.11f, RoomSeconds = 1.0,
         };
 
         /// <summary>
-        /// A high-gain amp with a boost in front: thick, tight and sustaining, with the
-        /// scooped middle and hard-edged top of a modern metal sound.
+        /// A high-gain amp with a boost in front, through a 4x12 with a Vintage 30 speaker:
+        /// thick, tight and sustaining, the middle pulled back a little.
         /// </summary>
         public static readonly AmpSettings Heavy = new AmpSettings
         {
@@ -338,8 +533,8 @@ namespace YARG.Audio.GuitarVoice
             {
                 new AmpStage
                 {
-                    Before = new[] { Filter.HighPass1(120, HIGH_RATE), Filter.LowShelf(500, 0.6, -9.0, HIGH_RATE) },
-                    Gain = 10.0, Bias = 0.12, Up = 1.4, Down = 0.8,
+                    Before = new[] { Filter.HighPass1(120, HIGH_RATE), Filter.LowShelf(400, 0.5, -8.0, HIGH_RATE) },
+                    Gain = 9.0, Bias = 0.12, Up = 1.4, Down = 0.8,
                     After = new[] { Filter.LowPass1(9000, HIGH_RATE) },
                 },
                 new AmpStage
@@ -355,20 +550,9 @@ namespace YARG.Audio.GuitarVoice
                     After = new[] { Filter.LowPass1(6500, HIGH_RATE) },
                 },
             },
-            Tone = () => new[] { Filter.HighPass1(40, HIGH_RATE) },
+            Tone = () => new[] { Filter.HighPass1(40, HIGH_RATE), Filter.Peak(800, 0.6, -2.0, HIGH_RATE) },
             PowerGain = 1.6, PowerSharpness = 1.0, Sag = 0.35,
-            Cabinet = () => new[]
-            {
-                Filter.HighPass(60, 1.4, RATE),
-                Filter.Peak(93, 1.05, 6.6, RATE),
-                Filter.Peak(313, 1.33, -5.0, RATE),
-                Filter.Peak(858, 1.48, -2.6, RATE),
-                Filter.Peak(1567, 1.03, -9.7, RATE),
-                Filter.Peak(2611, 2.2, 5.2, RATE),
-                Filter.Peak(3358, 1.77, 5.7, RATE),
-                Filter.LowPass(4343, 0.87, RATE),
-                Filter.LowPass(9436, 0.9, RATE),
-            },
+            Speaker = Vintage30Cabinet,
             RoomMix = 0.08f, RoomSeconds = 0.8,
         };
 
@@ -552,6 +736,12 @@ namespace YARG.Audio.GuitarVoice
             var power = ValveCurve.PushPull(s.PowerSharpness);
             var cabinet = s.Cabinet();
 
+            // With a measured speaker to go through, the amp's output is collected first (from
+            // the lead-in on, which is what the speaker is still ringing with when this piece's
+            // own part begins) and played through it at the end
+            var speaker = s.Speaker;
+            var collected = speaker != null ? new float[to - leadFrom] : null;
+
             const int HIGH = BLOCK * OVERSAMPLE;
             var low = new double[BLOCK];
             var high = new double[HIGH];
@@ -694,10 +884,25 @@ namespace YARG.Audio.GuitarVoice
 
                 // Output sample for input sample `at + i` belongs DELAY earlier
                 int outAt = at - DELAY;
-                for (int i = Math.Max(0, from - outAt); i < count; i++)
+                if (collected != null)
                 {
-                    signal[outAt + i] = (float) low[i];
+                    for (int i = Math.Max(0, leadFrom - outAt); i < count; i++)
+                    {
+                        collected[outAt + i - leadFrom] = (float) low[i];
+                    }
                 }
+                else
+                {
+                    for (int i = Math.Max(0, from - outAt); i < count; i++)
+                    {
+                        signal[outAt + i] = (float) low[i];
+                    }
+                }
+            }
+
+            if (collected != null)
+            {
+                speaker.Run(collected, collected.Length, from - leadFrom, signal, from);
             }
         }
 

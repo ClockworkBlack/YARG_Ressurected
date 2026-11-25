@@ -11,7 +11,8 @@ File layout (little-endian):
         u32 frames
         u8  note          the note that was played (MIDI note number)
         u8  soft          1: played softly (for hammer-ons), 0: picked hard
-        u8  string        which string, 1 = lowest (0: not known); for information only
+        u8  string        which string, 1 = lowest (0: not known); the game balances each
+                          guitar string's tone by it (StringVoicing)
         u8  take          which take of the note; for information only
         u32 data offset   from the start of the file
         u32 data bytes

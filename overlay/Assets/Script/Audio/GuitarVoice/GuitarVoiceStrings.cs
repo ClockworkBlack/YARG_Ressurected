@@ -10,9 +10,13 @@
 // Playing a chart means choosing, for every note, the recorded note closest in pitch, playing it
 // a little faster or slower so it lands exactly on the note and on the song's tuning, and
 // treating it the way a hand would: the same note twice in a row is a different take each time
-// (no two picks sound alike), hammer-ons and pull-offs use the softly played takes, a note is
-// damped when the next one takes over the string, chords are strummed across the strings, and
-// long single notes get a little finger vibrato.
+// (no two picks sound alike), hammer-ons and pull-offs use the softly played takes and run
+// into each other, a picked note stops the one before it a moment early (the pick lands on the
+// string before it lets go), and chords are strummed across the strings.
+//
+// The takes are also balanced against each other first (StringVoicing): the recorded guitar's
+// bridge pickup hears little of a note's fundamental, some takes were picked far brighter than
+// others, and through an amplifier a thin take is a thin, beeping note.
 //
 // What comes out of here is the bare guitar signal. The amplifier (GuitarVoiceAmp) makes the
 // sound from it, which is why chords growl the way they do on a real amp: the strings are mixed
@@ -43,7 +47,14 @@ namespace YARG.Audio.GuitarVoice
             /// <summary>Multiply the samples (as -1..1) by this to get every take equally loud.</summary>
             public float Gain;
 
+            /// <summary>Which string it was played on: 1 is the lowest (0: not known).</summary>
+            public int String;
+
             public short[] Samples;
+
+            // How the take is balanced before the amplifier (see StringVoicing): dB taken off
+            // its top, dB added to its fundamental, and the gain that makes up for both
+            internal float Top, Full, Trim = 1f;
         }
 
         // All takes of one note, hard and soft
@@ -114,6 +125,14 @@ namespace YARG.Audio.GuitarVoice
                 from = to;
             }
             Notes = notes.ToArray();
+
+            if (!bass)
+            {
+                foreach (var recording in Recordings)
+                {
+                    StringVoicing.Measure(recording, sampleRate);
+                }
+            }
         }
 
         public static StringBank Load(string path)
@@ -154,6 +173,7 @@ namespace YARG.Audio.GuitarVoice
                     Gain = BitConverter.ToSingle(data, at + 4),
                     Note = data[at + 12],
                     Soft = data[at + 13] != 0,
+                    String = data[at + 14],
                 };
                 int frames = BitConverter.ToInt32(data, at + 8);
                 int offset = BitConverter.ToInt32(data, at + 16);
@@ -307,12 +327,221 @@ namespace YARG.Audio.GuitarVoice
         }
     }
 
+    /// <summary>
+    /// Balances the recorded guitar takes against each other before they reach the amplifier.
+    ///
+    /// The guitar was recorded from its bridge pickup, which sits where a string hardly moves at
+    /// its fundamental: on the thin strings the overtones are several times stronger than the
+    /// note itself. The four takes of each note were also picked very differently, so in some
+    /// the fundamental carries a third of the power and in others a fortieth. A clean amp passes
+    /// that on as a thin "plink"; a distorting one turns it into a beep with a buzz on top. So
+    /// each take is measured once, when the bank is read, and given three corrections:
+    ///
+    ///   - the wound strings, which are on the dull side, get some top back (like new strings);
+    ///   - a take with more than a quarter of its power in its fifth overtone and above has its
+    ///     top turned down until it has not (open strings picked next to the bridge);
+    ///   - the fundamental is turned up until it carries a third of the power of the first eight
+    ///     overtones, as it does on a guitar's fuller-sounding pickups. Less so towards the
+    ///     lowest notes, whose body an amplifier has to hold back anyway.
+    ///
+    /// The take is then as loud as it was before.
+    /// </summary>
+    internal static class StringVoicing
+    {
+        // dB more above BRIGHT_HZ than below it, for strings 1 (the low E), 2 and 3
+        private static readonly double[] Bright = { 10.0, 6.0, 3.0 };
+        private const double BRIGHT_HZ = 700.0;
+
+        // The top: a shelf starting TOP_AT times the note's frequency, at most TOP_MOST dB down
+        private const double TOP_SHARE = 0.25, TOP_MOST = 10.0, TOP_AT = 3.5, TOP_Q = 0.7;
+
+        // The fundamental: a shelf below FULL_AT times the note's frequency, at most FULL_MOST dB
+        // up. None of it at the low E, all of it from the E an octave above.
+        private const double FULL_SHARE = 1.0 / 3.0, FULL_MOST = 12.0, FULL_AT = 1.5, FULL_Q = 0.8;
+        private const int FULL_FROM = 40, FULL_OVER = 12;
+
+        private const double STEP = 0.5;
+        private const int OVERTONES = 16;
+        private const double HIGHEST = 6000.0;
+
+        /// <summary>The most filters one take needs.</summary>
+        public const int FILTERS = 3;
+
+        private const int RATE = GuitarVoiceSynth.SAMPLE_RATE;
+
+        /// <summary>
+        /// Fills <paramref name="filters"/> with the take's corrections, for a note sounding at
+        /// <paramref name="hz"/> and audio at <paramref name="rate"/>. Returns how many there are.
+        /// </summary>
+        public static int Filters(StringBank.Recording take, double hz, double rate, Filter[] filters)
+        {
+            int count = 0;
+            double bright = take.String >= 1 && take.String <= Bright.Length ? Bright[take.String - 1] : 0.0;
+            if (bright > 0)
+            {
+                filters[count++] = Filter.Tilt1(BRIGHT_HZ, -bright, rate);
+            }
+            if (take.Top < 0)
+            {
+                filters[count++] = Filter.HighShelf(TOP_AT * hz, TOP_Q, take.Top, rate);
+            }
+            if (take.Full > 0)
+            {
+                filters[count++] = Filter.LowShelf(FULL_AT * hz, FULL_Q, take.Full, rate);
+            }
+            return count;
+        }
+
+        /// <summary>Works out the corrections for one take (recorded at <paramref name="rate"/>).</summary>
+        public static void Measure(StringBank.Recording take, int rate)
+        {
+            take.Top = 0f;
+            take.Full = 0f;
+            take.Trim = 1f;
+
+            var samples = take.Samples;
+            double hz = 440.0 * Math.Pow(2, (take.Pitch - 69) / 12.0);
+            int count = (int) Math.Min(OVERTONES, Math.Floor(HIGHEST / hz));
+            // Just after the pick, while the note is at its fullest
+            int from = (int) (0.03 * rate);
+            int n = Math.Min((int) (0.33 * rate), samples.Length) - from;
+            if (count >= 1 && n >= 256)
+            {
+                var power = Overtones(samples, from, n, hz / rate, count);
+                var filters = new Filter[FILTERS];
+                int used = Filters(take, hz, RATE, filters);
+                for (int f = 0; f < used; f++)
+                {
+                    Apply(power, filters[f], hz);
+                }
+
+                if (count > 4)
+                {
+                    double top = 0;
+                    while (top > -TOP_MOST)
+                    {
+                        var trial = (double[]) power.Clone();
+                        if (top < 0)
+                        {
+                            Apply(trial, Filter.HighShelf(TOP_AT * hz, TOP_Q, top, RATE), hz);
+                        }
+                        if (Sum(trial, 4, count) <= TOP_SHARE * Sum(trial, 0, count))
+                        {
+                            break;
+                        }
+                        top -= STEP;
+                    }
+                    if (top < 0)
+                    {
+                        Apply(power, Filter.HighShelf(TOP_AT * hz, TOP_Q, top, RATE), hz);
+                        take.Top = (float) top;
+                    }
+                }
+
+                double part = Math.Min(1.0, Math.Max(0.0, (take.Pitch - FULL_FROM) / FULL_OVER));
+                double most = Math.Floor(FULL_MOST * part / STEP) * STEP;
+                int low = Math.Min(8, count);
+                double full = 0;
+                while (full < most)
+                {
+                    var trial = (double[]) power.Clone();
+                    if (full > 0)
+                    {
+                        Apply(trial, Filter.LowShelf(FULL_AT * hz, FULL_Q, full, RATE), hz);
+                    }
+                    if (trial[0] >= FULL_SHARE * Sum(trial, 0, low))
+                    {
+                        break;
+                    }
+                    full += STEP;
+                }
+                take.Full = (float) full;
+            }
+
+            // As loud as before, over the part of a second the bank's own levelling goes by
+            var chain = new Filter[FILTERS];
+            int links = Filters(take, hz, rate, chain);
+            if (links > 0)
+            {
+                int third = Math.Min(samples.Length, (int) (0.33 * rate));
+                double before = 0, after = 0;
+                for (int i = 0; i < third; i++)
+                {
+                    double v = samples[i];
+                    before += v * v;
+                    for (int f = 0; f < links; f++)
+                    {
+                        v = chain[f].Run(v);
+                    }
+                    after += v * v;
+                }
+                if (before > 0 && after > 0)
+                {
+                    take.Trim = (float) Math.Sqrt(before / after);
+                }
+            }
+        }
+
+        // The power of each of the first `count` overtones (the fundamental first) in
+        // samples[from .. from + n). `turn` is the fundamental's frequency in turns per sample.
+        private static double[] Overtones(short[] samples, int from, int n, double turn, int count)
+        {
+            // Faded in and out, so the ends of the stretch do not smear one overtone into the next
+            var windowed = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                windowed[i] = samples[from + i] * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / n));
+            }
+
+            var power = new double[count];
+            for (int k = 1; k <= count; k++)
+            {
+                // A pointer going round k times per vibration; the note's share of it adds up
+                double stepRe = Math.Cos(2 * Math.PI * k * turn), stepIm = -Math.Sin(2 * Math.PI * k * turn);
+                double re = 1, im = 0, sumRe = 0, sumIm = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    sumRe += windowed[i] * re;
+                    sumIm += windowed[i] * im;
+                    double next = re * stepRe - im * stepIm;
+                    im = re * stepIm + im * stepRe;
+                    re = next;
+                }
+                power[k - 1] = sumRe * sumRe + sumIm * sumIm;
+            }
+            return power;
+        }
+
+        private static void Apply(double[] power, Filter filter, double hz)
+        {
+            for (int k = 0; k < power.Length; k++)
+            {
+                power[k] *= filter.Power(hz * (k + 1), RATE);
+            }
+        }
+
+        private static double Sum(double[] values, int from, int to)
+        {
+            double sum = 0;
+            for (int i = from; i < to; i++)
+            {
+                sum += values[i];
+            }
+            return sum;
+        }
+    }
+
     internal static class StringPlayer
     {
         private const int RATE = GuitarVoiceSynth.SAMPLE_RATE;
 
         // A plain note rings until the next one, but not for longer than this
         private const double RING = 1.2;
+
+        // A pick (or a plucking finger) lands on the string a moment before it lets go, and the
+        // note that was ringing stops right there: this long before the new note, this quickly
+        private const double PICK_LANDS = 0.010;
+        private const double PICK_STOPS = 0.004;
 
         /// <summary>
         /// Plays the notes into <paramref name="output"/> (one channel, bare guitar signal).
@@ -337,6 +566,7 @@ namespace YARG.Audio.GuitarVoice
 
             double lastChordTime = double.NegativeInfinity;
             bool lastChordUp = false;
+            var voicing = new Filter[StringVoicing.FILTERS];
 
             for (int i = 0; i < notes.Length; i++)
             {
@@ -353,11 +583,13 @@ namespace YARG.Audio.GuitarVoice
                     ? note.Length
                     : Math.Min(Math.Max(untilNext, 0.08), RING);
 
-                // When the next note comes while this one rings, it takes over the strings: this
-                // one stops right there, quickly. Otherwise the hand damps it, a little slower.
+                // When the next note comes while this one rings, it takes over the strings. A
+                // picked note stops this one a moment before it sounds; a hammer-on or pull-off
+                // runs straight on from it. Otherwise the hand damps the note, a little slower.
                 bool taken = untilNext < held + 0.03;
-                double ring = taken ? Math.Max(untilNext, 0.02) : held;
-                double fade = taken ? 0.012 : 0.07;
+                bool picked = taken && !notes[i + 1].Soft;
+                double ring = !taken ? held : Math.Max(picked ? untilNext - PICK_LANDS : untilNext, 0.02);
+                double fade = !taken ? 0.07 : picked ? PICK_STOPS : 0.012;
 
                 int strings = bass || note.FretCount <= 1 ? 1 : note.FretCount == 2 ? 2 : 3;
 
@@ -369,9 +601,6 @@ namespace YARG.Audio.GuitarVoice
                     lastChordTime = note.Time;
                     lastChordUp = up;
                 }
-
-                // Long single notes get some finger vibrato
-                bool vibrato = strings == 1 && !bass && held > 0.45;
 
                 for (int s = 0; s < strings; s++)
                 {
@@ -398,7 +627,7 @@ namespace YARG.Audio.GuitarVoice
                         // High strings are thinner and quieter; make up some of the difference
                         double lift = Math.Min(1.6, Math.Max(1.0, Math.Pow(freq / 110.0, 0.25)));
                         ModelledString(output, at, freq, ring, velocity * lift, bright, t60, ref rng,
-                            note.Soft, vibrato);
+                            note.Soft);
                         continue;
                     }
 
@@ -407,7 +636,7 @@ namespace YARG.Audio.GuitarVoice
                     var take = Choose(bank, target, note.Soft, seconds, turn);
                     // A hammer-on played from a picked take has its pick click taken off
                     Recorded(output, at, bank, take, target, velocity, ring - gap, fade,
-                        note.Soft && !take.Soft, vibrato, ref rng);
+                        note.Soft && !take.Soft, voicing);
                 }
             }
         }
@@ -475,12 +704,17 @@ namespace YARG.Audio.GuitarVoice
 
         // One recorded note, added into output from `start`
         private static void Recorded(float[] output, int start, StringBank bank, StringBank.Recording recording,
-            double target, double velocity, double ring, double fade, bool noPick, bool vibrato, ref uint rng)
+            double target, double velocity, double ring, double fade, bool noPick, Filter[] voicing)
         {
             var data = recording.Samples;
             int frames = data.Length;
             double rate = Math.Pow(2, (target - recording.Pitch) / 12.0) * bank.SampleRate / RATE;
-            double gain = velocity * recording.Gain / 32768.0;
+            double gain = velocity * recording.Gain * recording.Trim / 32768.0;
+
+            // The take's balance (guitar only), set for the pitch it is played at
+            int voiced = bank.IsBass
+                ? 0
+                : StringVoicing.Filters(recording, 440.0 * Math.Pow(2, (target - 69) / 12.0), RATE, voicing);
 
             // A hammer-on or pull-off has no pick: start just past the click, ease in, and
             // take the edge off the top
@@ -492,15 +726,6 @@ namespace YARG.Audio.GuitarVoice
             int ringSamples = Math.Max(1, (int) (ring * RATE));
             int fadeSamples = Math.Max(1, (int) (fade * RATE));
             int total = Math.Min(ringSamples + fadeSamples, output.Length - start);
-
-            // Vibrato: about five times a second, a little unevenly (as a hand's is), growing in
-            // over half a second, and centred on the note so it stays in tune with the song
-            bool useVibrato = vibrato && ring > 0.45;
-            int vibratoFrom = (int) (0.32 * RATE);
-            double vibratoPhase = 0;
-            double vibratoSpeed = 2 * Math.PI * (5.0 + 0.5 * Noise(ref rng)) / RATE;
-            double vibratoDepth = (0.9 + 0.25 * Noise(ref rng)) * (Math.Pow(2, 10.0 / 1200.0) - 1);
-            double wander = 0;
 
             for (int i = 0; i < total; i++)
             {
@@ -526,6 +751,10 @@ namespace YARG.Audio.GuitarVoice
                     smooth += dull * (sample - smooth);
                     sample = smooth;
                 }
+                for (int link = 0; link < voiced; link++)
+                {
+                    sample = voicing[link].Run(sample);
+                }
 
                 double level = gain;
                 if (i < attack)
@@ -538,17 +767,7 @@ namespace YARG.Audio.GuitarVoice
                     level *= left * left;
                 }
                 output[start + i] += (float) (sample * level);
-
-                double step = rate;
-                if (useVibrato && i > vibratoFrom)
-                {
-                    double depth = Math.Min(1.0, (i - vibratoFrom) / (0.5 * RATE)) * vibratoDepth;
-                    // The speed drifts a little
-                    wander += 0.00002 * (Noise(ref rng) - wander * 0.02);
-                    vibratoPhase += vibratoSpeed * (1.0 + 40.0 * wander);
-                    step *= 1.0 + depth * Math.Sin(vibratoPhase);
-                }
-                position += step;
+                position += rate;
             }
         }
 
@@ -565,7 +784,7 @@ namespace YARG.Audio.GuitarVoice
         // A modelled string, for when there are no recordings to play. Added into output from
         // `start`; after `held` seconds it is damped.
         private static void ModelledString(float[] output, int start, double freq, double held, double velocity,
-            double bright, double t60, ref uint rng, bool soft, bool vibrato)
+            double bright, double t60, ref uint rng, bool soft)
         {
             double period = RATE / freq;
             int length = (int) Math.Round(period);
@@ -654,23 +873,12 @@ namespace YARG.Audio.GuitarVoice
             double gainDamped = Math.Pow(10, -3.0 / (freq * 0.06));
             int heldSamples = (int) (held * RATE);
             int total = Math.Min(heldSamples + (int) (0.12 * RATE), output.Length - start);
-            bool useVibrato = vibrato && held > 0.45;
-            double vibratoRate = 2 * Math.PI * 5.3 / RATE;
-            int vibratoFrom = (int) (0.3 * RATE);
-            double baseDelay = period - blend;
+            double delay = period - blend;
 
             int write = length & mask;
             double previous = 0;
             for (int i = 0; i < total; i++)
             {
-                double delay = baseDelay;
-                if (useVibrato && i > vibratoFrom)
-                {
-                    // Grows in over half a second, to about 14 cents either way
-                    double depth = Math.Min(1.0, (i - vibratoFrom) / (0.5 * RATE)) * 0.008;
-                    delay *= 1.0 + depth * Math.Sin(vibratoRate * i);
-                }
-
                 double readAt = write - delay;
                 int i0 = (int) Math.Floor(readAt);
                 double f = readAt - i0;

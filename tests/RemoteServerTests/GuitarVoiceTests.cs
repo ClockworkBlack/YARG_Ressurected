@@ -243,34 +243,21 @@ namespace RemoteServerTests
         private static double BandShare(float[] stereo, int from, int to, double lo, double hi, int sampleRate)
         {
             const int N = 2048;
-            var cos = new double[N];
-            var sin = new double[N];
-            for (int i = 0; i < N; i++)
-            {
-                cos[i] = Math.Cos(2 * Math.PI * i / N);
-                sin[i] = Math.Sin(2 * Math.PI * i / N);
-            }
-
+            var transform = new Fourier(N);
+            var re = new double[N];
+            var im = new double[N];
             double inBand = 0, total = 0;
-            var windowed = new double[N];
             for (int start = from; start + N <= to; start += N)
             {
                 for (int i = 0; i < N; i++)
                 {
-                    windowed[i] = stereo[(start + i) * 2] * (0.5 - 0.5 * cos[i]);
+                    re[i] = stereo[(start + i) * 2] * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / N));
+                    im[i] = 0;
                 }
-                // (a plain transform is quick enough for a few windows)
+                transform.Run(re, im, false);
                 for (int k = 1; k < N / 2; k++)
                 {
-                    double re = 0, im = 0;
-                    int angle = 0;
-                    for (int i = 0; i < N; i++)
-                    {
-                        re += windowed[i] * cos[angle];
-                        im -= windowed[i] * sin[angle];
-                        angle = (angle + k) & (N - 1);
-                    }
-                    double power = re * re + im * im;
+                    double power = re[k] * re[k] + im[k] * im[k];
                     double hz = k * (double) sampleRate / N;
                     total += power;
                     if (hz >= lo && hz < hi)
@@ -280,6 +267,39 @@ namespace RemoteServerTests
                 }
             }
             return total > 0 ? inBand / total : 0;
+        }
+
+        // The left channel of stereo[start .. start + length) (frames), faded in and out
+        private static double[] Windowed(float[] stereo, int start, int length)
+        {
+            var windowed = new double[length];
+            for (int i = 0; i < length; i++)
+            {
+                windowed[i] = stereo[(start + i) * 2] * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / length));
+            }
+            return windowed;
+        }
+
+        // Power of the tone at `hz` in a stretch from Windowed. A string's overtones sit a few
+        // cents off exact multiples, so a little either side counts.
+        private static double TonePower(double[] windowed, double hz, int sampleRate)
+        {
+            double power = 0;
+            for (int c = -30; c <= 30; c += 15)
+            {
+                double w = 2 * Math.PI * hz * Math.Pow(2, c / 1200.0) / sampleRate;
+                double stepRe = Math.Cos(w), stepIm = -Math.Sin(w), re = 1, im = 0, sumRe = 0, sumIm = 0;
+                for (int i = 0; i < windowed.Length; i++)
+                {
+                    sumRe += windowed[i] * re;
+                    sumIm += windowed[i] * im;
+                    double next = re * stepRe - im * stepIm;
+                    im = re * stepIm + im * stepRe;
+                    re = next;
+                }
+                power += sumRe * sumRe + sumIm * sumIm;
+            }
+            return power;
         }
 
         private static float Peak(float[] x, int from, int to)
@@ -423,6 +443,105 @@ namespace RemoteServerTests
                     check(takes, $"recorded {name}: at least three picked takes of every note ({bank.Recordings.Length} takes in all)");
                     check(tuned, $"recorded {name}: every take's own pitch is known");
                     check(clean, $"recorded {name}: every take starts and ends at rest");
+                }
+
+                // Every guitar take is balanced before the amplifier (StringVoicing)
+                {
+                    bool strings = true, sane = true;
+                    int filled = 0, tamed = 0;
+                    float mostFilled = 0, mostTamed = 0;
+                    foreach (var take in guitarBank.Recordings)
+                    {
+                        strings &= take.String >= 1 && take.String <= 6;
+                        sane &= take.Full >= 0f && take.Full <= 12f && take.Top <= 0f && take.Top >= -10f
+                            && take.Trim > 0.2f && take.Trim < 5f;
+                        filled += take.Full > 0f ? 1 : 0;
+                        tamed += take.Top < 0f ? 1 : 0;
+                        mostFilled = Math.Max(mostFilled, take.Full);
+                        mostTamed = Math.Min(mostTamed, take.Top);
+                    }
+                    check(strings, "recorded guitar: every take knows which string it was played on");
+                    check(sane && filled > 20 && tamed > 0,
+                        $"recorded guitar: takes balanced ({filled} given more fundamental, up to {mostFilled:0.0} dB; {tamed} with the top turned down, by up to {-mostTamed:0.0} dB)");
+                    bool untouched = true;
+                    foreach (var take in bassBank.Recordings)
+                    {
+                        untouched &= take.Full == 0f && take.Top == 0f && take.Trim == 1f;
+                    }
+                    check(untouched, "recorded bass: left as recorded");
+                }
+
+                // The measured speaker cabinets
+                foreach (var (response, name) in new[] { (Cabinets.Greenback, "Greenback"), (Cabinets.Vintage30, "Vintage 30") })
+                {
+                    double energy = 0, late = 0;
+                    bool finite = response.Length == Cabinets.LENGTH;
+                    for (int i = 0; i < response.Length; i++)
+                    {
+                        finite &= !float.IsNaN(response[i]) && !float.IsInfinity(response[i]);
+                        energy += (double) response[i] * response[i];
+                        late += i >= response.Length - 64 ? Math.Abs(response[i]) : 0;
+                    }
+                    check(finite && Math.Abs(energy - 1) < 1e-3 && late < 1e-3,
+                        $"{name} cabinet: {response.Length} samples, unit energy, ends at rest");
+
+                    // What a guitar speaker does: a thump around 100 to 200 Hz, less in the middle
+                    // (how much less differs from speaker to speaker), bite at 2 to 4 kHz, and next
+                    // to nothing above 9 kHz or below 45 Hz
+                    double Gain(double lo, double hi)
+                    {
+                        // (how much gets through, averaged over lo .. hi)
+                        const int POINTS = 24;
+                        double sum = 0;
+                        for (int p = 0; p < POINTS; p++)
+                        {
+                            double w = 2 * Math.PI * lo * Math.Pow(hi / lo, (p + 0.5) / POINTS) / SR;
+                            double re = 0, im = 0;
+                            for (int i = 0; i < response.Length; i++)
+                            {
+                                re += response[i] * Math.Cos(w * i);
+                                im -= response[i] * Math.Sin(w * i);
+                            }
+                            sum += re * re + im * im;
+                        }
+                        return sum / POINTS;
+                    }
+                    double thump = Gain(110, 180), middle = Gain(450, 900), bite = Gain(2200, 4200);
+                    double top = Gain(9000, 18000), rumble = Gain(20, 45);
+                    check(thump > 1.5 * middle && bite > middle && top < 0.003 * bite && rumble < 0.05 * thump,
+                        $"{name} cabinet: a guitar speaker's shape (thump {10 * Math.Log10(thump / middle):+0.0} dB and bite {10 * Math.Log10(bite / middle):+0.0} dB over the middle, {10 * Math.Log10(top / bite):0} dB above 9 kHz)");
+                }
+
+                // Playing through a cabinet the quick way gives what the slow way gives
+                {
+                    _seed = 4242;
+                    var input = new float[5000];
+                    for (int i = 0; i < input.Length; i++)
+                    {
+                        input[i] = (float) (Rand() - 0.5);
+                    }
+                    var speaker = new Speaker(Cabinets.Vintage30);
+                    var quick = new float[input.Length];
+                    speaker.Run(input, input.Length, 0, quick, 0);
+                    const int FIRST = 3111;
+                    var fromLater = new float[input.Length - FIRST];
+                    speaker.Run(input, input.Length, FIRST, fromLater, 0);
+                    double worst = 0, worstLater = 0;
+                    for (int i = 0; i < input.Length; i++)
+                    {
+                        double slow = 0;
+                        for (int k = 0; k <= i && k < Cabinets.LENGTH; k++)
+                        {
+                            slow += (double) Cabinets.Vintage30[k] * input[i - k];
+                        }
+                        worst = Math.Max(worst, Math.Abs(slow - quick[i]));
+                        if (i >= FIRST)
+                        {
+                            worstLater = Math.Max(worstLater, Math.Abs(slow - fromLater[i - FIRST]));
+                        }
+                    }
+                    check(worst < 1e-5 && worstLater < 1e-5,
+                        $"speaker: the quick way matches sample-by-sample (off by {worst:0.0e0}; started part-way {worstLater:0.0e0})");
                 }
 
                 // A cut-off or scrambled file must be refused, not crash or hang
@@ -642,28 +761,99 @@ namespace RemoteServerTests
                 check(late > 0.1f * early && gone < 0.03f * early,
                     $"a held low note still rings after five seconds, and stops when let go ({late / early:0.00} of its start)");
 
-                // The amplifier: bite where a real guitar amp has it. Recordings of real distorted
-                // amps playing the low A have 30 to 50% of their energy between 2 and 5 kHz (the
-                // speaker's peak); the old generated sound had under 1% there, which is why it
-                // sounded like a beep. Above 8 kHz a guitar speaker gives almost nothing.
+                // A picked note stops the one before it a moment early (the pick lands on the
+                // string before it lets go); a hammer-on runs straight on from it
+                {
+                    float[] Two(bool hammer)
+                    {
+                        var pair = new[]
+                        {
+                            new VoiceNote { Time = 0.1, LowFret = 1, FretCount = 1, Pitch = 52 },
+                            new VoiceNote { Time = 0.5, LowFret = 2, FretCount = 1, Pitch = 55, Soft = hammer },
+                        };
+                        var signal = new float[SR];
+                        StringPlayer.Play(signal, pair, guitarBank, false, 1.0, 0.6, 1.0);
+                        return signal;
+                    }
+                    var pickedPair = Two(false);
+                    var hammeredPair = Two(true);
+                    float ringing = Peak(pickedPair, (int) (0.44 * SR), (int) (0.48 * SR));
+                    float stopped = Peak(pickedPair, (int) (0.495 * SR), (int) (0.4995 * SR));
+                    float carried = Peak(hammeredPair, (int) (0.495 * SR), (int) (0.4995 * SR));
+                    check(ringing > 0.02f && stopped < 0.02f * ringing,
+                        $"a picked note stops the one before it just ahead of the pick ({stopped / ringing:0.000} of it left)");
+                    check(carried > 0.2f * ringing, $"a hammer-on runs on from the note before ({carried / ringing:0.00} of it still sounding)");
+                }
+
+                // A held note stays on its pitch: no added wobble
+                {
+                    var one = new[] { new VoiceNote { Time = 0.1, Length = 2.6, LowFret = 1, FretCount = 1, Pitch = 62 } };
+                    var audio = GuitarVoiceSynth.Render(one, 3.2, GuitarVoiceTone.Rock, false, 0f, 0.1f, guitarBank);
+                    double hz = 440.0 * Math.Pow(2, (62 - 69) / 12.0);
+                    double lowest = 100, highest = -100;
+                    for (double t = 0.4; t < 2.3; t += 0.4)
+                    {
+                        double off = PitchOff(audio, 2, 0, (int) (t * SR), (int) (0.2 * SR), hz, SR);
+                        lowest = Math.Min(lowest, off);
+                        highest = Math.Max(highest, off);
+                    }
+                    check(highest - lowest <= 6 && Math.Abs(highest) <= 8 && Math.Abs(lowest) <= 8,
+                        $"a held note stays on its pitch ({lowest:+0;-0;0} to {highest:+0;-0;0} cents over two seconds)");
+                }
+
+                // The amplifier, note by note up the neck. What made the earlier sounds beep was a
+                // weak fundamental under a pile of overtones: a real amp gives a note its body
+                // first (the fundamental among its strongest parts) and bite second (the
+                // speaker's 2 to 5 kHz, a tenth to a third of the sound). Above 8 kHz a guitar
+                // speaker gives almost nothing.
                 foreach (var tone in new[] { GuitarVoiceTone.Rock, GuitarVoiceTone.Heavy })
                 {
-                    double bite = 0, fizz = 0;
+                    int[] neck = { 48, 50, 52, 55, 57, 59, 62, 64, 67, 69 };
                     const int TAKES = 4;
-                    var again = new VoiceNote[TAKES];
-                    for (int i = 0; i < TAKES; i++)
+                    double thinnest = 0, brightest = 0, fizziest = 0, biteAll = 0;
+                    int thinnestNote = 0, brightestNote = 0;
+                    foreach (int midi in neck)
                     {
-                        again[i] = new VoiceNote { Time = 0.1 + i * 2.0, Length = 1.5, LowFret = 1, FretCount = 1, Pitch = 45 };
+                        var again = new VoiceNote[TAKES];
+                        for (int i = 0; i < TAKES; i++)
+                        {
+                            again[i] = new VoiceNote { Time = 0.1 + i * 2.0, Length = 1.5, LowFret = 1, FretCount = 1, Pitch = midi };
+                        }
+                        var audio = GuitarVoiceSynth.Render(again, TAKES * 2.0, tone, false, 0f, 0.1f, guitarBank);
+                        double hz = 440.0 * Math.Pow(2, (midi - 69) / 12.0);
+                        double body = 0, bite = 0, fizz = 0;
+                        for (int i = 0; i < TAKES; i++)
+                        {
+                            int from = (int) ((0.2 + i * 2.0) * SR), to = (int) ((1.4 + i * 2.0) * SR);
+                            bite += BandShare(audio, from, to, 2000, 5000, SR) / TAKES;
+                            fizz += BandShare(audio, from, to, 8000, 20000, SR) / TAKES;
+                            // The fundamental against the strongest of the next five overtones
+                            var stretch = Windowed(audio, from, (int) (0.5 * SR));
+                            double fundamental = TonePower(stretch, hz, SR), strongest = 0;
+                            for (int h = 2; h <= 6; h++)
+                            {
+                                strongest = Math.Max(strongest, TonePower(stretch, hz * h, SR));
+                            }
+                            body += 10 * Math.Log10(fundamental / strongest) / TAKES;
+                        }
+                        if (body < thinnest)
+                        {
+                            thinnest = body;
+                            thinnestNote = midi;
+                        }
+                        if (bite > brightest)
+                        {
+                            brightest = bite;
+                            brightestNote = midi;
+                        }
+                        fizziest = Math.Max(fizziest, fizz);
+                        biteAll += bite / neck.Length;
                     }
-                    var audio = GuitarVoiceSynth.Render(again, TAKES * 2.0, tone, false, 0f, 0.1f, guitarBank);
-                    for (int i = 0; i < TAKES; i++)
-                    {
-                        int from = (int) ((0.2 + i * 2.0) * SR), to = (int) ((1.4 + i * 2.0) * SR);
-                        bite += BandShare(audio, from, to, 2000, 5000, SR) / TAKES;
-                        fizz += BandShare(audio, from, to, 8000, 20000, SR) / TAKES;
-                    }
-                    check(bite > 0.15 && bite < 0.7, $"{tone}: bite of a real amp, {100 * bite:0}% of the sound between 2 and 5 kHz");
-                    check(fizz < 0.01, $"{tone}: no fizz, {100 * fizz:0.00}% above 8 kHz");
+                    check(thinnest > -8,
+                        $"{tone}: every note has body (weakest fundamental {thinnest:+0.0;-0.0} dB against its strongest overtone, at note {thinnestNote}; the beeping sound was at -9 to -15)");
+                    check(brightest < 0.55 && biteAll > 0.08 && biteAll < 0.40,
+                        $"{tone}: bite without the beep ({100 * biteAll:0}% of the sound between 2 and 5 kHz on average, {100 * brightest:0}% at most, at note {brightestNote})");
+                    check(fizziest < 0.01, $"{tone}: no fizz, {100 * fizziest:0.00}% above 8 kHz at most");
                 }
 
                 // Overdrive holds a note up as it dies away; a clean amp lets it fall
@@ -717,7 +907,7 @@ namespace RemoteServerTests
                     && BitConverter.ToInt16(wav, 48) == -32767, "WAV file is well formed");
             }
 
-            // ---- A demo to listen to: the same riff in each of the three sounds, then on bass
+            // ---- A demo to listen to: the same four parts in each of the three sounds, then a bass
             if (!string.IsNullOrEmpty(outputFolder))
             {
                 Directory.CreateDirectory(outputFolder);
@@ -731,29 +921,32 @@ namespace RemoteServerTests
                         LowFret = 1, FretCount = frets, Soft = soft, Pitch = pitch,
                     });
                 }
-                // E minor: a picked run with hammer-ons, then a held note (listen for the vibrato)
-                Add(0, 0.5, 52); Add(0.5, 0.5, 55); Add(1, 0.5, 57, 1, true); Add(1.5, 0.5, 59);
-                Add(2, 0.5, 62); Add(2.5, 0.5, 59, 1, true); Add(3, 0.5, 57); Add(3.5, 0.5, 55, 1, true);
-                Add(4, 3, 64);
-                // the same note eight times (no two picks alike), then four quick ones higher up
-                for (int i = 0; i < 8; i++)
+                // 1. A riff of single notes on the low strings, every one picked
+                int[] low = { 45, 45, 48, 45, 50, 45, 48, 47, 45, 45, 48, 45, 52, 50, 48, 47 };
+                for (int i = 0; i < low.Length; i++)
                 {
-                    Add(8 + i * 0.5, 0.5, 52);
+                    Add(i * 0.5, 0.5, low[i]);
                 }
+                // 2. A tune in the middle of the neck, with hammer-ons and pull-offs, ending on a held note
+                Add(8, 0.5, 57); Add(8.5, 0.5, 59, 1, true); Add(9, 0.5, 60); Add(9.5, 0.5, 62, 1, true);
+                Add(10, 1, 64); Add(11, 0.5, 62); Add(11.5, 0.5, 60, 1, true);
+                Add(12, 0.5, 59); Add(12.5, 0.5, 57, 1, true); Add(13, 1, 55); Add(14, 2, 57);
+                // 3. Higher up: a run, the same note four times (no two picks alike), a long held note
+                Add(16, 0.5, 64); Add(16.5, 0.5, 67); Add(17, 0.5, 69); Add(17.5, 0.5, 71); Add(18, 1, 72);
                 for (int i = 0; i < 4; i++)
                 {
-                    Add(12 + i * 0.25, 0.25, 59);
+                    Add(19 + i * 0.25, 0.25, 69);
                 }
-                Add(13, 1, 64);
-                // power chords: held, then strummed quickly down and up
-                Add(14, 1.5, 40, 3); Add(15.5, 0.5, 40, 2); Add(16, 1.5, 43, 3); Add(17.5, 0.5, 43, 2);
+                Add(20, 0.5, 67); Add(20.5, 0.5, 64); Add(21, 3, 69);
+                // 4. Power chords: held, then strummed quickly down and up
+                Add(24, 1.5, 40, 3); Add(25.5, 0.5, 40, 2); Add(26, 1.5, 43, 3); Add(27.5, 0.5, 43, 2);
                 for (int i = 0; i < 6; i++)
                 {
-                    Add(18 + i * 0.25, 0.25, 45, 3);
+                    Add(28 + i * 0.25, 0.25, 45, 3);
                 }
-                Add(19.5, 0.5, 45, 2); Add(20, 2.5, 47, 3);
+                Add(29.5, 0.5, 45, 2); Add(30, 2.5, 47, 3);
                 var notes = riff.ToArray();
-                const double SECONDS = 13.5;
+                const double SECONDS = 18.0;
 
                 var all = new List<float>();
                 foreach (var tone in new[] { GuitarVoiceTone.Clean, GuitarVoiceTone.Rock, GuitarVoiceTone.Heavy })

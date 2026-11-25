@@ -18,6 +18,7 @@
     <Compile Include="../../overlay/Assets/Script/Audio/GuitarVoice/GuitarVoiceSynth.cs" Link="GuitarVoiceSynth.cs" />
     <Compile Include="../../overlay/Assets/Script/Audio/GuitarVoice/GuitarVoiceStrings.cs" Link="GuitarVoiceStrings.cs" />
     <Compile Include="../../overlay/Assets/Script/Audio/GuitarVoice/GuitarVoiceAmp.cs" Link="GuitarVoiceAmp.cs" />
+    <Compile Include="../../overlay/Assets/Script/Audio/GuitarVoice/GuitarVoiceCabinets.cs" Link="GuitarVoiceCabinets.cs" />
   </ItemGroup>
 
 </Project>

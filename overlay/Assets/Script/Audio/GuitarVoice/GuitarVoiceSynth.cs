@@ -5,9 +5,10 @@
 // The sound is made the way the real thing is made:
 //   - the notes are recordings of a real guitar's strings, taken straight from the instrument
 //     (GuitarVoiceStrings), played the way a hand plays them: hammer-ons without a pick click,
-//     strummed chords, a little finger vibrato on long notes, each note damped as the next begins;
-//   - all strings go through one amplifier, speaker cabinet and room (GuitarVoiceAmp), so chords
-//     growl like a real overdriven amp and the tone has a real speaker's shape.
+//     strummed chords, each note stopped as the pick lands for the next;
+//   - all strings go through one amplifier (GuitarVoiceAmp), a measured speaker cabinet
+//     (GuitarVoiceCabinets) and a room, so chords growl like a real overdriven amp and the tone
+//     has a real speaker's shape.
 
 using System;
 

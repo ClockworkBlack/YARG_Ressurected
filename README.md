@@ -385,13 +385,15 @@ Guitar Sound On Notes** to Clean, Rock or Heavy, and the game makes that track w
 3. **It plays the chart on a real electric guitar** (or bass, for a bass player). The notes are
    recordings of a real guitar and a real bass, taken straight from the instruments, every note
    several times over. They are played the way a hand plays them: the same note twice in a row is
-   a different take each time, hammer-ons use softly played takes with no hard pick attack,
-   chords are strummed across the strings, each note is damped as the next one starts, and long
-   notes get a little vibrato.
+   a different take each time, hammer-ons use softly played takes with no hard pick attack and
+   run on from the note before, a picked note stops the one before it as the pick lands, and
+   chords are strummed across the strings. Every take is balanced first so that the note itself,
+   not its overtones, carries the sound: a thin take through an amplifier is what makes a
+   guitar sound like a beep.
 4. **It puts that guitar through an amplifier**: valve stages that overdrive the way valves do,
-   a power stage, a speaker cabinet and a little room. The amplifier's tone was matched,
-   overtone by overtone, against recordings of real amplified guitars. Three sounds: **Clean**,
-   **Rock** (overdrive) and **Heavy** (high gain).
+   a power stage, then a real speaker cabinet (measurements of a Marshall 4x12 with Greenback
+   speakers, and of a 4x12 with a Vintage 30, each with a microphone in front) and a little room.
+   Three sounds: **Clean**, **Rock** (overdrive) and **Heavy** (high gain).
 
 The result is added to the song as its guitar (or bass) track, so the game treats it like the
 real thing: it sounds exactly on the notes whatever your audio delay (including Bluetooth),
@@ -411,8 +413,9 @@ at any speed. A wrong strum still makes the game's own "clunk".
   log says so.
 
 The guitar is FreePats' *Electric Guitar FSBS (direct)*, a Fender recorded from its output jack;
-the bass is Karoryfer Samples' *Growlybass*, a Squier Jazz Bass played hard. Both are public
-domain (CC0). How the note files are made from them is in
+the bass is Karoryfer Samples' *Growlybass*, a Squier Jazz Bass played hard; the speaker cabinets
+were measured by Jester Dyne Productions. All are public domain (CC0). How the note files and
+the cabinets are made from them, and how the sound was tuned, is in
 [tools/string-bank](tools/string-bank/README.md).
 
 ## Song Setup: speed, key, a section of the song, freestyle
@@ -498,4 +501,7 @@ YARG is LGPL-3.0, and these patches use the same license. Android groundwork by 
 The recorded guitar and bass notes (`overlay/Assets/StreamingAssets/guitar-voice`) are made from
 public-domain (CC0 1.0) recordings: [Electric Guitar FSBS (direct)](https://freepats.zenvoid.org/ElectricGuitar/clean-electric-guitar.html)
 from the FreePats project, and [Growlybass](https://shop.karoryfer.com/pages/free-growlybass) by Karoryfer Samples.
-Thank you to both.
+The speaker cabinets the guitar amplifier plays through (`GuitarVoiceCabinets.cs`) are from the
+public-domain (CC0 1.0) *Emerald Pack* and *Brutal Pack* cabinet measurements by
+[Jester Dyne Productions](https://www.jester-dyne-productions.com/) (Bastian Karschewski).
+Thank you to all three.
