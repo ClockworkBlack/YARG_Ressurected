@@ -130,6 +130,20 @@ Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pau
 Any button can be remapped in the profile's binding menu. For a guitar controller, pick
 **CRKD Guitar** or **Other guitar** instead of Gamepad.
 
+### Controller extras (build 41)
+
+- **Profiles screen on a controller**: up/down moves through the profiles, **Cross** opens a list
+  for the lit-up profile (Connect, Add Device, Remove Device, note speed, lefty flip, move, more
+  settings, Disconnect), **Triangle** adds a profile.
+- **Add a controller, a mic or another player after picking a song**: the screen where you choose
+  instrument and difficulty has **Add Controller or Mic** and **Add Another Player**.
+- **R2 / L2** skip to the next / previous menu song wherever the music player shows (main menu,
+  settings, profiles). The menu song keeps its place when you go into the song list or a dialog
+  and carries on when you come back, instead of starting a new one.
+- **Square** in the song list adds the song under the cursor to **Favorites** (again to remove).
+  The first time, the menu music switches to your Favorites (change it in Settings > Sound > Menu
+  Music Source). **Filters** moved into **More Options**.
+
 ## Venues and crowd
 
 Songs are played in a venue, with a crowd in front of the stage dancing in time with the music.

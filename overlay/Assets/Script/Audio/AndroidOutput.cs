@@ -119,6 +119,13 @@ namespace YARG.Audio
         private static volatile bool _lost;
         private static byte[] _zeros = new byte[1 << 16];
         private static int _adjusted;
+        private static int _rate;
+        private static long _lastRead;
+        private static long _stalled;
+        private static string _lostReason = "";
+        private static int _restarts;
+        private static float _restartWindow;
+        private static float _retryAfter;
 
         private sealed class Poller : MonoBehaviour
         {
@@ -228,9 +235,39 @@ namespace YARG.Audio
                 return;
             }
 
+            // The sound library's device was restarted: the hook into its final mix went with it
+            if (_deviceStream != 0 && !Bass.ChannelGetInfo(_deviceStream, out _))
+            {
+                YargLogger.LogInfo("Sound output: the final-mix stream is gone, attaching again");
+                _deviceStream = 0;
+                _dspSet = false;
+                Stop();
+            }
+
             if (_active && !_lost && _streamDevice == id) return;
 
+            if (_lost)
+            {
+                // Android stops or stalls a stream when something else changes (a microphone starting
+                // to record, a device plugged in): open it again, but not in a tight loop
+                YargLogger.LogInfo("Sound output: stream lost (" + _lostReason + "), opening it again");
+                float now = Time.unscaledTime;
+                if (now - _restartWindow > 20f)
+                {
+                    _restartWindow = now;
+                    _restarts = 0;
+                }
+                if (++_restarts > 6) _retryAfter = now + 10f;
+            }
+
             Stop();
+            _lost = false;
+            if (Time.unscaledTime < _retryAfter)
+            {
+                Report(Status.Failed, id, "The sound keeps dropping out on " + name + ", so it plays where Android sends it for now.", true);
+                return;
+            }
+
             if (Start(id))
             {
                 Report(Status.Redirected, id, "Sound: " + name);
@@ -322,6 +359,9 @@ namespace YARG.Audio
                 _high = target + target / 2;
                 _lost = false;
                 _adjusted = 0;
+                _rate = rate;
+                _lastRead = -1;
+                _stalled = 0;
                 _active = true;
             }
 
@@ -371,7 +411,23 @@ namespace YARG.Audio
 
                 // The two outputs run on separate clocks; drop or repeat a single frame now and then
                 // so the waiting sound neither piles up nor runs out
-                long waiting = AAudioStream_getFramesWritten(_stream) - AAudioStream_getFramesRead(_stream);
+                long read = AAudioStream_getFramesRead(_stream);
+                if (read != _lastRead)
+                {
+                    _lastRead = read;
+                    _stalled = 0;
+                }
+                else if ((_stalled += frames) > _rate * 3 / 10)
+                {
+                    // Nothing has been played for a third of a second: the output has stopped taking
+                    // sound without saying so. Leave the sound on the usual output and reopen.
+                    _lostReason = "stalled";
+                    _lost = true;
+                    _active = false;
+                    return;
+                }
+
+                long waiting = AAudioStream_getFramesWritten(_stream) - read;
                 IntPtr from = buffer;
                 int count = frames;
                 if (waiting > _high && count > 1)
@@ -390,6 +446,7 @@ namespace YARG.Audio
                 if (written < 0)
                 {
                     // The output went away: leave this block (and the rest) on the usual output
+                    _lostReason = "error " + written;
                     _lost = true;
                     _active = false;
                     return;
