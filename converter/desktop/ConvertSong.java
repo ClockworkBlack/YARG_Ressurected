@@ -66,6 +66,13 @@ public final class ConvertSong {
         meta.genre = a.getOrDefault("genre", "");
         // What was not given: from the file's own tags, then its name ("Artist - Title (Official Video)")
         Map<String, String> tags = tags(audio);
+        // Tags that say nothing: an album named like the video, a genre of "Music"
+        String tagTitle = tags.getOrDefault("title", "");
+        if (tags.getOrDefault("album", "").equalsIgnoreCase(tagTitle)) tags.remove("album");
+        if (tags.getOrDefault("genre", "").matches("(?i)\\s*(music|other|unknown|genre|none)?\\s*")) tags.remove("genre");
+        // "(A vs. B)" in a title: a battle or a duet, both are artists
+        java.util.regex.Matcher vs = java.util.regex.Pattern.compile("(?i)[(\\[]\\s*([^()\\[\\]]+?)\\s+vs\\.?\\s+([^()\\[\\]]+?)\\s*[)\\]]").matcher(tagTitle);
+        String versus = vs.find() ? vs.group(1).trim() + " & " + vs.group(2).trim() : null;
         if (meta.title.isEmpty()) meta.title = tags.getOrDefault("title", "");
         if (meta.artist.isEmpty()) meta.artist = tags.getOrDefault("artist", "");
         if (meta.album.isEmpty()) meta.album = tags.getOrDefault("album", "");
@@ -91,6 +98,13 @@ public final class ConvertSong {
                 meta.artist = meta.artist.isEmpty() ? guest : meta.artist + " & " + guest;
             }
         }
+        if (versus != null && !a.containsKey("artist")) {
+            for (String name : versus.split(" & ")) {
+                if (!meta.artist.toLowerCase(Locale.US).contains(name.toLowerCase(Locale.US))) {
+                    meta.artist = meta.artist.isEmpty() ? name : meta.artist + " & " + name;
+                }
+            }
+        }
         meta.title = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title).isEmpty() ? meta.title
                 : com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title);
         if (a.containsKey("find-details")) {
@@ -105,6 +119,9 @@ public final class ConvertSong {
         }
         meta.singers = Lrc.artists(meta.artist, meta.title).toArray(new String[0]);
         log("Song: \"" + meta.title + "\" by " + meta.artist + " (" + meta.album + ", " + meta.year + ", " + meta.genre + ")");
+        // What a speech-to-text model is told to expect, if it is needed
+        log("Hint: " + meta.title + ", a " + (meta.genre.isEmpty() ? "" : meta.genre.toLowerCase(Locale.US) + " ") + "song by "
+                + meta.artist.replace(" & ", " and ") + ".");
 
         GuitarCharter.Options options = new GuitarCharter.Options();
         options.threshold = notes.equals("fewer") ? 1.5 : notes.equals("more") ? 0.65 : 1.0;
