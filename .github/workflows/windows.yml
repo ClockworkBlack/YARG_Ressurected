@@ -135,11 +135,12 @@ jobs:
           exe="$(find build "$PROJECT_DIR/build" -name 'YARG.exe' 2>/dev/null | head -n1)"
           if [ -z "$exe" ]; then echo "::error::No YARG.exe produced"; exit 1; fi
           dir="$(dirname "$exe")"
-          sudo chown -R "$(id -u):$(id -g)" "$dir"
+          # Unity ran in a container as root, so the build folder (and its parent) belong to root
+          sudo chown -R "$(id -u):$(id -g)" "$(dirname "$dir")"
           # Debug symbols and the burst debug folder aren't needed to play
           rm -rf "$dir"/*_BurstDebugInformation_DoNotShip "$dir"/*_BackUpThisFolder_ButDontShipItWithYourGame
           name="YARG-Resurrected-Windows-${{ github.run_number }}"
-          mv "$dir" "$name"
+          cp -r "$dir" "$name"
           zip -qr "$name.zip" "$name"
           echo "file=$name.zip" >> "$GITHUB_OUTPUT"
 
