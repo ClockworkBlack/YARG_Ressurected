@@ -74,7 +74,9 @@ until its timed lyrics turn up: as tagged; with the title tidied (no "(Official 
 "[Lyrics]", "(feat. X)", "- Remastered 2011", track number or file ending); with only the main
 artist; as free text; by title alone; and from the file name ("Artist - Title.mp3", either way
 round). Each result has to have the same title, and the same artist or the same length, so a
-different song that shares the name is not taken. If nothing is found, check the Title and
+different song that shares the name is not taken. When no timed lyrics exist, the words alone
+are looked for (in LRCLIB, then in Lyrics.ovh) so they can be timed with **Tap to sync**; the
+status line says where they came from. If nothing is found, check the Title and
 Artist boxes: they are what is searched for.
 
 ## Two artists, worked out for you

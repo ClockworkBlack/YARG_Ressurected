@@ -27,6 +27,8 @@ final class LrcLib {
         /** Length of the recording the lyrics were timed against, in seconds (0 if unknown). */
         double duration;
         boolean instrumental;
+        /** Which catalogue it came from, for the user. */
+        String source = "LRCLIB";
     }
 
     private static final String BASE = "https://lrclib.net/api/";
@@ -120,10 +122,48 @@ final class LrcLib {
             throw new IOException("The lyrics service sent an unexpected reply.", e);
         }
         if (best != null) return best;
+        if (bestPlain != null && bestPlain.plain != null) return bestPlain;
+        // No timed lyrics anywhere, and no plain ones in LRCLIB: a second catalogue for the words
+        // themselves (untimed; they can then be tapped in time)
+        Found words = fromLyricsOvh(queries);
+        if (words != null) return words;
         if (bestPlain != null) return bestPlain;
         // Nothing found and the service could not be reached at all: say so
         if (failure != null) throw failure;
         return null;
+    }
+
+    /**
+     * Lyrics.ovh (api.lyrics.ovh), a free catalogue of plain lyrics. It has no times, so what it
+     * finds still has to be tapped in time; it needs both an artist and a title.
+     */
+    private static Found fromLyricsOvh(java.util.List<SongNames.Query> queries) {
+        int tried = 0;
+        for (SongNames.Query q : queries) {
+            if (q.artist.isEmpty() || tried >= 3) continue;
+            tried++;
+            try {
+                String body = get("https://api.lyrics.ovh/v1/" + path(q.artist) + "/" + path(q.title));
+                if (body == null) continue;
+                String text = new JSONObject(body).optString("lyrics", "").replace("\r\n", "\n").trim();
+                // The service starts some lyrics with a line in French naming the song
+                text = text.replaceFirst("^Paroles de la chanson [^\n]*\n", "").trim();
+                if (text.length() < 40) continue;
+                Found f = new Found();
+                f.plain = text;
+                f.title = q.title;
+                f.artist = q.artist;
+                f.source = "Lyrics.ovh";
+                return f;
+            } catch (IOException | JSONException e) {
+                // This catalogue is a bonus: any trouble with it just means "not found"
+            }
+        }
+        return null;
+    }
+
+    private static String path(String s) throws IOException {
+        return URLEncoder.encode(s.trim(), "UTF-8").replace("+", "%20");
     }
 
     private static Found parse(JSONObject o) {

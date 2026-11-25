@@ -948,7 +948,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                             if (singerNames == null && names.size() >= 2) singerNames = names.toArray(new String[0]);
                             String lyricsText = markedLyrics(f, java.util.Arrays.asList(singers()));
                             lyricsBox.setText(lyricsText);
-                            String note = "Found timed lyrics for \"" + f.title + "\" by " + f.artist + ".";
+                            String note = "Found timed lyrics for \"" + f.title + "\" by " + f.artist + " (" + f.source + ").";
                             if (hasMarks(lyricsText)) {
                                 note += " The lyrics say who sings what (" + singers()[0] + " / " + singers()[1] + "): check it with \"Choose who sings what\".";
                             } else if (names.size() >= 2) {
@@ -961,7 +961,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                             describeLyrics(note);
                         } else if (f.plain != null) {
                             lyricsBox.setText(f.plain);
-                            describeLyrics("Found lyrics without times.");
+                            describeLyrics("Found the words on " + f.source + ", but no times for them anywhere. Press \"Tap to sync\" to time them.");
                         } else {
                             lyricsStatus.setText("This song is listed as instrumental (no lyrics).");
                         }
