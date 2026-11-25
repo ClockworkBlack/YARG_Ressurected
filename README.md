@@ -197,6 +197,13 @@ The menus play songs from your library in the background. You choose what plays:
 If the playlist is empty, deleted, or none of its songs are in the library, the whole library
 plays instead.
 
+## Lyrics fill as they are sung
+
+The lyric bar at the top no longer turns a whole word blue the moment it starts. The blue fills
+through the letters as the word is sung: over the length of its note in the vocals part, so a
+held note fills slowly, a quick word quickly, and the letter the fill is passing through is part
+blue, part white. Charts without a vocals part fill each word until the next one starts.
+
 ## Lyrics and names in any language
 
 The game's own fonts cover Latin letters and Japanese. For everything else (Korean, Chinese, Thai,
