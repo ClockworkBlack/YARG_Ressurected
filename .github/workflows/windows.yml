@@ -8,7 +8,8 @@ on:
         default: "9bebad16e63cde7022a1fb7b261b541c1fae5361"
         required: true
   push:
-    branches: [main]
+    # Windows work branch too, so it builds before the workflow is on main
+    branches: [main, ccr-cb2b20e6-xf3265]
     paths:
       - "patches/**"
       - "patches-core/**"

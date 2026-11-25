@@ -8,6 +8,7 @@ A Windows (64-bit) build of the same game as the Android APK: YARG v0.15.0 (thro
 - **Menu music**: startup song, playlists, shuffle
 - **Gamepad layouts**: PS5 / PS4 (default), Xbox, Switch, Japanese PlayStation, with button names in the help bar
 - **Phones as guitars and mics** over Wi-Fi (the PHONES bar on the main menu)
+- **Venues and crowd**, vocal parts and sing-off, sound output choice, fret button hints
 - Song start errors shown in a dialog, and an error log you can find (see below)
 
 The game is built from the same `patches/`, `patches-core/` and `overlay/` as the Android version,
