@@ -1,0 +1,237 @@
+name: Build Linux (and Chromebook)
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "putudarma/YARG-DROID commit to build on (keep the same as the Android build)"
+        default: "9bebad16e63cde7022a1fb7b261b541c1fae5361"
+        required: true
+  push:
+    # Desktop work branch too, so it builds before the workflow is on main
+    branches: [main, ccr-cb2b20e6-xf3265]
+    paths:
+      - "patches/**"
+      - "patches-core/**"
+      - "overlay/**"
+      - "linux/**"
+      - "tests/**"
+      - ".github/workflows/linux.yml"
+
+permissions:
+  contents: write
+
+env:
+  # Same game as the Android build: YARG-DROID (YARG v0.15.0) + this repo's patches and overlay.
+  # linux/prepare-project.sh adds back the Linux BASS and Discord libraries from official YARG v0.15.0.
+  UPSTREAM_REPO: putudarma/YARG-DROID
+  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || '9bebad16e63cde7022a1fb7b261b541c1fae5361' }}
+  PROJECT_DIR: project
+
+jobs:
+  tests:
+    name: Automated tests (phone remote, guitar sound, play-test song)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Make a test certificate
+        run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
+      - name: Run tests
+        run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes" "$RUNNER_TEMP/demo"
+      - name: Check the play-test song with the game's own song scanner
+        run: |
+          git init "$RUNNER_TEMP/up"
+          git -C "$RUNNER_TEMP/up" remote add origin "https://github.com/$UPSTREAM_REPO"
+          GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" fetch -q --depth 1 origin "$UPSTREAM_REF"
+          GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" checkout -q FETCH_HEAD
+          GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" submodule update -q --init --depth 1 YARG.Core
+          for p in patches-core/*.patch; do git -C "$RUNNER_TEMP/up/YARG.Core" apply --whitespace=nowarn "$GITHUB_WORKSPACE/$p"; done
+          dotnet run --project tests/SmokeSongCheck -c Release -p:YargCore="$RUNNER_TEMP/up/YARG.Core" \
+            -- "tests/smoke-song/Smoke Test - YARG Resurrected"
+
+  linux:
+    name: Unity Linux x86_64 build
+    needs: [tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - uses: actions/checkout@v4
+
+      - name: Check Unity secrets
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$UNITY_LICENSE" ] && missing="$missing UNITY_LICENSE"
+          [ -z "$UNITY_EMAIL" ] && missing="$missing UNITY_EMAIL"
+          [ -z "$UNITY_PASSWORD" ] && missing="$missing UNITY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. See README.md > Setup."
+            exit 1
+          fi
+
+      - name: Get YARG source + submodules (LFS pulled separately so it can be cached)
+        run: |
+          git init "$PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          git remote add origin "https://github.com/$UPSTREAM_REPO"
+          GIT_LFS_SKIP_SMUDGE=1 git fetch --depth 1 origin "$UPSTREAM_REF"
+          GIT_LFS_SKIP_SMUDGE=1 git checkout FETCH_HEAD
+          GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --depth 1
+
+      - name: Restore LFS cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/.git/lfs
+          key: yarg-lfs-${{ env.UPSTREAM_REF }}
+          restore-keys: yarg-lfs-
+
+      - name: Pull LFS assets
+        run: |
+          cd "$PROJECT_DIR"
+          git lfs install --local
+          git lfs pull
+
+      - name: Apply patches, overlay and Linux libraries
+        run: bash linux/prepare-project.sh "$PROJECT_DIR"
+
+      - name: Restore NuGet packages
+        run: |
+          dotnet tool install --global NuGetForUnity.Cli
+          nugetforunity restore "$PROJECT_DIR"
+
+      - name: Restore Unity Library cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/Library
+          key: yarg-library-linux-${{ env.UPSTREAM_REF }}-${{ hashFiles('patches/**', 'overlay/**', 'linux/**') }}
+          restore-keys: |
+            yarg-library-linux-${{ env.UPSTREAM_REF }}-
+            yarg-library-linux-
+
+      - name: Build with Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ env.PROJECT_DIR }}
+          targetPlatform: StandaloneLinux64
+          buildMethod: YARG.Editor.Linux.YargLinuxBuild.Build
+          buildName: YARG
+          versioning: None
+          allowDirtyBuild: true
+
+      - name: Package the game
+        id: zip
+        run: |
+          exe="$(find build "$PROJECT_DIR/build" -maxdepth 3 -name 'YARG.x86_64' -type f 2>/dev/null | head -n1)"
+          if [ -z "$exe" ]; then echo "::error::No YARG.x86_64 produced"; exit 1; fi
+          dir="$(dirname "$exe")"
+          # Unity ran in a container as root, so the build folder belongs to root
+          sudo chown -R "$(id -u):$(id -g)" "$(dirname "$dir")"
+          rm -rf "$dir"/*_BurstDebugInformation_DoNotShip "$dir"/*_BackUpThisFolder_ButDontShipItWithYourGame
+          name="YARG-Resurrected-Linux-${{ github.run_number }}"
+          mkdir -p pkg/YARG-Resurrected
+          cp -a "$dir"/. pkg/YARG-Resurrected/
+          cp linux/install.sh pkg/YARG-Resurrected/install.sh
+          cp linux/README.md pkg/YARG-Resurrected/README.md
+          if [ -f "$PROJECT_DIR/Assets/Art/UI/AndroidAppIcon.png" ]; then
+            cp "$PROJECT_DIR/Assets/Art/UI/AndroidAppIcon.png" pkg/YARG-Resurrected/icon.png
+          fi
+          chmod +x pkg/YARG-Resurrected/YARG.x86_64 pkg/YARG-Resurrected/install.sh
+          # tar.gz keeps the "executable" flag, which zip files often lose
+          tar -czf "$name.tar.gz" -C pkg YARG-Resurrected
+          echo "file=$name.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          retention-days: 14
+          name: YARG-Resurrected-linux
+          path: ${{ steps.zip.outputs.file }}
+
+  play-test:
+    name: Play test on Linux (installed with install.sh)
+    needs: [linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: YARG-Resurrected-linux
+          path: dist
+      - name: Virtual sound card (the song only moves on while its audio plays)
+        uses: LABSN/sound-ci-helpers@v1
+      - name: Unpack the game
+        run: |
+          # Software OpenGL for the virtual screen, and ALSA -> PulseAudio for the game's sound
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libasound2-plugins >/dev/null
+          cd "$RUNNER_TEMP"
+          tar xzf "$GITHUB_WORKSPACE/dist/"*.tar.gz
+          # Install the way the Chromebook guide says, then test the installed copy
+          bash YARG-Resurrected/install.sh
+          test -f "$HOME/.local/share/applications/yarg-resurrected.desktop"
+          echo "GAME=$HOME/.local/share/YARG-Resurrected/YARG.x86_64" >> "$GITHUB_ENV"
+      - name: Start the game, play the test song with a bot, check the result
+        run: bash tests/desktop-play-test.sh "$GAME" "$RUNNER_TEMP/play-test"
+      - name: Keep the logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: play-test-linux
+          path: ${{ runner.temp }}/play-test
+          if-no-files-found: warn
+
+  release:
+    name: Publish (only after the play test passed)
+    needs: [linux, play-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: YARG-Resurrected-linux
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: play-test-linux
+          path: play-test
+      - name: Publish as a GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: linux-build-${{ github.run_number }}
+          name: YARG Resurrected for Linux and Chromebook, build ${{ github.run_number }}
+          prerelease: true
+          files: |
+            dist/*
+            play-test/menu.png
+            play-test/gameplay.png
+          body: |
+            Play-tested on a GitHub Linux machine before publishing: the game started, reached the menu,
+            scanned a test song and played it with a bot (screenshots attached).
+            Linux (x86_64) build of YARG Resurrected (upstream `${{ env.UPSTREAM_REF }}`), with the same
+            features as the Android, Windows and Mac builds. Also runs on Intel/AMD Chromebooks in the
+            Linux development environment.
+            Install: put the .tar.gz in "Linux files", open Terminal and run
+            `tar xzf YARG-Resurrected-Linux-${{ github.run_number }}.tar.gz && bash YARG-Resurrected/install.sh`.
+            Step-by-step Chromebook instructions: linux/README.md.
