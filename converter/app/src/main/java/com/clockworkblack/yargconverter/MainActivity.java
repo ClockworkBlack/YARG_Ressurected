@@ -82,6 +82,18 @@ public final class MainActivity extends Activity implements ConversionService.Li
         SongMeta meta = new SongMeta();
         double seconds;
         boolean read;
+        /** How this song is converted: MODE_NORMAL, MODE_SPLIT or MODE_RNB. */
+        int mode = MODE_NORMAL;
+    }
+
+    private static String modeName(int mode) {
+        return mode == MODE_RNB ? "R&B" : mode == MODE_SPLIT ? "Split" : "Normal";
+    }
+
+    /** The next way of converting for a song in the list: Normal, Split, R&B, and round again. */
+    private int nextMode(int mode) {
+        if (!ModelStore.installed(this)) return MODE_NORMAL;
+        return mode == MODE_NORMAL ? MODE_SPLIT : mode == MODE_SPLIT ? MODE_RNB : MODE_NORMAL;
     }
 
     private final List<Queued> batch = new ArrayList<>();
@@ -1110,6 +1122,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
             }
             Queued q = new Queued();
             q.uri = uri;
+            // Starts as the way chosen above; tap its button in the list to change it for this song
+            q.mode = modeGroup.getCheckedRadioButtonId();
             q.fileName = displayName(uri);
             q.meta.title = q.fileName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
             batch.add(q);
@@ -1197,6 +1211,19 @@ public final class MainActivity extends Activity implements ConversionService.Li
             t.setText((i + 1) + ". " + who + q.meta.titleOrDefault() + len + (q.read ? "" : "  (reading…)"));
             t.setPadding(0, dp(6), dp(8), dp(6));
             r.addView(t, weighted());
+            final Button way = button(modeName(q.mode), new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    if (!ModelStore.installed(MainActivity.this)) {
+                        message("Normal only for now", "Split and R&B mode need the separation model. Download it in step 3 first.");
+                        return;
+                    }
+                    q.mode = nextMode(q.mode);
+                    ((Button) v).setText(modeName(q.mode));
+                }
+            });
+            r.addView(way, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
             Button remove = button("Remove", new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -1214,6 +1241,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
         batchClearButton.setEnabled(!busy && !batch.isEmpty());
     }
 
+    /** The way a song was really converted: Split and R&B fall back to Normal without the model. */
+    private static int useStemsNote(Queued q, boolean model) {
+        return model ? q.mode : MODE_NORMAL;
+    }
+
     private void onBatchPressed() {
         if (busy || batch.isEmpty()) return;
         if (!hasStorageAccess()) {
@@ -1224,10 +1256,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
         final GuitarCharter.Options options = new GuitarCharter.Options();
         int choice = densityGroup.getCheckedRadioButtonId();
         options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
-        int mode = modeGroup.getCheckedRadioButtonId();
-        final boolean useStems = mode != MODE_NORMAL && ModelStore.installed(this);
-        final boolean guessSingers = useStems && guessCheck.isChecked();
-        final boolean rnb = useStems && mode == MODE_RNB;
+        final boolean model = ModelStore.installed(this);
+        final boolean guessWanted = guessCheck.isChecked();
         final boolean findLyrics = batchLyricsCheck.isChecked();
 
         setBusy(true);
@@ -1269,9 +1299,14 @@ public final class MainActivity extends Activity implements ConversionService.Li
                                 lyricsNote = "lyrics lookup failed";
                             }
                         }
+                        // Each song its own way: Normal, Split or R&B, as set in the list
+                        boolean useStems = q.mode != MODE_NORMAL && model;
+                        boolean rnb = useStems && q.mode == MODE_RNB;
+                        boolean guessSingers = useStems && guessWanted;
                         runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, options.copy(), useStems, guessSingers, rnb);
                         ok++;
-                        done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(lyricsNote).append(")\n");
+                        done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(modeName(useStemsNote(q, model)))
+                                .append(", ").append(lyricsNote).append(")\n");
                     } catch (IOException e) {
                         notDone.add(q);
                         failed.append("  ").append(i + 1).append(". ").append(name).append(": ").append(e.getMessage()).append('\n');

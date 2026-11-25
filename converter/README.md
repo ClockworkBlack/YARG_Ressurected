@@ -66,12 +66,15 @@ the one-time download of the instrument-separation model.
 Under **Several songs at once**, press **Choose files (up to 33)** and pick as many songs as you
 like in the file picker (long-press the first, then tap the others). They are listed with the
 title and artist from each file's tags, or from a file name like `Artist - Title.mp3`; take any
-out with **Remove**. With **Find lyrics online for each song** ticked (the default), each song
+out with **Remove**. Each song also has a button with its way of converting: it starts as the
+one chosen in step 3, and tapping it goes **Normal > Split > R&B** and round again, so ballads
+can go through R&B mode and the rest Normal or Split in the same list (Split and R&B need the
+separation model). With **Find lyrics online for each song** ticked (the default), each song
 is looked up on LRCLIB by its title, artist and length, and gets a vocals part when timed lyrics
 are found there.
 
-**Convert all** converts them one after another with the mode and number of notes chosen in
-step 3, in the background with a notification ("Song 7 of 33: ..."). A song that fails does not
+**Convert all** converts them one after another, each its own way, with the number of notes
+chosen in step 3, in the background with a notification ("Song 7 of 33: ..."). A song that fails does not
 stop the rest. At the end a summary lists which songs were converted (and whether lyrics were
 found) and which were not, and why; those stay in the list to try again. Then scan songs in YARG
 once for all of them.
