@@ -42,6 +42,9 @@ import java.util.Map;
  * until that lyrics file exists (made from the voice, for instance) and uses it.
  */
 public final class ConvertSong {
+    /** Processor threads for the models: all of them, or a share when several songs run at once (--threads). */
+    private static int THREADS = Runtime.getRuntime().availableProcessors();
+
     public static void main(String[] args) throws Exception {
         Map<String, String> a = new HashMap<>();
         for (int i = 0; i < args.length; i++) {
@@ -57,6 +60,7 @@ public final class ConvertSong {
         String notes = a.getOrDefault("notes", "standard").toLowerCase(Locale.US);
 
         if (a.containsKey("gpu")) System.setProperty("yarg.cuda", "1");
+        if (a.containsKey("threads")) THREADS = Math.max(1, Integer.parseInt(a.get("threads")));
 
         SongMeta meta = new SongMeta();
         meta.title = a.getOrDefault("title", "");
@@ -326,7 +330,7 @@ public final class ConvertSong {
 
         log("Splitting into instruments…");
         final long started = System.currentTimeMillis();
-        try (OrtStemModel model = new OrtStemModel(modelPath, Runtime.getRuntime().availableProcessors());
+        try (OrtStemModel model = new OrtStemModel(modelPath, THREADS);
              InputStream in = new BufferedInputStream(Files.newInputStream(pcm.toPath()), 1 << 16)) {
             final byte[] bytes = new byte[1 << 16];
             StemSplitter.Source source = (left, right, offset, length) -> {
@@ -405,7 +409,7 @@ public final class ConvertSong {
         if (wordsModel != null) {
             log("Hearing the words in the voice…");
             try (com.clockworkblack.yargconverter.stems.OrtWordModel words =
-                         new com.clockworkblack.yargconverter.stems.OrtWordModel(wordsModel, Runtime.getRuntime().availableProcessors())) {
+                         new com.clockworkblack.yargconverter.stems.OrtWordModel(wordsModel, THREADS)) {
                 out.letters = words.letters(voice16k[0], voice16kLength[0], null);
             }
         }

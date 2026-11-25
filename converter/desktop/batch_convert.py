@@ -6,13 +6,17 @@
   - every song's lyrics timed word by word against the voice and checked against its repeats.
 
     python batch_convert.py <songs folder> <output folder> [--mode split|rnb|normal] [--notes more|standard|fewer]
-                            [--gpu] [--jobs N]
+                            [--gpu] [--jobs N|auto]
+
+--jobs converts several songs at once (auto: as many as the machine's memory and processors allow,
+at most 4). Speech-to-text runs for one song at a time, so the GPU never holds more than one copy.
 
 An optional songs.csv in the songs folder gives, per file: file,mode,notes,title,artist,album,year,genre
 (any column may be empty; mode and notes default to the command line's).
 Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv.
 """
-import argparse, csv, json, os, subprocess, sys, time
+import argparse, csv, json, os, subprocess, sys, threading, time
+from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 AUDIO = (".mp3", ".wav", ".ogg", ".opus", ".flac", ".m4a", ".aac", ".wma", ".webm")
@@ -27,6 +31,7 @@ def main():
     ap.add_argument("--stems-model", default=os.environ.get("YARG_STEMS", "htdemucs_6s.onnx"))
     ap.add_argument("--words-model", default=os.environ.get("YARG_WORDS", "wav2vec2-base-960h.onnx"))
     ap.add_argument("--whisper", default="large-v3")
+    ap.add_argument("--jobs", default="auto")
     args = ap.parse_args()
 
     plan = {}
@@ -40,24 +45,35 @@ def main():
     out_songs = os.path.join(args.out, "Converted")
     work = os.path.join(args.out, ".work")
     os.makedirs(out_songs, exist_ok=True); os.makedirs(work, exist_ok=True)
-    report = []
-    whisper = None
-    for n, name in enumerate(files, 1):
+
+    jobs = auto_jobs() if args.jobs == "auto" else max(1, int(args.jobs))
+    heap = heap_for(jobs)
+    print("%d songs, %d at a time" % (len(files), jobs), flush=True)
+    whisper_lock = threading.Lock()
+    print_lock = threading.Lock()
+    total = len(files)
+
+    def say(text):
+        with print_lock:
+            print(text, flush=True)
+
+    def convert(n, name):
         p = plan.get(name, {})
         mode = p.get("mode") or args.mode
         notes = p.get("notes") or args.notes
+        tag = "[%d/%d]" % (n, total)
         base = os.path.join(work, "%03d" % n)
         for ext in (".vocals.wav", ".lrc", ".lrc.needed", ".json", ".log"):
             if os.path.exists(base + ext): os.remove(base + ext)
-        cmd = ["java", "-Xmx6g"] + (["-Dyarg.cuda=1"] if args.gpu else []) + ["-cp", args.classpath, "ConvertSong",
+        cmd = ["java", "-Xmx%dm" % heap] + (["-Dyarg.cuda=1"] if args.gpu else []) + ["-cp", args.classpath, "ConvertSong",
                "--audio", os.path.join(args.songs, name), "--out", out_songs, "--mode", mode, "--notes", notes,
                "--model", args.stems_model, "--words-model", args.words_model, "--find-details", "--find-lyrics",
-               "--two-singers", "--summary", base + ".json"]
+               "--two-singers", "--summary", base + ".json", "--threads", str(max(1, (os.cpu_count() or 2) // jobs))]
         for key in ("title", "artist", "album", "year", "genre"):
             if p.get(key): cmd += ["--" + key, p[key]]
         if mode != "normal":
             cmd += ["--vocals-out", base + ".vocals.wav", "--wait-for-lyrics", base + ".lrc"]
-        print("[%d/%d] %s (%s, %s notes)" % (n, len(files), name, mode, notes), flush=True)
+        say("%s %s (%s, %s notes)" % (tag, name, mode, notes))
         started = time.time()
         with open(base + ".log", "w") as log:
             proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
@@ -68,13 +84,14 @@ def main():
                     song = None
                     for line in open(base + ".log", encoding="utf-8", errors="replace"):
                         if line.startswith("Hint: "): song = line[6:].strip()
-                    print("    no lyrics online: writing them from the voice", flush=True)
                     env = dict(os.environ, NOVAD="1", DEVICE="cuda" if args.gpu else "cpu")
                     if song: env["HINT"] = song
-                    r = subprocess.run([sys.executable, os.path.join(HERE, "transcribe_lyrics.py"), base + ".vocals.wav",
-                                        base + ".lrc.tmp", args.whisper, "auto"], env=env, capture_output=True, text=True)
+                    with whisper_lock:
+                        say("%s no lyrics online for %s: writing them from the voice" % (tag, name))
+                        r = subprocess.run([sys.executable, os.path.join(HERE, "transcribe_lyrics.py"), base + ".vocals.wav",
+                                            base + ".lrc.tmp", args.whisper, "auto"], env=env, capture_output=True, text=True)
                     if r.returncode != 0 or not os.path.exists(base + ".lrc.tmp"):
-                        print("    speech to text failed: " + r.stderr[-300:], flush=True)
+                        say("%s speech to text failed: %s" % (tag, r.stderr[-300:]))
                         open(base + ".lrc.tmp", "w").close()
                     os.replace(base + ".lrc.tmp", base + ".lrc")
                     wrote = True
@@ -83,19 +100,46 @@ def main():
         if proc.returncode == 0 and os.path.exists(base + ".json"):
             s = json.load(open(base + ".json", encoding="utf-8"))
             s.update(file=name, mode=mode, notes=notes, seconds=round(took))
-            print("    done in %d s: %s, %d vocal lines (%s)" % (took, s["folder"], s["vocalLines"], s["lyrics"]), flush=True)
+            say("%s done in %d s: %s, %d vocal lines (%s)" % (tag, took, s["folder"], s["vocalLines"], s["lyrics"]))
         else:
             tail = open(base + ".log", encoding="utf-8", errors="replace").read()[-400:]
             s = dict(file=name, mode=mode, notes=notes, folder="", error=tail.strip().splitlines()[-1] if tail.strip() else "failed")
-            print("    FAILED: " + s["error"], flush=True)
-        report.append(s)
+            say("%s FAILED %s: %s" % (tag, name, s["error"]))
         if os.path.exists(base + ".vocals.wav"): os.remove(base + ".vocals.wav")
+        return s
+
+    started_all = time.time()
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        report = list(pool.map(lambda a: convert(*a), [(n, name) for n, name in enumerate(files, 1)]))
+    print("All done in %d min %02d s" % divmod(int(time.time() - started_all), 60), flush=True)
 
     cols = ["file", "folder", "title", "artist", "mode", "notes", "lyrics", "vocalLines", "guitarExpert", "bassExpert", "seconds", "timing", "error"]
     with open(os.path.join(args.out, "report.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore"); w.writeheader(); w.writerows(report)
     ok = sum(1 for r in report if r.get("folder"))
     print("Converted %d of %d songs into %s" % (ok, len(report), out_songs))
+
+
+def memory_mb():
+    try:
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+    except OSError:
+        pass
+    return 8000
+
+
+def auto_jobs():
+    # Each song needs about 5 GB while it is split and charted, and about 3 processor cores
+    by_memory = max(1, (memory_mb() - 4000) // 5000)
+    by_cores = max(1, (os.cpu_count() or 2) // 3)
+    return int(min(4, by_memory, by_cores))
+
+
+def heap_for(jobs):
+    # Java's memory per song, leaving room for the models and speech-to-text
+    return int(max(3000, min(6000, (memory_mb() - 4000) // max(1, jobs))))
 
 
 if __name__ == "__main__":
