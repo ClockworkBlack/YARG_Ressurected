@@ -407,7 +407,7 @@ namespace VocalsTests
                     "after a pause, results are timed from when the audio came back");
             }
 
-            // A consonant inside a note: the pitch is kept for a moment in normal play, never in Challenge Mode
+            // A note that turns into noise: the pitch stops at once, and what follows is "sound without a tone"
             {
                 var voice = new SyntheticVoice(RATE, 5);
                 var audio = new float[RATE * 2];
@@ -417,13 +417,13 @@ namespace VocalsTests
                     audio[i] = t < 1.0 ? voice.Voiced(220, 0.3) : voice.Noise(0.3, true);
                 }
 
-                var normal = Deliver(0.030, 0.0, 480, hold, audio: audio).Where(f => f.Time > 1.0 + 0.06 + 0.04).ToList();
-                int kept = normal.Count(f => f.PitchHz > 0);
-                Program.Check(kept >= 1 && kept <= VoiceInput.KEPT_PITCH_FRAMES && normal.Count(f => f.PitchHz <= 0 && !f.IsHit) > 30,
-                    $"when a note turns into noise the pitch is kept for {kept} results (60 ms at most), then it is just sound");
-
-                var strict = Deliver(0.030, 0.0, 480, hold, strict: true, audio: audio).Where(f => f.Time > 1.0 + 0.06 + 0.04).ToList();
-                Program.Check(strict.Count(f => f.PitchHz > 0) == 0, "in Challenge Mode the pitch is never kept");
+                foreach (bool strict in new[] { false, true })
+                {
+                    var after = Deliver(0.030, 0.0, 480, hold, strict: strict, audio: audio)
+                        .Where(f => f.Time > 1.0 + 0.06 + 0.03).ToList();
+                    Program.Check(after.Count(f => f.PitchHz > 0) == 0 && after.Count(f => f.PitchHz <= 0 && !f.IsHit) > 30,
+                        (strict ? "in Challenge Mode too" : "when a note turns into noise the pitch stops at once: noise cannot hold a note"));
+                }
             }
         }
     }
@@ -594,11 +594,32 @@ namespace VocalsTests
                         note.Pitch = -1f;
                     }
                 }
-                Program.Check(SimGame.Play(rap, Sing(rap, toneless: true), expertNormal).PhrasesHit == 3,
-                    "for spoken notes any sound counts, as it always has");
+                var easyNormal = SimGame.Parameters(Difficulty.Easy, false);
+                Program.Check(SimGame.Play(rap, Sing(rap, toneless: true), easyNormal).PhrasesHit == 3,
+                    "for spoken notes any sound counts on Easy, as it always has");
+
+                // From Medium up a spoken line has to be spoken: syllables are counted from the voice
+                Program.Check(SimGame.Play(rap, Sing(rap, offset: 50f), expertNormal).PhrasesHit == 3,
+                    "speaking a spoken line, word by word, clears it on Expert");
+                Program.Check(SimGame.Play(rap, Sing(rap, toneless: true), expertNormal).PhrasesHit == 0,
+                    "noise does not (no voice, no syllables)");
+
+                var drone = new List<SimInput>();
+                foreach (var phrase in rap.Phrases)
+                {
+                    for (double time = phrase.Notes[0].Start; time < phrase.Notes[phrase.Notes.Count - 1].End; time += 0.02)
+                    {
+                        drone.Add(new SimInput { Time = time, Midi = 50f });
+                    }
+                }
+                Program.Check(SimGame.Play(rap, drone, expertNormal).PhrasesHit == 0 &&
+                    SimGame.Play(rap, drone, easyNormal).PhrasesHit == 3,
+                    "nor does one long \"aaah\" through the line (it does on Easy)");
+
                 Program.Check(SimGame.Play(rap, Sing(rap, toneless: true), expert).PhrasesHit == 0 &&
+                    SimGame.Play(rap, drone, expert).PhrasesHit == 0 &&
                     SimGame.Play(rap, Sing(rap, offset: 50f), expert).PhrasesHit == 3,
-                    "in Challenge Mode spoken notes need a voice, not just noise");
+                    "Challenge Mode asks the same of spoken lines: a voice, on every word");
             }
 
             // The result does not depend on the frame rate (it used to, at phrase ends)

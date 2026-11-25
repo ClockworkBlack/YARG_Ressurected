@@ -1,0 +1,169 @@
+diff --git a/Assets/Script/Input/Touch/TouchControlsBootstrap.cs b/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
+index 3de3a26..f488d39 100644
+--- a/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
++++ b/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
+@@ -64,6 +64,11 @@ namespace YARG.Input.Touch
+                 return;
+ 
+             var host = new GameObject("TouchControls");
++            // Keep it in the Gameplay scene, so it goes away with the song
++            if (scene.IsValid() && scene.isLoaded)
++            {
++                SceneManager.MoveGameObjectToScene(host, scene);
++            }
+             host.AddComponent<TouchControlsManager>();
+         }
+     }
+diff --git a/Assets/Script/Input/Touch/TouchControlsManager.cs b/Assets/Script/Input/Touch/TouchControlsManager.cs
+index 68767ae..ccf6627 100644
+--- a/Assets/Script/Input/Touch/TouchControlsManager.cs
++++ b/Assets/Script/Input/Touch/TouchControlsManager.cs
+@@ -114,6 +114,14 @@ namespace YARG.Input.Touch
+             // Never let the touch buttons sit on top of the pause menu.
+             // (GameManager is null before the song is set up — then there is
+             // no pause menu either, so keep the canvas visible.)
++            // The buttons belong to a song. If this object outlives the Gameplay scene (it could end up
++            // in the always-loaded scene and then sat over the menus), remove it.
++            if (!UnityEngine.SceneManagement.SceneManager.GetSceneByName("Gameplay").isLoaded)
++            {
++                Destroy(gameObject);
++                return;
++            }
++
+             if (_canvas != null)
+             {
+                 var gm = GameManager;
+diff --git a/Assets/Script/Menu/Common/Dialogs/ListDialog.cs b/Assets/Script/Menu/Common/Dialogs/ListDialog.cs
+index 3e10683..423dced 100644
+--- a/Assets/Script/Menu/Common/Dialogs/ListDialog.cs
++++ b/Assets/Script/Menu/Common/Dialogs/ListDialog.cs
+@@ -54,6 +54,16 @@ namespace YARG.Menu.Dialogs
+             return button;
+         }
+ 
++        /// <summary>Puts the highlight on one of the list's buttons (and scrolls to it).</summary>
++        public void SelectListIndex(int index)
++        {
++            if (index >= 0 && index < _listButtons.Count)
++            {
++                NavGroup.ClearSelection();
++                MoveCursorTo(index, true);
++            }
++        }
++
+         public T AddListEntry<T>(T prefab)
+             where T : Object
+         {
+diff --git a/Assets/Script/Menu/Settings/Visuals/DropdownSettingVisual.cs b/Assets/Script/Menu/Settings/Visuals/DropdownSettingVisual.cs
+index 28ae9de..2ac553c 100644
+--- a/Assets/Script/Menu/Settings/Visuals/DropdownSettingVisual.cs
++++ b/Assets/Script/Menu/Settings/Visuals/DropdownSettingVisual.cs
+@@ -33,32 +33,90 @@ namespace YARG.Menu.Settings.Visuals
+             _dropdown.SetValueWithoutNotify(Setting.CurrentIndex);
+         }
+ 
++        // YARG Resurrected: choosing opens a full list of the options (touch, mouse or controller),
++        // with the current one highlighted, instead of the small built-in drop-down, which was hard
++        // to open on a phone and only stepped blindly through the options with a controller.
++        private bool _choicesOpen;
++
++        private sealed class ClickCatcher : MonoBehaviour, UnityEngine.EventSystems.IPointerClickHandler
++        {
++            public System.Action Clicked;
++
++            public void OnPointerClick(UnityEngine.EventSystems.PointerEventData eventData) => Clicked?.Invoke();
++        }
++
++        protected override void OnSettingInit()
++        {
++            base.OnSettingInit();
++
++            if (_dropdown != null && _dropdown.GetComponent<ClickCatcher>() == null)
++            {
++                // Taps go to our list; the built-in pop-up is switched off without greying the box out
++                var colors = _dropdown.colors;
++                colors.disabledColor = colors.normalColor;
++                _dropdown.colors = colors;
++                _dropdown.interactable = false;
++
++                _dropdown.gameObject.AddComponent<ClickCatcher>().Clicked = () => ShowChoices(false).Forget();
++            }
++        }
++
+         public override NavigationScheme GetNavigationScheme()
+         {
++            // The list is opened a moment later, after this scheme has been put in place under it
++            ShowChoices(true).Forget();
++
+             return new NavigationScheme(new()
+             {
+-                NavigateFinish,
+-                new NavigationScheme.Entry(MenuAction.Down, "Menu.Common.Next", () =>
+-                {
+-                    int newValue = _dropdown.value + 1;
+-                    if (newValue >= _dropdown.options.Count)
+-                    {
+-                        newValue = 0;
+-                    }
++                NavigateFinish
++            }, true);
++        }
++
++        private async Cysharp.Threading.Tasks.UniTaskVoid ShowChoices(bool fromNavigation)
++        {
++            if (_choicesOpen)
++            {
++                return;
++            }
++            _choicesOpen = true;
++
++            try
++            {
++                await Cysharp.Threading.Tasks.UniTask.Yield();
++                if (this == null) return;
++
++                string title = !IsPresetSetting
++                    ? Localize.Key("Settings.Setting", UnlocalizedName, "Name")
++                    : Localize.Key("Settings.PresetSetting", UnlocalizedName, "Name");
+ 
+-                    _dropdown.value = newValue;
+-                }),
+-                new NavigationScheme.Entry(MenuAction.Up, "Menu.Common.Previous", () =>
++                var dialog = YARG.Menu.Persistent.DialogManager.Instance.ShowList(title);
++                int current = _dropdown.value;
++                for (int i = 0; i < _dropdown.options.Count; i++)
+                 {
+-                    int newValue = _dropdown.value - 1;
+-                    if (newValue < 0)
++                    int index = i;
++                    string text = _dropdown.options[i].text;
++                    dialog.AddListButton(i == current ? $"<b>{text}</b>  (current)" : text, () =>
+                     {
+-                        newValue = _dropdown.options.Count - 1;
+-                    }
++                        if (this != null)
++                        {
++                            _dropdown.value = index;
++                        }
++                    });
++                }
++                dialog.SelectListIndex(current);
+ 
+-                    _dropdown.value = newValue;
+-                })
+-            }, true);
++                await dialog.WaitUntilClosed();
++            }
++            finally
++            {
++                _choicesOpen = false;
++            }
++
++            // Let go of the setting again, so the controller is back on the settings list
++            if (fromNavigation && this != null)
++            {
++                Navigator.Instance.PopScheme();
++            }
+         }
+ 
+         public void OnDropdownChange()

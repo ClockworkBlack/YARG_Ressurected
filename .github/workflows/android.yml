@@ -54,6 +54,9 @@ jobs:
           GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --depth 1 YARG.Core
           for p in ../patches/*.patch; do echo "Applying $p"; git apply --whitespace=nowarn "$p"; done
           for p in "$GITHUB_WORKSPACE"/patches-core/*.patch; do echo "Applying $p to YARG.Core"; git -C YARG.Core apply --whitespace=nowarn "$p"; done
+      # Unity compiles these files as C# 9 against .NET Standard 2.1: catch anything newer here
+      - name: Singing code only uses what Unity has
+        run: dotnet build tests/VocalsApiCheck -c Release
       - name: Run singing tests (pitch detection, microphone timing, scoring, Challenge Mode)
         run: dotnet run --project tests/VocalsTests -c Release -p:YargProjectDir="$GITHUB_WORKSPACE/$PROJECT_DIR"
       # A short recording of the generated guitar and bass, to listen to without installing anything

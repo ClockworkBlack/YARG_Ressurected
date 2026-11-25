@@ -6,12 +6,11 @@ import com.clockworkblack.yargconverter.core.SongMeta;
 import com.clockworkblack.yargconverter.core.SongWriter;
 import com.clockworkblack.yargconverter.core.TempoMap;
 
-import java.io.BufferedReader;
+import com.clockworkblack.yargconverter.core.MidiSong;
+
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.StringReader;
-import java.io.StringWriter;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
@@ -28,6 +27,7 @@ import java.util.Random;
  */
 public final class CoreTest {
     private static int failures;
+    private static SongWriter.Result forEditor;
 
     public static void main(String[] args) throws Exception {
         if (args.length >= 3) {
@@ -46,6 +46,10 @@ public final class CoreTest {
         oddInputs();
         failures += StemTest.run();
         lyrics();
+        failures += VocalTest.run();
+        failures += EditTest.run(forEditor);
+        failures += RnbTest.run();
+        failures += AlignTest.run();
         if (failures > 0) {
             System.out.println("FAILED: " + failures + " check(s)");
             System.exit(1);
@@ -70,6 +74,7 @@ public final class CoreTest {
         AudioAnalyzer an = new AudioAnalyzer(song.sampleRate);
         for (int i = 0; i < song.audio.length; i += 4096) an.feed(song.audio, i, Math.min(4096, song.audio.length - i));
         SongWriter.Result r = SongWriter.analyze(an.finish(), null);
+        if (forEditor == null) forEditor = r;
         ChartEval e = ChartEval.score(song, r);
         System.out.println(e.report());
         boolean four = beatsPerMeasure == 4;
@@ -91,9 +96,7 @@ public final class CoreTest {
                 check(d != 0 || n.lane2 < 0, "no chords on Easy");
             }
         }
-        StringWriter sw = new StringWriter();
-        SongWriter.writeChart(sw, new SongMeta(), r, "song.mp3");
-        validateChart(sw.toString(), 7, false);
+        validateSong(r);
     }
 
     /** Inputs with nothing sensible to chart must still produce a valid song, never a crash. */
@@ -115,9 +118,7 @@ public final class CoreTest {
             AudioAnalyzer an = new AudioAnalyzer(sr);
             an.feed(x, 0, x.length);
             SongWriter.Result r = SongWriter.analyze(an.finish(), Lrc.parse("[00:01.00]La la\n[00:30.00]Too late"));
-            StringWriter sw = new StringWriter();
-            SongWriter.writeChart(sw, new SongMeta(), r, "song.wav");
-            validateChart(sw.toString(), -1, true);
+            validateSong(r);
             check(r.bpm > 30 && r.bpm < 300, "sane tempo for odd input (" + r.bpm + ")");
         }
     }
@@ -225,12 +226,7 @@ public final class CoreTest {
         check(maxLane[0] <= 2 && maxLane[1] <= 3, "easy uses 3 frets, medium 4");
         check(r.lyricLines == 3, "three lyric lines charted (got " + r.lyricLines + ")");
 
-        SongMeta meta = new SongMeta();
-        meta.title = "Test \"Song\"";
-        meta.artist = "Tester";
-        StringWriter sw = new StringWriter();
-        SongWriter.writeChart(sw, meta, r, "song.mp3");
-        validateChart(sw.toString(), 7, true);
+        validateSong(r);
     }
 
     private static void burst(float[] x, int sr, double t, double len, double hz, float amp, boolean noise, Random rnd) {
@@ -254,53 +250,10 @@ public final class CoreTest {
         }
     }
 
-    /** Structural check of a .chart file: sections, ordering, and well-formed lines. */
-    private static void validateChart(String text, int expectSections, boolean testTitle) throws Exception {
-        BufferedReader br = new BufferedReader(new StringReader(text));
-        String line;
-        String section = null;
-        long prev = -1;
-        int sections = 0;
-        boolean inPhrase = false;
-        boolean sawTempo = false;
-        while ((line = br.readLine()) != null) {
-            String s = line.trim();
-            if (s.startsWith("[")) {
-                section = s;
-                sections++;
-                prev = -1;
-                continue;
-            }
-            if (s.equals("{") || s.equals("}") || section == null || section.equals("[Song]")) continue;
-            String[] kv = s.split(" = ", 2);
-            check(kv.length == 2, "chart line has key = value: " + s);
-            long tick = Long.parseLong(kv[0]);
-            check(tick >= prev, "ticks never go backwards in " + section + ": " + s);
-            prev = tick;
-            if (section.equals("[SyncTrack]")) {
-                check(kv[1].matches("(TS \\d+|B \\d+)"), "sync line: " + s);
-                if (kv[1].startsWith("B ")) {
-                    if (!sawTempo) check(tick == 0, "first tempo marker at tick 0");
-                    sawTempo = true;
-                }
-            } else if (section.equals("[Events]")) {
-                check(kv[1].matches("E \"[^\"]+\""), "event line: " + s);
-                if (kv[1].contains("phrase_start")) {
-                    check(!inPhrase, "phrase opened twice");
-                    inPhrase = true;
-                } else if (kv[1].contains("phrase_end")) {
-                    check(inPhrase, "phrase closed without opening");
-                    inPhrase = false;
-                } else if (kv[1].startsWith("E \"lyric ")) {
-                    check(inPhrase, "lyric outside a phrase: " + s);
-                }
-            } else {
-                check(kv[1].matches("(N [0-4] \\d+|S 2 \\d+)"), "note line: " + s);
-            }
-        }
-        check(sawTempo, "chart has a tempo");
-        check(expectSections < 0 ? sections >= 3 : sections == expectSections, "chart has Song, SyncTrack, Events and four difficulties (got " + sections + ")");
-        if (testTitle && expectSections > 0) check(text.contains("Name = \"Test 'Song'\""), "quotes in the title are made safe");
+    /** Writes the song as notes.mid and reads it back the way the game does. */
+    static void validateSong(SongWriter.Result r) {
+        for (String problem : MidiCheck.verify(MidiSong.build(r), r)) check(false, "notes.mid: " + problem);
+        VocalTest.structure(r.vocals, "lyrics");
     }
 
     private static void lyrics() {

@@ -1,8 +1,8 @@
 diff --git a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
-index aa46c3a..bb04d39 100644
+index dd8f59a..0a2c4df 100644
 --- a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
 +++ b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
-@@ -9,12 +9,38 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -9,6 +9,25 @@ namespace YARG.Core.Engine.Vocals.Engines
  {
      public class YargVocalsEngine : VocalsEngine
      {
@@ -28,20 +28,15 @@ index aa46c3a..bb04d39 100644
          public YargVocalsEngine(InstrumentDifficulty<VocalNote> chart, SyncTrack syncTrack,
              VocalsEngineParameters engineParameters, bool isBot)
              : base(chart, syncTrack, engineParameters, isBot)
-         {
+@@ -58,6 +77,7 @@ namespace YARG.Core.Engine.Vocals.Engines
+             _lastSyllableTime = double.NegativeInfinity;
+             _syllablePitch = 0f;
+             _phraseSyllables = 0;
++            ClearNoteTracking();
+             base.Reset(keepCurrentButtons);
          }
  
-+        public override void Reset(bool keepCurrentButtons = false)
-+        {
-+            ClearNoteTracking();
-+
-+            base.Reset(keepCurrentButtons);
-+        }
-+
-         protected override void UpdateBot(double songTime)
-         {
-             if (!IsBot)
-@@ -32,6 +58,7 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -148,6 +168,7 @@ namespace YARG.Core.Engine.Vocals.Engines
              {
                  // Bots are queued extra updates to account for in-between "inputs"
                  PitchSang = singNote.PitchAtSongTime(songTime);
@@ -49,7 +44,7 @@ index aa46c3a..bb04d39 100644
                  HasSang = true;
                  OnSing?.Invoke(true);
              }
-@@ -60,7 +87,15 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -183,7 +204,15 @@ namespace YARG.Core.Engine.Vocals.Engines
              else if (action is VocalsAction.Pitch)
              {
                  HasSang = true;
@@ -66,7 +61,7 @@ index aa46c3a..bb04d39 100644
  
                  OnSing?.Invoke(true);
              }
-@@ -82,16 +117,34 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -205,16 +234,34 @@ namespace YARG.Core.Engine.Vocals.Engines
              UpdateBot(time);
  
              var phrase = Notes[NoteIndex];
@@ -99,10 +94,10 @@ index aa46c3a..bb04d39 100644
 +                    JudgeTrackedNotes(true);
 +                }
 +
-                 var percentHit = PhraseTicksHit / PhraseTicksTotal.Value;
-                 if (!hasNotes)
+                 // A spoken line hummed through, or babbled over, keeps only part of its credit
+                 if (SpokenLinesAreChecked && hasNotes)
                  {
-@@ -99,7 +152,31 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -234,7 +281,31 @@ namespace YARG.Core.Engine.Vocals.Engines
                  }
  
                  bool hit = percentHit >= EngineParameters.PhraseHitPercent;
@@ -135,7 +130,7 @@ index aa46c3a..bb04d39 100644
                  {
                      EngineStats.TicksHit += PhraseTicksTotal.Value;
                      HitNote(phrase);
-@@ -116,10 +193,19 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -251,10 +322,19 @@ namespace YARG.Core.Engine.Vocals.Engines
  
                  PhraseTicksHit = 0;
                  PhraseTicksTotal = null;
@@ -156,7 +151,20 @@ index aa46c3a..bb04d39 100644
                  }
  
                  UpdateCarriedNote(phrase);
-@@ -152,6 +238,12 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -275,7 +355,11 @@ namespace YARG.Core.Engine.Vocals.Engines
+             }
+ 
+             HasSang = false;
+-            if (!IsBot)
++
++            // Syllables are counted from the voice alone: with a microphone that reports
++            // breath and consonants as "sound without a tone", the gaps between the voiced
++            // readings are exactly where one syllable ends and the next begins
++            if (!IsBot && !SangUnpitched)
+             {
+                 CountSyllable();
+             }
+@@ -292,8 +376,22 @@ namespace YARG.Core.Engine.Vocals.Engines
  
              var phrase = Notes[NoteIndex];
  
@@ -168,11 +176,31 @@ index aa46c3a..bb04d39 100644
 +
              // Get the note that we should currently be targeting
              var note = GetNoteInPhraseAtSongTick(phrase, CurrentTick);
++
++            if (IsSoundThatCannotCount(note))
++            {
++                LastSingTick = lastSingTick;
++                OnHit?.Invoke(false);
++                return;
++            }
++
              if (note is null)
-@@ -185,6 +277,201 @@ namespace YARG.Core.Engine.Vocals.Engines
+             {
+                 // If we're not on a note, we cannot be hitting a note
+@@ -325,6 +423,219 @@ namespace YARG.Core.Engine.Vocals.Engines
              }
          }
  
++        /// <summary>
++        /// Sound without a tone (breath, a consonant, noise) only means something on a spoken
++        /// note, and in Vocals Challenge Mode not even there. Anywhere else it is as if nothing
++        /// was heard, so that it does not come between the sung readings before and after it.
++        /// </summary>
++        private bool IsSoundThatCannotCount(VocalNote? note)
++        {
++            return SangUnpitched && (note is null || !note.IsNonPitched || EngineParameters.VoicedOnly);
++        }
++
 +        // ---- Vocals Challenge Mode: note-by-note scoring ----
 +        //
 +        // The normal scoring above only adds up how much of a phrase was sung. Here every note
@@ -243,6 +271,14 @@ index aa46c3a..bb04d39 100644
 +            uint reachBack = Math.Max(SyncTrack.TimeToTick(CurrentTime - maxLeniency), lastSingTick);
 +
 +            var note = GetNoteInPhraseAtSongTick(phrase, CurrentTick);
++
++            if (IsSoundThatCannotCount(note))
++            {
++                LastSingTick = lastSingTick;
++                OnHit?.Invoke(false);
++                return;
++            }
++
 +            int index = -1;
 +            if (note != null)
 +            {
@@ -371,7 +407,7 @@ index aa46c3a..bb04d39 100644
          private void CheckPercussionHit()
          {
              var phrase = Notes[NoteIndex];
-@@ -220,12 +507,26 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -360,12 +671,26 @@ namespace YARG.Core.Engine.Vocals.Engines
          protected override bool CanVocalNoteBeHit(VocalNote note, out float hitPercent)
          {
              // If it is non-pitched, it is always hittable

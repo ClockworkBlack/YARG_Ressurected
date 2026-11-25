@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Runs a song folder written by the converter through YARG.Core's own song scanner and
+       chart loader (the same code the game uses) and checks everything arrived.
+       Run it with the YargCore property set to a YARG.Core checkout and the song folder as the
+       only argument; see the game-reader job in .github/workflows/converter.yml. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>GameReaderCheck</RootNamespace>
+    <!-- YARG.Core opens its internal song scanner to an assembly of this name (its own unit
+         tests); borrowing the name lets this check call the scanner directly. -->
+    <AssemblyName>YARG.Core.UnitTests</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(YargCore)/YARG.Core/YARG.Core.csproj" />
+  </ItemGroup>
+
+</Project>

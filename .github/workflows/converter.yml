@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - "converter/**"
+      - "tests/GameReaderCheck/**"
       - ".github/workflows/converter.yml"
 
 permissions:
@@ -19,6 +20,9 @@ env:
   MODEL_URL: https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/49df9b6989cf2150840ea65b0bef77a2e471b678/htdemucs_6s_fp16weights.onnx
   MODEL_SHA256: 7ce55792e2231c93fbf92de95f5fd5b3a5e6c89f7db690dfd693e8f1dce56869
   ORT_VERSION: "1.31.1"
+  # YARG.Core (the game's chart library) at the commit the game is built with: the submodule
+  # pointer of putudarma/YARG-DROID at the commit android.yml builds.
+  YARG_CORE_REF: 3beb94e526558134145bcd3e409428f759001a40
 
 jobs:
   model:
@@ -75,6 +79,55 @@ jobs:
             'Audio from https://commons.wikimedia.org/wiki/File:Kevin_MacLeod_-_Sax,_Rock,_and_Roll.ogg' \
             'Charts made automatically by YARG Converter.' > "sample-song/Kevin MacLeod - Sax, Rock, and Roll/CREDITS.txt"
 
+      # A real recording with singing, to see what the vocals side does on an actual voice:
+      # "Swansong" by Josh Woodward (voice and acoustic guitar), Creative Commons BY 3.0, from
+      # Wikimedia Commons. Time-synced lyrics are looked up the way the app does (LRCLIB); if
+      # there are none, made-up lines still show whether the voice is heard and counted as sung.
+      - name: Convert a real (Creative Commons) song with singing
+        continue-on-error: true
+        run: |
+          curl -L --fail --retry 3 -A "YARGConverter-CI/0.2 (automated build check)" \
+            -o sung.ogg "https://commons.wikimedia.org/wiki/Special:FilePath/Josh_Woodward_-_Swansong.ogg"
+          ffmpeg -loglevel error -i sung.ogg -f f32le -ac 2 -ar 44100 sung.f32
+          lyrics=""
+          if curl -sS --fail --retry 2 -A "YARGConverter-CI/0.2 (automated build check)" \
+               "https://lrclib.net/api/get?artist_name=Josh%20Woodward&track_name=Swansong" -o lrclib.json; then
+            jq -r '.syncedLyrics // empty' lrclib.json > sung.lrc
+            if [ -s sung.lrc ]; then lyrics="sung.lrc"; echo "Synced lyrics found: $(wc -l < sung.lrc) lines"; fi
+          fi
+          [ -z "$lyrics" ] && echo "No synced lyrics found; using made-up lines."
+          java -Xmx5g -cp out:onnxruntime.jar RealSongCheck model/htdemucs_6s.onnx sung.f32 \
+            "sample-song/Josh Woodward - Swansong" "Swansong" "Josh Woodward" $lyrics
+          cp sung.ogg "sample-song/Josh Woodward - Swansong/song.ogg"
+          [ -n "$lyrics" ] && cp sung.lrc "sample-song/Josh Woodward - Swansong/lyrics.lrc"
+          printf '%s\n' '"Swansong" by Josh Woodward (joshwoodward.com).' \
+            'Licensed under Creative Commons BY 3.0: https://creativecommons.org/licenses/by/3.0/' \
+            'Audio from https://commons.wikimedia.org/wiki/File:Josh_Woodward_-_Swansong.ogg' \
+            'Charts and vocals made automatically by YARG Converter.' > "sample-song/Josh Woodward - Swansong/CREDITS.txt"
+
+      # Hip hop from the Free Music Archive, as imported to Wikimedia Commons under Creative Commons
+      # licences: the first two minutes of a few songs go through the same separation and vocals
+      # charting as in the app, with a made-up line every eight seconds, and every line's
+      # measurements are printed. Some tracks in the category are instrumentals; those show as
+      # "voice not heard". Nothing from these songs is kept.
+      - name: Measure rapped lines in real hip hop songs
+        continue-on-error: true
+        run: |
+          ua="YARGConverter-CI/0.2 (automated build check; https://github.com/ClockworkBlack/YARG_Ressurected)"
+          curl -sS --fail -A "$ua" -o cat.json \
+            "https://commons.wikimedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:Hip_hop_music_from_Free_Music_Archive&cmtype=file&cmlimit=40&format=json"
+          jq -r '.query.categorymembers[].title' cat.json | grep -viE "instrumental|beat|no vocals" | head -5 > picks.txt
+          cat picks.txt
+          while read -r title; do
+            file="${title#File:}"
+            echo "== hip hop: $file"
+            rm -f hh.in hh.f32
+            curl -sSL --fail --max-time 180 -A "$ua" -o hh.in "https://commons.wikimedia.org/wiki/Special:FilePath/${file// /_}" || { echo "could not download"; continue; }
+            ffmpeg -loglevel error -i hh.in -vn -t 120 -f f32le -ac 2 -ar 44100 hh.f32 || continue
+            java -Xmx5g -cp out:onnxruntime.jar RealSongCheck model/htdemucs_6s.onnx hh.f32 hh-out "$file" "FMA" | grep -E "^Vocals|LINE|Voice:" || true
+            rm -rf hh-out
+          done < picks.txt
+
       - uses: actions/upload-artifact@v4
         if: always()
         continue-on-error: true
@@ -83,8 +136,83 @@ jobs:
           path: sample-song
           if-no-files-found: ignore
 
+  game-reader:
+    name: A converted song through the game's own song scanner and loader
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Write a test song (guitar, bass, two singers) with the converter
+        working-directory: converter/core-test
+        run: |
+          javac -d out $(find ../app/src/main/java -path '*core*' -name '*.java') *.java
+          java -cp out VocalTest write "$RUNNER_TEMP/song"
+
+      - name: Get the game's chart library
+        run: |
+          git init yarg-core
+          cd yarg-core
+          git remote add origin https://github.com/YARC-Official/YARG.Core
+          git fetch --depth 1 origin "$YARG_CORE_REF"
+          git checkout FETCH_HEAD
+          for p in "$GITHUB_WORKSPACE"/patches-core/*.patch; do echo "Applying $p"; git apply --whitespace=nowarn "$p"; done
+
+      - name: Scan and load the song the way the game does
+        run: |
+          dotnet run --project tests/GameReaderCheck -c Release \
+            -p:YargCore="$GITHUB_WORKSPACE/yarg-core" -- "$RUNNER_TEMP/song"
+
+      - name: Edit the song's notes with the note editor, then scan and load it again
+        run: |
+          cp -r "$RUNNER_TEMP/song" "$RUNNER_TEMP/edited"
+          java -cp converter/core-test/out EditTest "$RUNNER_TEMP/edited"
+          dotnet run --project tests/GameReaderCheck -c Release \
+            -p:YargCore="$GITHUB_WORKSPACE/yarg-core" -- "$RUNNER_TEMP/edited"
+
+  voice-check:
+    name: Sung or rapped, measured on real a cappellas
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg jq > /dev/null
+          javac -d out $(find converter/app/src/main/java -path '*core*' -name '*.java') converter/model-test/VoiceCheck.java
+
+      # Rap recorded live, shared under Creative Commons on Wikimedia Commons. Only measurements
+      # are printed; the recordings are not kept.
+      - name: Measure real rap
+        run: |
+          ua="YARGConverter-CI/0.2 (automated build check; https://github.com/ClockworkBlack/YARG_Ressurected)"
+          for f in "Gully_rap_on_a_train.ogg" "JMoRappinWiki.ogg" "Rap_Agoriadol_-_Rapsgaliwn.ogg"; do
+            echo "== rap: $f (Wikimedia Commons)"
+            rm -f clip.in clip.f32
+            curl -sSL --fail --max-time 120 -A "$ua" -o clip.in "https://commons.wikimedia.org/wiki/Special:FilePath/$f" || { echo "could not download"; continue; }
+            ffmpeg -loglevel error -i clip.in -vn -f f32le -ac 1 -ar 44100 clip.f32 && java -Xmx2g -cp out VoiceCheck clip.f32 "rap $f"
+          done
+
   apk:
     name: Converter APK
+    # No APK is built or published unless the game itself can read what the converter writes.
+    needs: game-reader
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -95,7 +223,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Check the chart engine (beats, frets, repeats, chords, stems, chart files, lyrics)
+      - name: Check the chart engine (beats, frets, repeats, chords, stems, vocals, song files)
         working-directory: converter/core-test
         run: |
           javac -d out $(find ../app/src/main/java -path '*core*' -name '*.java') *.java
@@ -138,7 +266,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish as a GitHub release (easy download on your phone)
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/combined-updates'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: converter-${{ github.run_number }}
@@ -147,6 +275,6 @@ jobs:
           files: ${{ steps.apk.outputs.file }}
           body: |
             Companion app for YARG Resurrected: pick an MP3, WAV or FLAC and it writes a
-            ready-to-play song folder (guitar Easy-Expert, beat map, lyrics) into
+            ready-to-play song folder (guitar and bass Easy-Expert, beat map, vocals to sing) into
             `Internal storage/YARG/songs/Converted`.
             Download the .apk on your phone and open it to install.

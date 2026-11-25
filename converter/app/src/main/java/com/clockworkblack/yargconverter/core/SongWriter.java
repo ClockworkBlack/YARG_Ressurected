@@ -8,12 +8,9 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 
-/** Writes the notes.chart and song.ini files of a YARG song folder. */
+/** Runs the analysis and writes the notes.mid and song.ini files of a YARG song folder. */
 public final class SongWriter {
     private SongWriter() {}
 
@@ -26,8 +23,24 @@ public final class SongWriter {
         public GuitarCharter.Chart bassChart;
         /** What the guitar chart was made from, in words for the user. */
         public String guitarSource = "the full mix";
+        /** R&amp;B mode was asked for and the guitar chart follows the singer. */
+        public boolean rnb;
+        /** Why R&amp;B mode could not follow the singer on this song, in words for the user; null when it did or was not asked. */
+        public String rnbNote;
         public int bassTier = -1;
-        public List<LyricsCharter.Event> lyrics = new ArrayList<>();
+        /** Lyrics as notes to sing; empty when the song has no lyrics. */
+        public VocalCharter.Chart vocals = new VocalCharter.Chart();
+        public int vocalTier = -1;
+        /** The lyric lines as charted, carrying who sings each (including a guess made from the voices). */
+        public List<Lrc.Line> lyricsOut = new ArrayList<>();
+        /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
+        public boolean lyricsMoved;
+        /** What was done to the lyrics' timing, for the user; null when nothing. */
+        public String lyricTimingNote;
+        /** True when the app was asked to tell two singers apart by voice. */
+        public boolean singersGuessTried;
+        /** What it came up with; null when it was not asked or the voices could not be told apart. */
+        public VoiceSplitter.Guess singerGuess;
         public double bpm;
         public double duration;
         public int lyricLines;
@@ -53,6 +66,19 @@ public final class SongWriter {
         public Features melodic;
         /** The bass on its own. */
         public Features bass;
+        /** The voice on its own: where each word is sung and on what note. Null when not listened to. */
+        public VocalAnalyzer.Voice voice;
+        /** For a song with two singers whose lines are not marked: work out who sings what from their voices. */
+        public boolean guessSingers;
+        /** The two singers' names when the song names two artists (makes the guess surer), or null. */
+        public String[] singerNames;
+        /** The vocals on their own, measured like an instrument; only needed for R&amp;B mode. */
+        public Features vocals;
+        /**
+         * R&amp;B mode: the voice comes first. The guitar chart follows the lead singer's melody
+         * (see {@link MelodyCharter}) and the vocals part follows runs note by note.
+         */
+        public boolean rnb;
         /** Sum of squared samples of each, for comparing how much of the song they make up. */
         public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy;
     }
@@ -66,6 +92,16 @@ public final class SongWriter {
      * @param stems separated instruments, or null to chart everything from the full mix
      */
     public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems) {
+        return analyze(f, lyrics, options, stems, false);
+    }
+
+    /**
+     * @param keepLyricTimes true when the lyrics' times were set by hand and must be used as they
+     *                       are; otherwise lyrics timed for another cut of the song (a longer
+     *                       intro, silence at the start) are lined up with this audio
+     */
+    public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems,
+                                 boolean keepLyricTimes) {
         Result r = new Result();
         BeatTracker.Result beats = BeatTracker.track(f);
         r.bpm = beats.bpm;
@@ -83,8 +119,43 @@ public final class SongWriter {
         r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm, options);
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
-            r.lyrics = LyricsCharter.build(lyrics, r.tempo, f.duration);
-            for (LyricsCharter.Event e : r.lyrics) if (e.text.equals("phrase_start")) r.lyricLines++;
+            VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
+            if (!keepLyricTimes) {
+                LyricAligner.Result placed = voice != null ? LyricAligner.align(lyrics, voice) : LyricAligner.alignToStart(lyrics, f);
+                if (placed.moved()) {
+                    lyrics = placed.lines;
+                    r.lyricsMoved = true;
+                    r.lyricTimingNote = placed.note;
+                }
+            }
+            r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb, times);
+            r.lyricLines = r.vocals.lines;
+            r.lyricsOut = lyrics;
+            boolean marked = false;
+            for (Lrc.Line l : lyrics) marked |= l.singer != Lrc.UNMARKED;
+            if (stems != null && stems.guessSingers && voice != null && !marked) {
+                r.singersGuessTried = true;
+                // Two artists named: there certainly are two singers, only the lines need sorting
+                boolean knownTwo = stems.singerNames != null && stems.singerNames.length >= 2;
+                r.singerGuess = VoiceSplitter.guess(r.vocals, voice, lyrics.size(), knownTwo);
+                if (r.singerGuess != null) {
+                    r.vocals.assignParts(r.singerGuess.partOfLine);
+                    // Written back into the lyrics, so the guess is saved and can be corrected by hand.
+                    List<Lrc.Line> out = new ArrayList<>();
+                    for (int i = 0; i < lyrics.size(); i++) {
+                        Lrc.Line l = lyrics.get(i);
+                        boolean second = r.singerGuess.partOfLine[i] == VocalCharter.PART_SECOND;
+                        out.add(l.text.isEmpty() ? l : new Lrc.Line(l.time, l.text, second ? Lrc.SECOND : Lrc.FIRST));
+                    }
+                    r.lyricsOut = out;
+                }
+            }
+            if (r.lyricLines > 0) {
+                // Sung songs are harder than rapped ones (the note has to be right), busy ones harder still.
+                double sung = (double) r.vocals.sungLines / r.lyricLines;
+                double pace = f.duration > 1 ? r.vocals.words / f.duration : 0;
+                r.vocalTier = (int) Math.max(0, Math.min(6, Math.round(1 + 3 * sung + pace)));
+            }
         }
         double nps = f.duration > 1 ? r.noteCount(GuitarCharter.EXPERT) / f.duration : 0;
         r.guitarTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
@@ -118,6 +189,7 @@ public final class SongWriter {
                 break;
             }
         }
+        if (stems.rnb) chartFromVoice(r, stems, options);
         if (stems.bass != null && stems.bassEnergy >= 0.003 * Math.max(1e-12, stems.mixEnergy)) {
             GuitarCharter.Options bassOptions = options == null ? new GuitarCharter.Options() : options.copy();
             bassOptions.chords = false;
@@ -129,6 +201,29 @@ public final class SongWriter {
                 double nps = r.duration > 1 ? notes / r.duration : 0;
                 r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
             }
+        }
+    }
+
+    /**
+     * R&amp;B mode: replaces the guitar chart with one that follows the lead singer. A song with
+     * little singing in it (an instrumental, a long intro and one chorus) keeps the chart made
+     * from the instruments, and the user is told why.
+     */
+    private static void chartFromVoice(Result r, Stems stems, GuitarCharter.Options options) {
+        if (stems.vocals == null || stems.voice == null) {
+            r.rnbNote = "R&B mode needs the song split into instruments, so the guitar chart follows the band instead.";
+            return;
+        }
+        GuitarCharter.Chart chart = MelodyCharter.build(stems.vocals, stems.voice, r.tempo, r.bpm, options);
+        int notes = chart.notes.get(GuitarCharter.EXPERT).size();
+        // A vocal-led chart is sparser than one from the band, so it is judged by how much of the
+        // song is sung, not by how many notes the band chart had
+        if (notes >= 24 && MelodyCharter.singingShare(stems.voice) >= MelodyCharter.MIN_SINGING_SHARE) {
+            r.chart = chart;
+            r.rnb = true;
+            r.guitarSource = "the lead vocal (R&B mode)";
+        } else {
+            r.rnbNote = "R&B mode: there was too little singing to follow, so the guitar chart follows the band instead.";
         }
     }
 
@@ -152,115 +247,31 @@ public final class SongWriter {
         return Math.max(0, Math.round(f.timeOf(best) * 1000));
     }
 
+    /** Name of the file that tells the game who the two singers of a song are (one name a line). */
+    public static final String PARTS_FILE = "vocal_parts.txt";
+
     public static void writeFolder(File dir, SongMeta meta, Result r, String audioFileName) throws IOException {
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Could not create " + dir);
-        try (Writer w = open(new File(dir, "notes.chart"))) {
-            writeChart(w, meta, r, audioFileName);
-        }
+        MidiSong.write(new File(dir, "notes.mid"), r);
+        // A chart left by an older version of the app would be a second, stale copy of the song.
+        File old = new File(dir, "notes.chart");
+        if (old.exists() && !old.delete()) throw new IOException("Could not replace " + old);
         try (Writer w = open(new File(dir, "song.ini"))) {
             writeIni(w, meta, r);
+        }
+        File parts = new File(dir, PARTS_FILE);
+        if (r.vocals.twoParts()) {
+            try (Writer w = open(parts)) {
+                w.write(meta.singerName(0) + "\n" + meta.singerName(1) + "\n");
+            }
+        } else if (parts.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            parts.delete();
         }
     }
 
     private static Writer open(File f) throws IOException {
         return new BufferedWriter(new OutputStreamWriter(new FileOutputStream(f), StandardCharsets.UTF_8));
-    }
-
-    private static String quote(String s) {
-        return s.replace("\"", "'").replace("\r", " ").replace("\n", " ").trim();
-    }
-
-    public static void writeChart(Writer w, SongMeta meta, Result r, String audioFileName) throws IOException {
-        TempoMap map = r.tempo;
-        w.write("[Song]\n{\n");
-        w.write("  Name = \"" + quote(meta.titleOrDefault()) + "\"\n");
-        w.write("  Artist = \"" + quote(meta.artistOrDefault()) + "\"\n");
-        w.write("  Charter = \"" + quote(meta.charter) + "\"\n");
-        if (!meta.album.trim().isEmpty()) w.write("  Album = \"" + quote(meta.album) + "\"\n");
-        if (!meta.year.trim().isEmpty()) w.write("  Year = \", " + quote(meta.year) + "\"\n");
-        w.write("  Offset = 0\n");
-        w.write("  Resolution = " + TempoMap.RESOLUTION + "\n");
-        w.write("  Player2 = bass\n");
-        w.write("  Difficulty = " + r.guitarTier + "\n");
-        w.write("  PreviewStart = " + String.format(Locale.US, "%.2f", r.previewMs / 1000.0) + "\n");
-        w.write("  PreviewEnd = 0\n");
-        if (!meta.genre.trim().isEmpty()) w.write("  Genre = \"" + quote(meta.genre) + "\"\n");
-        w.write("  MediaType = \"cd\"\n");
-        w.write("  MusicStream = \"" + quote(audioFileName) + "\"\n");
-        w.write("}\n");
-
-        w.write("[SyncTrack]\n{\n");
-        // A short first measure holds any beats before the first real "one".
-        int full = map.beatsPerMeasure;
-        long fullTick = map.origin();
-        w.write("  0 = TS " + (map.pickupBeats > 0 ? map.pickupBeats : full) + "\n");
-        boolean wroteFull = map.pickupBeats == 0;
-        for (int i = 0; i < map.tick.length; i++) {
-            if (!wroteFull && map.tick[i] >= fullTick) {
-                w.write("  " + fullTick + " = TS " + full + "\n");
-                wroteFull = true;
-            }
-            w.write("  " + map.tick[i] + " = B " + map.milliBpm[i] + "\n");
-        }
-        if (!wroteFull) w.write("  " + fullTick + " = TS " + full + "\n");
-        w.write("}\n");
-
-        // Global events: practice sections every 16 measures, plus lyrics. At the same tick a
-        // phrase must close before the next opens, and open before its first word.
-        List<Object[]> events = new ArrayList<>();
-        long endTick = map.timeToTick(r.duration);
-        int part = 1;
-        for (int m = 0; map.measureStart(m) < endTick; m += 16) {
-            long t = m == 0 ? 0 : map.measureStart(m);
-            events.add(new Object[] {t, 0, "section Part " + part++});
-        }
-        for (LyricsCharter.Event e : r.lyrics) {
-            int order = e.text.equals("phrase_end") ? 1 : e.text.equals("phrase_start") ? 2 : 3;
-            events.add(new Object[] {e.tick, order, e.text});
-        }
-        Collections.sort(events, new Comparator<Object[]>() {
-            @Override
-            public int compare(Object[] a, Object[] b) {
-                int c = Long.compare((Long) a[0], (Long) b[0]);
-                return c != 0 ? c : Integer.compare((Integer) a[1], (Integer) b[1]);
-            }
-        });
-        w.write("[Events]\n{\n");
-        for (Object[] e : events) w.write("  " + e[0] + " = E \"" + e[2] + "\"\n");
-        w.write("}\n");
-
-        writeInstrument(w, r.chart, GuitarCharter.SECTION_NAMES);
-        if (r.bassChart != null) writeInstrument(w, r.bassChart, BASS_SECTION_NAMES);
-    }
-
-    private static final String[] BASS_SECTION_NAMES = {"EasyDoubleBass", "MediumDoubleBass", "HardDoubleBass", "ExpertDoubleBass"};
-
-    private static void writeInstrument(Writer w, GuitarCharter.Chart chart, String[] sectionNames) throws IOException {
-        for (int d = GuitarCharter.EXPERT; d >= GuitarCharter.EASY; d--) {
-            List<GuitarCharter.Note> notes = chart.notes.get(d);
-            if (notes.isEmpty()) continue;
-            w.write("[" + sectionNames[d] + "]\n{\n");
-            int sp = 0;
-            List<long[]> phrases = chart.starPower;
-            for (GuitarCharter.Note n : notes) {
-                while (sp < phrases.size() && phrases.get(sp)[0] <= n.tick) {
-                    long[] p = phrases.get(sp++);
-                    if (hasNoteIn(notes, p[0], p[0] + p[1])) w.write("  " + p[0] + " = S 2 " + p[1] + "\n");
-                }
-                int a = n.lane2 >= 0 ? Math.min(n.lane, n.lane2) : n.lane;
-                w.write("  " + n.tick + " = N " + a + " " + n.sustain + "\n");
-                if (n.lane2 >= 0) w.write("  " + n.tick + " = N " + Math.max(n.lane, n.lane2) + " " + n.sustain + "\n");
-            }
-            w.write("}\n");
-        }
-    }
-
-    private static boolean hasNoteIn(List<GuitarCharter.Note> notes, long a, long b) {
-        for (GuitarCharter.Note n : notes) {
-            if (n.tick >= b) return false;
-            if (n.tick >= a) return true;
-        }
-        return false;
     }
 
     public static void writeIni(Writer w, SongMeta meta, Result r) throws IOException {
@@ -278,7 +289,8 @@ public final class SongWriter {
         w.write("diff_rhythm = -1\n");
         w.write("diff_drums = -1\n");
         w.write("diff_keys = -1\n");
-        w.write("diff_vocals = -1\n");
+        w.write("diff_vocals = " + r.vocalTier + "\n");
+        if (r.vocals.twoParts()) w.write("diff_vocals_harm = " + r.vocalTier + "\n");
         w.write("delay = 0\n");
         w.write("loading_phrase = Auto-charted from audio by YARG Converter.\n");
     }

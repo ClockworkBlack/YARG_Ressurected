@@ -1,0 +1,128 @@
+diff --git a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+index 07b485a..354abcd 100644
+--- a/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/PopupMenu.cs
+@@ -310,7 +310,7 @@ namespace YARG.Menu.MusicLibrary
+                     CreateItem("PlayOnStartup", () =>
+                     {
+                         MenuMusic.SetStartupSong(song);
+-                        ToastManager.ToastSuccess($"{song.Name} will play when the game starts");
++                        ToastManager.ToastSuccess($"Added {song.Name} to Startup Songs");
+                         gameObject.SetActive(false);
+                     });
+                 }
+@@ -318,8 +318,8 @@ namespace YARG.Menu.MusicLibrary
+                 {
+                     CreateItem("DontPlayOnStartup", () =>
+                     {
+-                        MenuMusic.SetStartupSong(null);
+-                        ToastManager.ToastSuccess("No startup song");
++                        MenuMusic.RemoveStartupSong(song);
++                        ToastManager.ToastSuccess($"Removed {song.Name} from Startup Songs");
+                         gameObject.SetActive(false);
+                     });
+                 }
+diff --git a/Assets/Script/Playlists/PlaylistContainer.cs b/Assets/Script/Playlists/PlaylistContainer.cs
+index 0fc801f..ae8860e 100644
+--- a/Assets/Script/Playlists/PlaylistContainer.cs
++++ b/Assets/Script/Playlists/PlaylistContainer.cs
+@@ -172,6 +172,35 @@ namespace YARG.Playlists
+             return playlist;
+         }
+ 
++        /// <summary>
++        /// The playlist with this id, made (empty, named <paramref name="name"/>) if it doesn't exist yet.
++        /// Used for playlists the game itself relies on, like the menu's Startup Songs.
++        /// </summary>
++        public static Playlist GetOrCreatePlaylist(Guid id, string name)
++        {
++            foreach (var existing in _playlists)
++            {
++                if (existing.Id == id)
++                {
++                    return existing;
++                }
++            }
++
++            var playlist = new Playlist
++            {
++                Name = name,
++                Author = "You",
++                Id = id,
++                SongHashes = new List<HashWrapper>()
++            };
++
++            SavePlaylist(playlist);
++            _playlists.Add(playlist);
++            SortPlaylistsByName();
++            RefreshMenuMusicChoices();
++            return playlist;
++        }
++
+         public static void DeletePlaylist(Playlist playlist)
+         {
+             _playlists.Remove(playlist);
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 8d3d260..5f5caf2 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -65,6 +65,9 @@ namespace YARG.Settings
+             public List<string> SongFolders = new();
+ 
+             public bool ShowAntiPiracyDialog = true;
++
++            // Set once "No Pole" by Don Toliver has been put in the Startup Songs playlist, so removing it sticks
++            public bool StartupSongsSeeded = false;
+             public bool ShowEngineInconsistencyDialog = true;
+             public bool ShowExperimentalWarningDialog = true;
+ 
+@@ -284,6 +287,8 @@ namespace YARG.Settings
+             // Menu background music: what plays, and an optional song first on every startup
+             public MenuMusicSourceSetting MenuMusicSource { get; } = new(MenuMusic.SOURCE_ALL, _ => MenuMusic.OnSettingChanged());
+             public ToggleSetting MenuMusicShuffle { get; } = new(true, _ => MenuMusic.OnSettingChanged());
++            public ToggleSetting MenuMusicPlayStartupSongs { get; } = new(true);
++            // Old single startup song (builds 19-20); moved into the Startup Songs playlist on first run
+             public StartupSongSetting MenuMusicStartupSong { get; } = new(string.Empty);
+             public VolumeSetting VocalMonitoring { get; } = new(0.7f, VocalMonitoringCallback);
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 71054b6..68596ef 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -112,7 +112,7 @@ namespace YARG.Settings
+                 nameof(Settings.MusicPlayerVolume),
+                 nameof(Settings.MenuMusicSource),
+                 nameof(Settings.MenuMusicShuffle),
+-                nameof(Settings.MenuMusicStartupSong),
++                nameof(Settings.MenuMusicPlayStartupSongs),
+                 new FieldMetadata(nameof(Settings.VocalMonitoring)),
+                 new FieldMetadata(nameof(Settings.MetronomeVolume), isAdvanced: true),
+ 
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index af201e9..b133d42 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -343,8 +343,8 @@
+                     "CopySongChecksum": "Copy Song Checksum",
+                     "CollapseAll": "Collapse All",
+                     "ExpandAll": "Expand All",
+-                    "PlayOnStartup": "Play On Startup",
+-                    "DontPlayOnStartup": "Don't Play On Startup",
++                    "PlayOnStartup": "Add To Startup Songs",
++                    "DontPlayOnStartup": "Remove From Startup Songs",
+                     "UseAsMenuMusic": "Use As Menu Music",
+                     "StopMenuMusic": "Stop Using As Menu Music"
+                 }
+@@ -1291,9 +1291,9 @@
+                 "Name": "Shuffle Menu Music",
+                 "Description": "On: plays the menu music songs in random order. Off: plays a playlist in its own order."
+             },
+-            "MenuMusicStartupSong": {
+-                "Name": "Startup Song",
+-                "Description": "A song that plays first every time the game starts, before the menu music. To pick one, highlight a song in the music library, open More Options and choose \"Play On Startup\". Set to None to turn it off."
++            "MenuMusicPlayStartupSongs": {
++                "Name": "Play Startup Songs",
++                "Description": "Plays the songs in your \"Startup Songs\" playlist, in order, each time the game starts, before the menu music. It starts with \"No Pole\" by Don Toliver when that song is in your library. To add songs, highlight one in the music library, open More Options and choose \"Add To Startup Songs\". To change the order or remove songs, open Playlists > Startup Songs: Left / Right moves the highlighted song."
+             },
+             "GuitarVoice": {
+                 "Name": "Guitar Sound On Notes",

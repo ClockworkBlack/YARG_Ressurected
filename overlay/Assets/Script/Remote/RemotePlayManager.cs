@@ -138,6 +138,37 @@ namespace YARG.Remote
         }
 
         /// <summary>
+        /// The hold time (seconds) of a phone's controller page, if this profile plays through
+        /// one; 0 otherwise. Unlike <see cref="GetInputDelaySeconds"/> it never answers for a
+        /// microphone.
+        /// </summary>
+        public static double GetPadDelaySeconds(YARG.Input.ProfileBindings bindings)
+        {
+            var instance = Instance;
+            if (instance == null || bindings == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                foreach (var pair in instance._phones)
+                {
+                    var phone = pair.Value;
+                    if (phone.Pad != null && bindings.InputDevices.Contains(phone.Pad))
+                    {
+                        return phone.HoldMs / 1000.0;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+            return 0;
+        }
+
+        /// <summary>
         /// The network hold (ms) measured for the phone that feeds <paramref name="mic"/>: a bit
         /// more than that connection's usual delay. A default if the phone is not connected.
         /// </summary>

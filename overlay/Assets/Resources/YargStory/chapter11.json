@@ -1,0 +1,78 @@
+{
+  "id": "ch11",
+  "number": 11,
+  "side": "Hidden Track",
+  "bonus": true,
+  "title": "What's Yours?",
+  "subtitle": "Minneapolis, six months later",
+  "focus": "Now and next: your own sound, with the whole lineage sitting in",
+  "intro": [
+    {"s": "title", "t": "HIDDEN TRACK", "sub": "What's Yours?", "bg": "black"},
+    {"s": "title", "t": "SIX MONTHS LATER", "sub": "Minneapolis, a June night"},
+    {"s": "narrator", "t": "Six months. I have been playing bar five every night. I am getting good at it.", "bg": "wave"},
+    {"s": "narrator", "t": "I used to be one thin line. Now I am five colours, and I have opinions about every one of them."},
+    {"s": "narrator", "t": "June. The van is parked outside the Minneapolis Star Wall Club with four new tires and the same old letters. The Choir has never looked better.", "bg": "van"},
+    {"s": "tuesday", "t": "Mail. Forwarded from D.C., addressed to {band}, care of a church van. It's from the Counselor.", "mood": "hype"},
+    {"s": "pryce", "t": "Invoice. For services rendered, Watch Night through June: zero dollars and zero cents. Paid in full.", "mood": "warm"},
+    {"s": "pryce", "t": "P.S. Page forty-one, clause one. The Opening Act keeps the masters of every night it plays. You are not the opening act any more. Keep them anyway.", "mood": "sly"},
+    {"s": "tuesday", "t": "She framed it. She actually framed an invoice. There's a nail hole in the back.", "mood": "laugh"},
+    {"s": "cross", "t": "First stop of your own tour, Pocket. Your name on the ticket. Your nights on the tape.", "mood": "proud"},
+    {"s": "you", "t": "Feels strange."},
+    {"s": "cross", "t": "Good strange. Now get out of my van.", "mood": "laugh"}
+  ],
+  "outro": [
+    {"s": "narrator", "t": "Late. The long way back to the hotel. Odessa in the front seat, Ruth asleep behind her, everybody else pretending they aren't.", "bg": "van"},
+    {"s": "odessa", "t": "We got ours, Pocket. Now, what's yours?", "mood": "warm"},
+    {"s": "narrator", "t": "Nobody in the van answers for you. Not even me."},
+    {"s": "title", "t": "SIDE A", "sub": "Title: ________", "bg": "black"},
+    {"s": "narrator", "t": "Go on. I'll count you in.", "bg": "wave"}
+  ],
+  "gigs": [
+    {
+      "id": "g32-the-sixth-star",
+      "title": "The Sixth Star",
+      "venue": "minneapolis-club",
+      "stamp": "your tempo",
+      "blurb": "First stop of your own tour. Five names inked on the wall, and a sixth star with yours in pencil.",
+      "vibe": {"label": "Your sound, whatever it is", "genres": ["rnb", "hiphop", "pop", "soul", "funk"], "yearFrom": 0, "yearTo": 0, "keywords": []},
+      "songs": 3,
+      "starsToPass": 11,
+      "challenge": {"type": "allFive", "text": "Ink it: five stars on every song.", "badge": "The Sixth Star"},
+      "rewards": ["ln-g32"],
+      "before": [
+        {"s": "narrator", "t": "The star wall outside the club. The five stars that were blank last July have names in them now, in black ink and careful capitals.", "bg": "minneapolis-club"},
+        {"s": "narrator", "t": "WENDELL ARCENEAUX. LEMUEL CASTILE. RUTH PETTIS. AURELIUS FINCH. ODESSA FONTAINE."},
+        {"s": "narrator", "t": "And beside them, a sixth star, freshly painted. Inside it, in pencil: {band}."},
+        {"s": "lake", "t": "You came back with names.", "mood": "warm"},
+        {"s": "narrator", "t": "Inside, the guest list is taped to the green room door. Five names, then Kingston's, then a line in Tuesday's handwriting: 'Sitting in on {band}'s terms. Credited in full.'", "bg": "backstage"},
+        {"s": "deacon", "t": "Kingston. Tell them what you learned Sunday.", "mood": "sly"},
+        {"s": "kingston", "t": "That I'm the worst student in your class. I fly to Houston every week to find that out again.", "mood": "laugh"},
+        {"s": "deacon", "t": "Mm-hm. Worst I ever had. Never misses a Sunday. Misses everything else.", "mood": "laugh"},
+        {"s": "kingston", "t": "I've never been happier. I'd like that on the record.", "mood": "warm"},
+        {"s": "odessa", "t": "Two nights a week I still work the aisle at home, baby. Tuesdays and Fridays. Somebody has to see who shows up.", "mood": "neutral"},
+        {"s": "cross", "t": "I got a cousin in Johannesburg now. Zee found the paperwork. Sends me a picture of it every Sunday.", "mood": "warm"},
+        {"s": "tuesday", "t": "Fun fact.", "mood": "hype"},
+        {"s": "tuesday", "t": "...I had one. Nobody's interrupted me in six months and I have completely lost the rhythm.", "mood": "laugh"},
+        {"s": "ruth", "t": "Take your time, baby. Everybody in this room rushes but me.", "mood": "laugh"},
+        {"s": "you", "t": "Our terms, then. Our count."},
+        {"s": "finch", "t": "Play it however you like. I shall only correct the tempo afterwards.", "mood": "sly"}
+      ],
+      "afterWin": [
+        {"s": "narrator", "t": "The floor bounced the way this floor does. People on the sidewalk felt it through the star wall and came in to see who was doing it.", "bg": "minneapolis-club"},
+        {"s": "narrator", "t": "When the elders sat in, they sat in on your songs, on your count. Deacon waited for your two and four instead of bringing his own. It is the politest thing a drummer has ever done."},
+        {"s": "ren", "t": "Daddy's name is on a wall in Minneapolis. In ink. I'm going to need a minute.", "mood": "sad"},
+        {"s": "narrator", "t": "After, outside, under the wall. Lake is holding a brush and a small pot of black ink.", "bg": "street"},
+        {"s": "tuesday", "t": "Is he going to ink it?", "mood": "worried"},
+        {"s": "narrator", "t": "Lake looks at the sixth star a long time. At the pencil. At you."},
+        {"s": "lake", "t": "Not yet. You'll know when.", "mood": "warm"},
+        {"s": "ren", "t": "Daddy waited sixty years for ink. Y'all can wait a summer.", "mood": "laugh"},
+        {"s": "you", "t": "Pencil's fine."},
+        {"s": "narrator", "t": "Pencil is fine. Pencil can still turn into anything."}
+      ],
+      "afterLose": [
+        {"s": "lake", "t": "It's pencil. Pencil waits.", "mood": "warm", "bg": "minneapolis-club"},
+        {"s": "narrator", "t": "Your tempo, your night, your masters. Run it back."}
+      ]
+    }
+  ]
+}

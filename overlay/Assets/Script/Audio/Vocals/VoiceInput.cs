@@ -39,12 +39,6 @@ namespace YARG.Audio.Vocals
 
     public sealed class VoiceInput
     {
-        /// <summary>
-        /// In normal play a pitch is kept for this many results (20 ms each) while the voice
-        /// goes on without a clear tone, e.g. through a consonant in the middle of a note.
-        /// </summary>
-        public const int KEPT_PITCH_FRAMES = 3;
-
         // The audio clock may run a little faster or slower than the game's clock. The link
         // between the two follows the promptest deliveries and creeps up by this much at most.
         private const double CLOCK_DRIFT_PER_SECOND = 0.002;
@@ -63,13 +57,10 @@ namespace YARG.Audio.Vocals
         private long _samplesFed;
         private double _lastFrameTime = double.NegativeInfinity;
 
-        private float _keptPitchHz;
-        private int _keptFor;
-
         public int SampleRate => _analyzer.SampleRate;
 
         /// <summary>
-        /// Vocals Challenge Mode: only a clear tone is a pitch, and it is never kept.
+        /// Vocals Challenge Mode: a tone has to be clearer to count as a pitch.
         /// </summary>
         public bool Strict
         {
@@ -100,8 +91,6 @@ namespace YARG.Audio.Vocals
             _clockSet = false;
             _samplesFed = 0;
             _lastFrameTime = double.NegativeInfinity;
-            _keptPitchHz = 0f;
-            _keptFor = 0;
         }
 
         /// <summary>
@@ -194,29 +183,18 @@ namespace YARG.Audio.Vocals
                     emitted = true;
                 }
 
-                if (!result.Active)
+                // Loud enough to be heard: a pitch if it is a tone, otherwise "sound without
+                // a tone". (The original microphone code repeated the last pitch for as long
+                // as there was any sound, which let noise hold a note; here the scoring engine
+                // bridges the odd missing reading instead.)
+                if (result.Active)
                 {
-                    // Silence ends any kept pitch
-                    _keptPitchHz = 0f;
-                    _keptFor = 0;
-                }
-                else if (result.Voiced)
-                {
-                    _keptPitchHz = result.PitchHz;
-                    _keptFor = 0;
-                    output.Add(new VoiceInputFrame { Time = time, PitchHz = result.PitchHz, LevelDb = result.LevelDb });
-                    emitted = true;
-                }
-                else if (!Strict && _keptPitchHz > 0f && _keptFor < KEPT_PITCH_FRAMES)
-                {
-                    _keptFor++;
-                    output.Add(new VoiceInputFrame { Time = time, PitchHz = _keptPitchHz, LevelDb = result.LevelDb });
-                    emitted = true;
-                }
-                else
-                {
-                    _keptPitchHz = 0f;
-                    output.Add(new VoiceInputFrame { Time = time, PitchHz = 0f, LevelDb = result.LevelDb });
+                    output.Add(new VoiceInputFrame
+                    {
+                        Time = time,
+                        PitchHz = result.Voiced ? result.PitchHz : 0f,
+                        LevelDb = result.LevelDb
+                    });
                     emitted = true;
                 }
 

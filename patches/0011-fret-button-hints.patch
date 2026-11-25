@@ -1,0 +1,32 @@
+diff --git a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+index 72ab0b9..df298f9 100644
+--- a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
++++ b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+@@ -258,6 +258,14 @@ namespace YARG.Gameplay.Player
+ 
+             LaneElement.DefineLaneScale(Player.Profile.CurrentInstrument, 5);
+ 
++            // The controller button for each fret, shown just under the frets (gamepad players)
++            var hintLanes = new int[LANE_COUNT];
++            for (var action = GuitarAction.GreenFret; action <= GuitarAction.OrangeFret; action++)
++            {
++                hintLanes[action - GuitarAction.GreenFret] = _lanePositions[(int) GetFretIndex(action)];
++            }
++            FretButtonHints.Create(this, hintLanes, LANE_COUNT);
++
+             GameManager.BeatEventHandler.Visual.Subscribe(_fretArray.PulseFretColors, BeatEventType.StrongBeat);
+         }
+ 
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 7417c09..034e6ff 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1697,7 +1697,7 @@
+             },
+             "ShowControllerButtonNames": {
+                 "Name": "Show Controller Buttons",
+-                "Description": "While a gamepad is connected, button prompts show the controller's own buttons instead of plain colored pills: Cross, Circle, Triangle, Square and L1 on a PlayStation controller (A, B, X, Y on others, following Controller Layout). The color is still the action's color."
++                "Description": "While a gamepad is connected, button prompts show the controller's own buttons instead of plain colored pills: Cross, Circle, Triangle, Square and L1 on a PlayStation controller (A, B, X, Y on others, following Controller Layout). During a song, each fret also has the button that plays it shown just under it (L2, L1, R1, R2 and Cross with the Guitar Hero 2 layout)."
+             },
+             "ReconnectProfiles": {
+                 "Name": "Reconnect Profiles",

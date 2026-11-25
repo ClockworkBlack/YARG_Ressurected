@@ -8,6 +8,14 @@ public final class SongMeta {
     public String genre = "";
     public String year = "";
     public String charter = "YARG Converter (auto)";
+    /** The song's two singers, when it has two (shown in the game where a player picks whose lines to sing). */
+    public String[] singers = new String[0];
+
+    /** Name of singer 0 or 1, falling back to "Singer 1" / "Singer 2". */
+    public String singerName(int index) {
+        String name = index < singers.length && singers[index] != null ? singers[index].replaceAll("[\\r\\n]+", " ").trim() : "";
+        return name.isEmpty() ? "Singer " + (index + 1) : name;
+    }
 
     public String titleOrDefault() {
         return title.trim().isEmpty() ? "Unknown Song" : title.trim();
