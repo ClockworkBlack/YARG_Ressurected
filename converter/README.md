@@ -86,6 +86,19 @@ intro, a break in the middle) the words would come up while nobody is singing ye
   **Edit** page), move every line half a second per press. Lyrics moved this way are used exactly
   as they are; so are lyrics carrying an `[offset:]` line.
 
+- **Line by line (Split and R&B):** lyric sites get most lines right but not all. NetEase in
+  particular often stamps a line seconds late, crammed against the next, or part-way into its
+  own singing. Each line is checked against where the voice comes in after a silence:
+  - two lines crammed together: the wrong one moves to the nearest place the voice comes in,
+    picking whichever move leaves the lines around it with the song's usual room;
+  - a line stamped while its singing is already going: back to where that singing began, up to
+    1 second.
+
+  Measured on a real song with NetEase lyrics, against line starts checked by speech
+  recognition: average error 1.20 s before, 0.92 s after; no line got worse, and lyrics that
+  were already right came through unchanged. Lines sung straight on from the one before (no
+  breath between) cannot be told apart by the voice alone and keep their times.
+
 The summary says when lyrics were moved and by how much, and the `lyrics.lrc` saved with the song
 has the times that were used.
 
@@ -96,6 +109,89 @@ older encodings (EUC-KR, Shift-JIS, GBK, Big5, Windows-1251) and in UTF-16 are r
 opened. Chinese and Japanese lines, written without spaces, are cut into two-character pieces so
 each gets a note. The game needs build 37 or newer to draw these characters (older builds show
 boxes).
+
+## Word timing (optional download)
+
+Under the ways of converting, once the separation model is installed, **Download word timing
+(378 MB, optional)** adds a speech model (wav2vec2-base-960h by Meta, Apache 2.0, as ONNX from
+Hugging Face, pinned to one revision and checked against a fixed fingerprint). With it, in Split
+and R&B mode, the lyrics are matched to the separated voice letter by letter, checked against the
+lyric file and the song's repeats, and lines the recording does not have are left out. English,
+Korean and Japanese kana are followed; other scripts fall back to the voice-only check.
+
+It adds about a minute per song and needs a phone with 4 GB of memory or more. If it cannot run
+(not enough memory), the song is still converted with the voice-only check and the summary says
+so. The same button removes it again to free the space.
+
+## What we learned about lyric timing
+
+From converting real songs and checking every line by ear and by speech recognition:
+
+1. **Section labels are not lyrics.** NetEase writes `[00:12.09][Hook]`; such lines are gaps.
+2. **Timed lyrics online are mostly right, never all right.** Keep the file's times and fix only
+   lines the voice clearly contradicts; re-timing whole runs of lines moved good lines too.
+3. **A line starts where the voice comes in after a silence,** not where a word recogniser says
+   (it often counts the silence before a word as part of it).
+4. **The fix must never make right lyrics worse.** Every rule is measured on lyrics already
+   checked to be right as well as on wrong ones (`core-test/LineEval`, `AlignTest`). A longer
+   reach-back (1.6 s) fixed more NetEase lines but pulled correct hook lines into the line before.
+5. **A speech recogniser's word times are not a yardstick.** Its word starts stretch back over
+   the held note before them; lines it "confirmed" were up to 1.5 s early. The song itself is the
+   yardstick: a hook's lines must come back a whole number of bars later, every time.
+6. **Forced alignment is the accurate method.** With the words known, a speech model
+   (wav2vec2) only has to say where each letter is (`core/WordAligner`, `stems/OrtWordModel`).
+   On the test song its hook lines repeat within 0.05 s in 22 of 24 cases; lyric sites' times and
+   the recogniser's were off by 0.5 to 3 s on a third of them.
+7. **Repeats catch what was misheard.** Over ad-libs and a fading outro the letters can be laid
+   many ways; lines that break the pattern most passes keep are put where the pattern says, and
+   an outro going round follows on at the pace of its first passes.
+8. **The small (quantized, 95 MB) speech model is not good enough:** it agreed with the full
+   one (378 MB) on only 20 of 36 lines. The app offers the full one as an optional download
+   (below); without it, the voice-only check above is used. The desktop runner uses the same
+   file (`--words-model`).
+9. **Checked on nine real songs, not one.** Besides the first song (R&B, NetEase lyrics), eight
+   Creative Commons songs by Josh Woodward with independently timed lyrics from LRCLIB, three
+   of them remixed versions. Before any of the lyric file's times were used, the aligner put 86%
+   of 257 lines within 0.6 s of the file and 95% within 1 s. Of the 14 lines further off, the
+   letters showed the file wrong on 2, a speech recogniser could judge 2 more and sided with
+   the aligner on both, and on none was the aligner shown wrong; the rest could not be judged.
+   Lyrics given with no times at all came out the same as with times on those songs.
+10. **What the other songs broke, and the guards they led to:**
+    - a hook missing from the lyric sheet pulled lines 15 to 30 s on to the same words: each
+      line is now looked for within 10 s of its time in the lyric file;
+    - a verse in the lyric sheet that the recording lacks pushed real lines out of place: runs
+      of two or more lines whose letters fit nowhere are left out and the rest laid again (a
+      single badly heard line is never left out: two songs showed that would drop real lines);
+    - the wrong song's lyrics: rejected when the letters fit badly overall (right lyrics average
+      -0.3 to -1.7, wrong ones -2.7 and below; the line is drawn at -2.3);
+    - the repeat rule moved a last line that was held back on purpose (heard clearly, and the
+      lyric file agreed): lines the file confirms never move, and clearly heard lines move only
+      by whole repeats;
+    - the repeat rule preferred the longest period, then the one most passes kept, and each was
+      wrong somewhere: now the period most passes keep, among periods long enough to sing the
+      block in;
+    - a line's first letter latched on to a matching letter seconds early when unlisted singing
+      came before it: a stray letter or two is skipped.
+11. **A good lyric file is believed where the voice is unclear.** When the file agrees with the
+    voice on 70% of the lines or more, the few lines that differ keep the file's time unless the
+    voice was heard clearly there. A file that agrees on fewer lines (NetEase on the first
+    song: 37%) is not trusted, and the voice and the song's repeats decide.
+12. **Korean and Japanese are read by their sound.** Hangul is written out in Latin letters as
+    it is pronounced (Revised Romanization) and kana in Hepburn, so the English speech model can
+    follow them; accents are dropped. Chinese characters are still left to the voice-only check.
+13. **Right lyrics are told from wrong ones by order, not by a fixed fit.** Korean read by sound,
+    or a group singing in unison, fits worse even when right (Gee: -2.79) than the wrong song's
+    lyrics on another recording (-2.25). What does not change: right lyrics fit clearly better in
+    their own order than shuffled (+0.49 to +3.75 on 11 songs), wrong ones never do (-0.12 to
+    -0.01).
+14. **A lyric file's crammed lines are its own mistake.** Even a lyric file believed on unclear
+    lines does not get a line back where it would leave less than half the time the line takes
+    to sing; echoes in brackets do not count towards that time.
+15. **Still not covered:** one singer-songwriter and one R&B group is a
+    narrow sample (no rap, no heavy backing vocals, no live recordings); nothing here was
+    checked by ear.
+16. **Words decide the rest.** On a computer, `desktop/time_lyrics.py` hears the words and gets
+   much closer (average 0.23 s on the same song); the phone has no speech recogniser for files.
 
 ## Finding the lyrics
 

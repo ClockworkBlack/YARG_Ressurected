@@ -35,6 +35,12 @@ public final class SongWriter {
         public List<Lrc.Line> lyricsOut = new ArrayList<>();
         /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
         public boolean lyricsMoved;
+        /** The word-by-word timing in full (for reports and checks); null when it was not used. */
+        public LyricAligner.Result wordTiming;
+        /** Lines the song's repeats corrected, for the user; null when none. */
+        public List<String> repeatNotes;
+        /** True when the lyrics were timed word by word with the speech model. */
+        public boolean lyricsByWord;
         /** What was done to the lyrics' timing, for the user; null when nothing. */
         public String lyricTimingNote;
         /** True when the app was asked to tell two singers apart by voice. */
@@ -68,6 +74,14 @@ public final class SongWriter {
         public Features bass;
         /** The voice on its own: where each word is sung and on what note. Null when not listened to. */
         public VocalAnalyzer.Voice voice;
+        /**
+         * What a speech model heard in the voice: for every {@link WordAligner#FRAME_SEC}, the log
+         * likelihood of each letter. Null when that model was not run; then lyrics are timed from
+         * the voice's entries alone.
+         */
+        public float[][] letters;
+        /** True when the lyrics came without times (the times on the lines mean nothing); needs {@link #letters}. */
+        public boolean lyricTimesUnknown;
         /** For a song with two singers whose lines are not marked: work out who sings what from their voices. */
         public boolean guessSingers;
         /** The two singers' names when the song names two artists (makes the guess surer), or null. */
@@ -120,12 +134,41 @@ public final class SongWriter {
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
             VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
-            if (!keepLyricTimes) {
+            // Best of all: the letters of the lyrics matched to the voice by a speech model
+            LyricAligner.Result byWord = null;
+            if (!keepLyricTimes && stems != null && stems.letters != null) {
+                // First the whole song, when the lyrics were timed for another cut: each line is
+                // then looked for near where that puts it
+                List<Lrc.Line> rough = lyrics;
+                if (voice != null && !stems.lyricTimesUnknown) {
+                    LyricAligner.Result cut = LyricAligner.align(lyrics, voice);
+                    if (cut.moved()) rough = cut.lines;
+                }
+                byWord = WordAligner.place(rough, stems.letters, r.tempo, r.beatsPerMeasure, r.bpm, !stems.lyricTimesUnknown);
+                if (byWord.moved()) {
+                    lyrics = byWord.lines;
+                    r.lyricsMoved = true;
+                    r.lyricTimingNote = byWord.note;
+                    r.lyricsByWord = true;
+                    r.repeatNotes = byWord.repeatNotes;
+                    r.wordTiming = byWord;
+                }
+            }
+            if (!keepLyricTimes && (byWord == null || !byWord.moved())) {
                 LyricAligner.Result placed = voice != null ? LyricAligner.align(lyrics, voice) : LyricAligner.alignToStart(lyrics, f);
                 if (placed.moved()) {
                     lyrics = placed.lines;
                     r.lyricsMoved = true;
                     r.lyricTimingNote = placed.note;
+                }
+                // Then line by line: lyric sites often have single lines stamped late or early
+                if (voice != null) {
+                    LyricAligner.Result checked = LyricAligner.checkLines(lyrics, voice);
+                    if (checked.moved()) {
+                        lyrics = checked.lines;
+                        r.lyricsMoved = true;
+                        r.lyricTimingNote = r.lyricTimingNote == null ? checked.note : r.lyricTimingNote + " " + checked.note;
+                    }
                 }
             }
             r.vocals = VocalCharter.build(lyrics, r.tempo, f.duration, voice, stems != null && stems.rnb, times);

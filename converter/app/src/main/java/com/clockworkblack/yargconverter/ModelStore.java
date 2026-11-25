@@ -14,7 +14,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * The instrument-separation model file: where it lives on the phone and how it gets there.
+ * The model files: where they live on the phone and how they get there.
  *
  * The model is HT-Demucs 6-stem (Meta's Demucs v4, MIT licence) converted to ONNX by a third
  * party and hosted on Hugging Face. The download is pinned to one exact revision and checked
@@ -23,11 +23,35 @@ import java.security.NoSuchAlgorithmException;
 final class ModelStore {
     private ModelStore() {}
 
-    static final String FILE_NAME = "htdemucs_6s_fp16weights.onnx";
-    static final String URL = "https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/"
-            + "49df9b6989cf2150840ea65b0bef77a2e471b678/htdemucs_6s_fp16weights.onnx";
-    static final long SIZE = 136428532L;
-    static final String SHA256 = "7ce55792e2231c93fbf92de95f5fd5b3a5e6c89f7db690dfd693e8f1dce56869";
+    /** One model file: its name on the phone, the exact revision to download, and its fingerprint. */
+    static final class Spec {
+        final String fileName, url, sha256;
+        final long size;
+
+        Spec(String fileName, String url, long size, String sha256) {
+            this.fileName = fileName;
+            this.url = url;
+            this.size = size;
+            this.sha256 = sha256;
+        }
+    }
+
+    /** Splits a song into instruments (needed for the two split modes). */
+    static final Spec STEMS = new Spec("htdemucs_6s_fp16weights.onnx",
+            "https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/49df9b6989cf2150840ea65b0bef77a2e471b678/htdemucs_6s_fp16weights.onnx",
+            136428532L, "7ce55792e2231c93fbf92de95f5fd5b3a5e6c89f7db690dfd693e8f1dce56869");
+
+    /**
+     * Optional: hears the letters in the separated voice, so the lyrics can be timed word by word
+     * (wav2vec2-base-960h by Meta, Apache 2.0, as ONNX from Xenova on Hugging Face). The smaller
+     * quantized version of the same model was tested and was not accurate enough.
+     */
+    static final Spec WORDS = new Spec("wav2vec2-base-960h.onnx",
+            "https://huggingface.co/Xenova/wav2vec2-base-960h/resolve/a19f851b3d42865797e410752b4c570c871e4825/onnx/model.onnx",
+            377887594L, "e46614273f03ff4b87923a965e417fa72004825522cb007c9c25633b8475490d");
+
+    static final String FILE_NAME = STEMS.fileName;
+    static final long SIZE = STEMS.size;
 
     interface Progress {
         /** @return false to pause the download (it resumes from the same place next time) */
@@ -35,19 +59,39 @@ final class ModelStore {
     }
 
     static File file(Context context) {
-        File base = context.getExternalFilesDir(null);
-        if (base == null) base = context.getFilesDir();
-        return new File(new File(base, "models"), FILE_NAME);
+        return file(context, STEMS);
     }
 
     static boolean installed(Context context) {
-        File f = file(context);
-        return f.isFile() && f.length() == SIZE;
+        return installed(context, STEMS);
+    }
+
+    static void download(Context context, Progress progress) throws IOException {
+        download(context, STEMS, progress);
+    }
+
+    static File file(Context context, Spec spec) {
+        File base = context.getExternalFilesDir(null);
+        if (base == null) base = context.getFilesDir();
+        return new File(new File(base, "models"), spec.fileName);
+    }
+
+    static boolean installed(Context context, Spec spec) {
+        File f = file(context, spec);
+        return f.isFile() && f.length() == spec.size;
+    }
+
+    /** Removes a downloaded model (to free the space). */
+    static boolean remove(Context context, Spec spec) {
+        File f = file(context, spec);
+        return !f.exists() || f.delete();
     }
 
     /** Downloads the model, resuming a partial download if there is one. */
-    static void download(Context context, Progress progress) throws IOException {
-        File target = file(context);
+    static void download(Context context, Spec spec, Progress progress) throws IOException {
+        final String FILE_NAME = spec.fileName, URL = spec.url, SHA256 = spec.sha256;
+        final long SIZE = spec.size;
+        File target = file(context, spec);
         File dir = target.getParentFile();
         if (dir != null && !dir.isDirectory() && !dir.mkdirs()) throw new IOException("Could not create " + dir);
         File part = new File(dir, FILE_NAME + ".part");

@@ -46,7 +46,10 @@ import com.clockworkblack.yargconverter.core.SongWriter;
 import com.clockworkblack.yargconverter.core.StemSplitter;
 import com.clockworkblack.yargconverter.core.VocalAnalyzer;
 import com.clockworkblack.yargconverter.core.VocalCharter;
+import com.clockworkblack.yargconverter.core.Resampler;
+import com.clockworkblack.yargconverter.core.WordAligner;
 import com.clockworkblack.yargconverter.stems.OrtStemModel;
+import com.clockworkblack.yargconverter.stems.OrtWordModel;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -162,6 +165,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private volatile SongWriter.Result lastResult;
     private TextView modelStatus;
     private Button modelButton;
+    private TextView wordsStatus;
+    private Button wordsButton;
     private static final int DENSITY_FEWER = 1, DENSITY_STANDARD = 2, DENSITY_MORE = 3;
 
     @Override
@@ -539,10 +544,35 @@ public final class MainActivity extends Activity implements ConversionService.Li
         modelButton = button("Download the separation model (136 MB)", new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                downloadModel();
+                downloadModel(ModelStore.STEMS, modelStatus);
             }
         });
         root.addView(modelButton);
+        wordsStatus = new TextView(this);
+        wordsStatus.setPadding(0, dp(6), 0, dp(4));
+        root.addView(wordsStatus);
+        wordsButton = button("Download word timing (378 MB, optional)", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (ModelStore.installed(MainActivity.this, ModelStore.WORDS)) {
+                    new AlertDialog.Builder(MainActivity.this)
+                            .setTitle("Remove word timing?")
+                            .setMessage("Frees 378 MB. Lyrics are then timed from where the voice starts and stops only. You can download it again at any time.")
+                            .setPositiveButton("Remove", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface d, int which) {
+                                    ModelStore.remove(MainActivity.this, ModelStore.WORDS);
+                                    refreshModelUi(false);
+                                }
+                            })
+                            .setNegativeButton("Keep", null)
+                            .show();
+                } else {
+                    downloadModel(ModelStore.WORDS, wordsStatus);
+                }
+            }
+        });
+        root.addView(wordsButton);
     }
 
     private GradientDrawable box(int fill, int stroke) {
@@ -658,6 +688,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             for (int i = 0; i < batchList.getChildCount(); i++) batchList.getChildAt(i).setEnabled(!value);
         }
         modelButton.setEnabled(!value);
+        if (wordsButton != null) wordsButton.setEnabled(!value);
         singersButton.setEnabled(!value);
         boolean model = ModelStore.installed(this);
         modeNormal.setEnabled(!value);
@@ -688,9 +719,19 @@ public final class MainActivity extends Activity implements ConversionService.Li
         modelStatus.setText(installed
                 ? "Separation model installed (HT-Demucs, 6 instruments)."
                 : "The two split modes need a one-time 136 MB download from Hugging Face (HT-Demucs). Wi-Fi recommended. Normal works without it.");
+        if (wordsStatus != null) {
+            boolean words = ModelStore.installed(this, ModelStore.WORDS);
+            // Only of use with the split modes, which hear the voice on its own
+            wordsStatus.setVisibility(installed ? View.VISIBLE : View.GONE);
+            wordsButton.setVisibility(installed ? View.VISIBLE : View.GONE);
+            wordsButton.setText(words ? "Remove word timing (frees 378 MB)" : "Download word timing (378 MB, optional)");
+            wordsStatus.setText(words
+                    ? "Word timing installed: in the split modes, lyrics are matched to the voice word by word (English, Korean, Japanese kana). Adds about a minute per song."
+                    : "Optional: times lyrics word by word against the voice, much more accurately than from where the voice starts and stops. One-time 378 MB download (wav2vec2). Needs a phone with 4 GB of memory or more; Wi-Fi recommended.");
+        }
     }
 
-    private void downloadModel() {
+    private void downloadModel(final ModelStore.Spec spec, final TextView modelStatus) {
         if (busy) return;
         setBusy(true);
         progress.setIndeterminate(false);
@@ -703,7 +744,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 String error = null;
                 try {
                     final long[] last = {0};
-                    ModelStore.download(MainActivity.this, new ModelStore.Progress() {
+                    ModelStore.download(MainActivity.this, spec, new ModelStore.Progress() {
                         @Override
                         public boolean onProgress(final long done, final long total) {
                             long now = System.currentTimeMillis();
@@ -2178,7 +2219,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             if (useStems) {
                 long started = System.currentTimeMillis();
                 try {
-                    stems = separate(pcmFile, pcmFrames[0], rnb);
+                    stems = separate(pcmFile, pcmFrames[0], rnb, lyrics != null && !lyrics.isEmpty());
                     separationMs = System.currentTimeMillis() - started;
                 } catch (Exception | LinkageError | OutOfMemoryError e) {
                     // The charts can still be made the old way, from the full mix.
@@ -2263,6 +2304,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
         sb.append("Recognised ").append(result.chart.soundGroups).append(" different notes and chords, and ")
                 .append(result.chart.repeatedMeasures).append(" measures that repeat\n");
         describeVocals(sb, result, meta, stems != null && stems.voice != null);
+        if (wordTimingProblem != null) {
+            sb.append("  Word timing could not run on this phone (").append(wordTimingProblem).append("), so the lyrics were timed from where the voice starts and stops.\n");
+            wordTimingProblem = null;
+        }
         if (!copyAsIs) sb.append("Audio saved as WAV so YARG can play it.\n");
         sb.append("\nTo play it in YARG:\n")
                 .append("1. Open YARG (allow All files access if it asks).\n")
@@ -2308,7 +2353,14 @@ public final class MainActivity extends Activity implements ConversionService.Li
      * instruments together, the bass and the voice as they come out. Only the measurements are
      * kept; the separated audio itself is not stored.
      */
-    private SongWriter.Stems separate(File pcmFile, long frames, boolean rnb) throws Exception {
+    private SongWriter.Stems separate(File pcmFile, long frames, boolean rnb, boolean timeWords) throws Exception {
+        // With word timing installed and lyrics to time, the voice is also kept at 16 kHz for it
+        final boolean words = timeWords && ModelStore.installed(app, ModelStore.WORDS);
+        final Resampler to16k = words ? new Resampler(StemSplitter.SAMPLE_RATE, WordAligner.SAMPLE_RATE) : null;
+        final float[][] voice16k = {words ? new float[(int) Math.min(Integer.MAX_VALUE - 8, frames * WordAligner.SAMPLE_RATE / StemSplitter.SAMPLE_RATE + 4096)] : null};
+        final int[] voice16kLength = {0};
+        final float[] rsL = words ? new float[to16k.capacityFor(StemSplitter.SEGMENT)] : null;
+        final float[] rsR = words ? new float[to16k.capacityFor(StemSplitter.SEGMENT)] : null;
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         // R&B mode charts the guitar from the voice, so the vocals are measured like an instrument too
         final AudioAnalyzer vocals = rnb ? new AudioAnalyzer(StemSplitter.SAMPLE_RATE) : null;
@@ -2377,6 +2429,14 @@ public final class MainActivity extends Activity implements ConversionService.Li
                     jobs.add(listen(new Runnable() { @Override public void run() {
                         voice.feed(vox, 0, n);
                         if (vocals != null) vocals.feed(vox, 0, n);
+                        if (to16k != null) {
+                            int made = to16k.process(vox, vox, n, rsL, rsR);
+                            if (voice16kLength[0] + made > voice16k[0].length) {
+                                voice16k[0] = java.util.Arrays.copyOf(voice16k[0], voice16kLength[0] + made + 16000);
+                            }
+                            System.arraycopy(rsL, 0, voice16k[0], voice16kLength[0], made);
+                            voice16kLength[0] += made;
+                        }
                     } }));
                     try {
                         // Waits for all of them, and passes on anything one of them threw
@@ -2415,8 +2475,30 @@ public final class MainActivity extends Activity implements ConversionService.Li
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];
         out.mixEnergy = energy[3];
+        if (words && voice16kLength[0] > 0) {
+            // The separation model is closed by now, so its memory is free for this one
+            ConversionService.setTextAndProgress("Timing the lyrics word by word…", 0);
+            status("Timing the lyrics word by word… You can leave the app; it keeps going.");
+            try (OrtWordModel model = new OrtWordModel(ModelStore.file(app, ModelStore.WORDS).getAbsolutePath(), modelThreads())) {
+                out.letters = model.letters(voice16k[0], voice16kLength[0], new OrtWordModel.Progress() {
+                    @Override
+                    public void onProgress(int done, int total) {
+                        ConversionService.setTextAndProgress(String.format(Locale.US, "Timing the lyrics word by word: part %d of %d", done, total), done * 1000 / total);
+                    }
+                });
+            } catch (Exception | LinkageError | OutOfMemoryError e) {
+                // Not enough memory on this phone, or the model would not load: lyrics are then
+                // timed from the voice's entries alone, as without the download
+                out.letters = null;
+                wordTimingProblem = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            }
+            voice16k[0] = null;
+        }
         return out;
     }
+
+    /** Why word timing could not be used on the last song, or null. */
+    private volatile String wordTimingProblem;
 
     private static java.util.concurrent.Callable<Void> listen(final Runnable work) {
         return new java.util.concurrent.Callable<Void>() {

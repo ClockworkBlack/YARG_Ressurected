@@ -37,6 +37,12 @@ public final class LyricAligner {
         public double laterShift;
         /** What was done, for the user; null when the lyrics were left alone. */
         public String note;
+        /** Word-by-word alignment only, one entry per line of {@link #lines}: where the letters were heard, and how well they fitted. */
+        public double[] heard, fit;
+        /** Lines of the lyrics found not to be sung in this recording and left out (word-by-word alignment only). */
+        public int leftOut;
+        /** Lines the song's repeats corrected, one note each (word-by-word alignment only); may be null. */
+        public List<String> repeatNotes;
 
         public boolean moved() {
             return note != null;
@@ -297,5 +303,176 @@ public final class LyricAligner {
         int last = sum.length - 1;
         int ca = Math.max(0, Math.min(last, ia)), cb = Math.max(0, Math.min(last, ib));
         return (sum[cb] - sum[ca]) / (ib - ia);
+    }
+
+    // ------------------------------------------------------------------ line by line
+
+    /** How long the voice must be silent before it "comes in" again, in seconds. */
+    static final double ONSET_QUIET = 0.15;
+    /** How far back a line may be moved to where the singing it falls in began. */
+    static final double SNAP_BACK = 1.0;
+    /** A line with less room than this share of what it takes to sing counts as crammed. */
+    static final double CRAMPED = 0.4;
+    /** Seconds it takes to sing a syllable, roughly, for judging room. */
+    static final double SYLLABLE_SEC = 0.2;
+
+    /**
+     * Fixes single lines of lyrics found online, whose times are mostly right but not every one:
+     * NetEase and LRCLIB files often have a line stamped seconds late (leaving it crammed against
+     * the next), or stamped part-way into the singing it belongs to. Only the separated voice is
+     * used: where it comes in after a silence, and how much room each line has.
+     *
+     * <ol>
+     *   <li>Two lines crammed together (less room than it takes to sing the first): one of them is
+     *       stamped wrong. It moves to the nearest place the voice comes in, choosing the move that
+     *       leaves the lines around it with this song's usual room. (Spreading a whole run of lines
+     *       out instead was tried and moved lines that were right.)</li>
+     *   <li>A line stamped while the voice is already singing, with no new entry just after the
+     *       stamp, moves back to where that singing began (up to {@link #SNAP_BACK}).</li>
+     * </ol>
+     *
+     * Learned from songs checked word by word with speech recognition (converter/desktop).
+     */
+    public static Result checkLines(List<Lrc.Line> lines, VocalAnalyzer.Voice voice) {
+        Result r = new Result();
+        r.lines = lines;
+        if (lines == null || voice == null || voice.frames() < 50) return r;
+        List<Integer> index = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) if (!VocalCharter.words(lines.get(i).text).isEmpty()) index.add(i);
+        int n = index.size();
+        if (n < 2) return r;
+
+        float gate = voice.gate();
+        boolean[] voiced = new boolean[voice.frames()];
+        for (int f = 0; f < voiced.length; f++) voiced[f] = voice.level[f] > gate;
+        int quiet = Math.max(2, (int) Math.round(ONSET_QUIET * voice.fps));
+
+        double[] t = new double[n];
+        double[] need = new double[n];
+        for (int k = 0; k < n; k++) {
+            Lrc.Line l = lines.get(index.get(k));
+            t[k] = l.time;
+            int syllables = 0;
+            for (String w : VocalCharter.words(l.text)) syllables += VocalCharter.syllables(w);
+            need[k] = Math.max(0.8, SYLLABLE_SEC * syllables);
+        }
+        double[] given = t.clone();
+
+        // 1. Crammed pairs: one of the two lines is stamped wrong, usually the first one seconds
+        //    late, against the next. Of moving the first back or the second on, the move that
+        //    lands on a place where the voice comes in, at this song's usual room per line, wins.
+        double usual = usualRoom(t, need);
+        int spread = 0;
+        for (int k = 0; k + 1 < n; k++) {
+            if (t[k + 1] - t[k] >= CRAMPED * need[k]) continue;
+            double before = k > 0 ? t[k - 1] + 0.5 : 0;
+            double after = k + 2 < n ? t[k + 2] - 0.5 : voice.duration;
+            // The first line back, ending where the second starts
+            double backTarget = t[k + 1] - usual * need[k];
+            double back = nearestEntry(voice, voiced, quiet, Math.max(before, backTarget - 2.0), t[k + 1] - 0.6 * need[k], backTarget);
+            // The second line on, starting when the first has had its room
+            double onTarget = t[k] + usual * need[k];
+            double on = nearestEntry(voice, voiced, quiet, t[k] + 0.6 * need[k], Math.min(after, onTarget + 2.0), onTarget);
+            // Judged by how normal it leaves the room of the lines around the pair
+            double backCost = back < 0 ? Double.MAX_VALUE : roomCost(t, need, usual, k, back, k);
+            double onCost = on < 0 ? Double.MAX_VALUE : roomCost(t, need, usual, k + 1, on, k);
+            if (back >= 0 && backCost <= onCost) {
+                t[k] = back;
+                spread++;
+            } else if (on >= 0) {
+                t[k + 1] = on;
+                spread++;
+            }
+        }
+
+        // 2. Stamped part-way into singing: back to where it began
+        int snapped = 0;
+        for (int k = 0; k < n; k++) {
+            int f = voice.frameAt(t[k]);
+            if (!sounding(voiced, f - 5, f + 5)) continue;
+            double lo = k > 0 ? t[k - 1] + 0.5 : 0;
+            double hi = k + 1 < n ? t[k + 1] - 0.3 : Double.MAX_VALUE;
+            if (entryNear(voice, voiced, quiet, t[k], Math.min(hi, t[k] + 0.25)) >= 0) continue;
+            double entry = lastEntry(voice, voiced, quiet, Math.max(lo, t[k] - SNAP_BACK), t[k]);
+            if (entry >= 0 && t[k] - entry > 0.12) {
+                t[k] = entry;
+                snapped++;
+            }
+        }
+
+        int moved = 0;
+        for (int k = 0; k < n; k++) if (Math.abs(t[k] - given[k]) > 0.05) moved++;
+        if (moved == 0) return r;
+        List<Lrc.Line> out = new ArrayList<>(lines);
+        for (int k = 0; k < n; k++) {
+            Lrc.Line l = lines.get(index.get(k));
+            out.set(index.get(k), new Lrc.Line(Math.max(0, t[k]), l.text, l.singer));
+        }
+        r.lines = out;
+        r.note = String.format(Locale.US, "%d line%s of the lyrics %s moved to where the voice comes in.", moved, moved == 1 ? "" : "s",
+                moved == 1 ? "was" : "were");
+        return r;
+    }
+
+    /** How far from this song's usual room the lines around {@code around} are with line {@code which} at {@code at}. */
+    private static double roomCost(double[] t, double[] need, double usual, int which, double at, int around) {
+        double[] u = t.clone();
+        u[which] = at;
+        double cost = 0;
+        for (int k = Math.max(0, around - 1); k <= Math.min(t.length - 2, around + 1); k++) {
+            double room = (u[k + 1] - u[k]) / need[k];
+            if (room <= 0) return Double.MAX_VALUE;
+            cost += Math.abs(Math.log(room / usual));
+        }
+        return cost;
+    }
+
+    /** The middle room a line has in this song, as a multiple of what it takes to sing it. */
+    private static double usualRoom(double[] t, double[] need) {
+        List<Double> r = new ArrayList<>();
+        for (int k = 0; k + 1 < t.length; k++) {
+            double room = (t[k + 1] - t[k]) / need[k];
+            if (room >= CRAMPED && room < 8) r.add(room);
+        }
+        if (r.isEmpty()) return 1.5;
+        java.util.Collections.sort(r);
+        return r.get(r.size() / 2);
+    }
+
+    /** Of the places in [a, b] where the voice comes in, the one nearest {@code target}; -1 if none. */
+    private static double nearestEntry(VocalAnalyzer.Voice v, boolean[] voiced, int quiet, double a, double b, double target) {
+        double best = -1, miss = Double.MAX_VALUE;
+        for (int f = v.frameAt(a); f <= v.frameAt(b); f++) {
+            if (!isEntry(voiced, f, quiet)) continue;
+            double d = Math.abs(v.timeOf(f) - target);
+            if (d < miss) {
+                miss = d;
+                best = v.timeOf(f);
+            }
+        }
+        return best;
+    }
+
+    private static boolean sounding(boolean[] voiced, int from, int to) {
+        for (int f = Math.max(0, from); f <= Math.min(voiced.length - 1, to); f++) if (voiced[f]) return true;
+        return false;
+    }
+
+    private static boolean isEntry(boolean[] voiced, int f, int quiet) {
+        if (f < quiet || f >= voiced.length || !voiced[f]) return false;
+        for (int g = f - quiet; g < f; g++) if (voiced[g]) return false;
+        return true;
+    }
+
+    /** The first place in [a, b] where the voice comes in after a silence, or -1. */
+    private static double entryNear(VocalAnalyzer.Voice v, boolean[] voiced, int quiet, double a, double b) {
+        for (int f = v.frameAt(a); f <= v.frameAt(b); f++) if (isEntry(voiced, f, quiet)) return v.timeOf(f);
+        return -1;
+    }
+
+    /** The last place in [a, b] where the voice comes in after a silence, or -1. */
+    private static double lastEntry(VocalAnalyzer.Voice v, boolean[] voiced, int quiet, double a, double b) {
+        for (int f = v.frameAt(b); f >= v.frameAt(a); f--) if (isEntry(voiced, f, quiet)) return v.timeOf(f);
+        return -1;
     }
 }

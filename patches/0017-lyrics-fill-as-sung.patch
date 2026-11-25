@@ -1,0 +1,265 @@
+diff --git a/Assets/Script/Gameplay/HUD/LyricBarPhrase.cs b/Assets/Script/Gameplay/HUD/LyricBarPhrase.cs
+index 89033a4..bf4f1a8 100644
+--- a/Assets/Script/Gameplay/HUD/LyricBarPhrase.cs
++++ b/Assets/Script/Gameplay/HUD/LyricBarPhrase.cs
+@@ -1,4 +1,5 @@
+-﻿using System.Collections.Generic;
++﻿using System;
++using System.Collections.Generic;
+ using Cysharp.Text;
+ using DG.Tweening;
+ using TMPro;
+@@ -48,6 +49,23 @@ namespace YARG.Gameplay.HUD
+ 
+         private int                     _currentLyricIndex;
+         private Utf16ValueStringBuilder _builder;
++
++        // YARG Resurrected: the lyrics fill letter by letter, in time with the singing, instead of
++        // a whole word turning blue the moment it starts. Each word fills over the time its note
++        // is held (from the vocals part), so a held note fills slowly and a quick word quickly.
++        private static readonly Color32 FILL_COLOR = new(0x5C, 0xB9, 0xFF, 0xFF);
++        private Color32   _baseColor = new(0xFF, 0xFF, 0xFF, 0xFF);
++        // Per lyric of the current phrase: where its text starts in the string, and when it is sung
++        private int[]     _lyricCharStart = new int[0];
++        private double[]  _lyricStart = new double[0];
++        private double[]  _lyricEnd = new double[0];
++        private int       _textLength;
++        // How far the fill has got, in characters of the string (fractions fill part of a letter)
++        private double    _fillPosition = -1;
++
++        // When each sung note ends (slides included), by tick: shared by the phrase objects of one chart
++        private static SongChart                _noteEndsChart;
++        private static Dictionary<uint, double> _noteEnds;
+         private RectTransform           _lyricTextTransform;
+         public double?                    RewindTargetTime;
+         private bool IsRewinding => RewindTargetTime != null;
+@@ -57,11 +75,23 @@ namespace YARG.Gameplay.HUD
+             _builder = ZString.CreateStringBuilder(false);
+             // This should improve performance slightly by avoiding the need to call GetComponent
+             _lyricTextTransform = _lyricText.rectTransform;
++            _baseColor = _lyricText.color;
++            // Each time the text mesh is rebuilt (new text, alpha changes), the fill is put back on it
++            _lyricText.OnPreRenderText += OnTextRebuilt;
+         }
+ 
+         protected override void GameplayDestroy()
+         {
+             _builder.Dispose();
++            if (_lyricText != null)
++            {
++                _lyricText.OnPreRenderText -= OnTextRebuilt;
++            }
++        }
++
++        private void OnTextRebuilt(TMP_TextInfo info)
++        {
++            ColorFill(info);
+         }
+ 
+         public void AddPhrase(PhraseTransitionData phrase)
+@@ -186,68 +216,180 @@ namespace YARG.Gameplay.HUD
+ 
+             if (time >= currentPhrase.ActiveTransition.TimeEnd && time <= currentPhrase.ExitTransition.TimeEnd)
+             {
+-                UpdateHighlighting();
++                UpdateFill(time);
+             }
+ 
+             UpdatePosition();
+ 
+         }
+ 
+-        private void UpdateHighlighting()
++        private void UpdateFill(double time)
+         {
+-            var lyrics = _phrases[_currentPhraseIndex].Phrase.Lyrics;
+-            var time = GameManager.VisualTime;
+-            if (IsRewinding)
++            double position = 0;
++            for (int i = 0; i < _lyricStart.Length; i++)
+             {
+-                _currentLyricIndex = 0;
++                if (time < _lyricStart[i])
++                {
++                    break;
++                }
++
++                int from = _lyricCharStart[i];
++                int to = i + 1 < _lyricCharStart.Length ? _lyricCharStart[i + 1] : _textLength;
++                double length = _lyricEnd[i] - _lyricStart[i];
++                double done = length <= 0 ? 1 : Math.Min(1, (time - _lyricStart[i]) / length);
++                position = from + (to - from) * done;
+             }
+-            int currentIndex = _currentLyricIndex;
+ 
+-            while (currentIndex < lyrics.Count && lyrics[currentIndex].Time <= time)
++            if (Math.Abs(position - _fillPosition) < 0.02 && !IsRewinding)
+             {
+-                currentIndex++;
++                return;
+             }
+ 
+-            if (_currentLyricIndex == currentIndex && !IsRewinding)
++            _fillPosition = position;
++            ColorFill(_lyricText.textInfo);
++            _lyricText.UpdateVertexData(TMP_VertexDataUpdateFlags.Colors32);
++        }
++
++        /// <summary>
++        /// Colours the letters up to the fill position blue. The letter the fill is passing
++        /// through blends from blue on its left to white on its right, so the fill moves smoothly.
++        /// </summary>
++        private void ColorFill(TMP_TextInfo info)
++        {
++            if (info == null || info.characterInfo == null)
+             {
+                 return;
+             }
+ 
+-            _currentLyricIndex = currentIndex;
++            for (int k = 0; k < info.characterCount && k < info.characterInfo.Length; k++)
++            {
++                var character = info.characterInfo[k];
++                if (!character.isVisible)
++                {
++                    continue;
++                }
+ 
+-            UpdatePhraseString();
++                var colors = info.meshInfo[character.materialReferenceIndex].colors32;
++                int v = character.vertexIndex;
++                if (colors == null || v + 3 >= colors.Length)
++                {
++                    continue;
++                }
++
++                float filled = Mathf.Clamp01((float) (_fillPosition - character.index));
++                float left = Mathf.Clamp01(filled * 2f);
++                float right = Mathf.Clamp01(filled * 2f - 1f);
++                // Vertices: 0 bottom left, 1 top left, 2 top right, 3 bottom right
++                colors[v] = Mix(colors[v], left);
++                colors[v + 1] = Mix(colors[v + 1], left);
++                colors[v + 2] = Mix(colors[v + 2], right);
++                colors[v + 3] = Mix(colors[v + 3], right);
++            }
+         }
+ 
+-        private void UpdatePhraseString()
++        private Color32 Mix(Color32 current, float filled)
+         {
+-            var lyrics = _phrases[_currentPhraseIndex].Phrase.Lyrics;
+-            _builder.Clear();
+-            // Highlighted words
+-            _builder.Append("<color=#5CB9FF>");
+-            int i = 0;
+-            while (i < _currentLyricIndex)
++            var c = Color32.Lerp(_baseColor, FILL_COLOR, filled);
++            // The text's own fade in and out is kept
++            c.a = current.a;
++            return c;
++        }
++
++        /// <summary>When each lyric of the phrase starts and stops being sung.</summary>
++        private void TimeLyrics(List<LyricEvent> lyrics, double phraseEnd)
++        {
++            var ends = NoteEnds();
++            int count = lyrics.Count;
++            _lyricStart = new double[count];
++            _lyricEnd = new double[count];
++            for (int i = 0; i < count; i++)
+             {
+-                var lyric = lyrics[i++];
+-                _builder.Append(lyric.Text);
+-                if (!lyric.JoinOrHyphenateWithNext && i < lyrics.Count)
++                _lyricStart[i] = lyrics[i].Time;
++            }
++
++            for (int i = 0; i < count; i++)
++            {
++                double next = i + 1 < count ? _lyricStart[i + 1] : Math.Max(phraseEnd, _lyricStart[i] + 0.5);
++                double end = ends != null && ends.TryGetValue(lyrics[i].Tick, out var noteEnd) ? noteEnd : next;
++                // Never past the next word, and never so short that the fill only flickers
++                end = Math.Min(end, next);
++                _lyricEnd[i] = Math.Max(end, _lyricStart[i] + 0.08);
++            }
++        }
++
++        private Dictionary<uint, double> NoteEnds()
++        {
++            var chart = GameManager != null ? GameManager.Chart : null;
++            if (chart == null)
++            {
++                return null;
++            }
++
++            if (_noteEndsChart == chart && _noteEnds != null)
++            {
++                return _noteEnds;
++            }
++
++            var ends = new Dictionary<uint, double>();
++            try
++            {
++                foreach (var track in new[] { chart.Vocals, chart.Harmony })
+                 {
+-                    _builder.Append(' ');
++                    if (track == null) continue;
++                    foreach (var part in track.Parts)
++                    {
++                        foreach (var phrase in part.NotePhrases)
++                        {
++                            foreach (var note in phrase.PhraseParentNote.ChildNotes)
++                            {
++                                if (note.IsPercussion) continue;
++                                double end = note.TotalTimeEnd;
++                                if (!ends.TryGetValue(note.Tick, out var have) || end > have)
++                                {
++                                    ends[note.Tick] = end;
++                                }
++                            }
++                        }
++                    }
+                 }
+             }
++            catch (Exception)
++            {
++                // Without note lengths, each word fills until the next one starts
++            }
+ 
+-            _builder.Append("</color>");
++            _noteEndsChart = chart;
++            _noteEnds = ends;
++            return ends;
++        }
+ 
+-            // Non-highlighted words
++        private void UpdatePhraseString()
++        {
++            var phrase = _phrases[_currentPhraseIndex].Phrase;
++            var lyrics = phrase.Lyrics;
++            _builder.Clear();
++            // The whole phrase in one colour; the fill is painted on the letters as it is sung.
++            // Rich text is off so that each letter of the string is one letter on screen.
++            _lyricText.richText = false;
++            _lyricCharStart = new int[lyrics.Count];
++            int length = 0;
++            int i = 0;
+             while (i < lyrics.Count)
+             {
++                _lyricCharStart[i] = length;
+                 var lyric = lyrics[i++];
+                 _builder.Append(lyric.Text);
++                length += lyric.Text.Length;
+                 if (!lyric.JoinOrHyphenateWithNext && i < lyrics.Count)
+                 {
+                     _builder.Append(' ');
++                    length++;
+                 }
+             }
+ 
++            _textLength = length;
++            TimeLyrics(lyrics, phrase.TimeEnd);
++            _fillPosition = -1;
+             _lyricText.SetText(_builder);
+         }
+ 
