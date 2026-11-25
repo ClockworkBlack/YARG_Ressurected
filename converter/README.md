@@ -110,6 +110,19 @@ opened. Chinese and Japanese lines, written without spaces, are cut into two-cha
 each gets a note. The game needs build 37 or newer to draw these characters (older builds show
 boxes).
 
+## Word timing (optional download)
+
+Under the ways of converting, once the separation model is installed, **Download word timing
+(378 MB, optional)** adds a speech model (wav2vec2-base-960h by Meta, Apache 2.0, as ONNX from
+Hugging Face, pinned to one revision and checked against a fixed fingerprint). With it, in Split
+and R&B mode, the lyrics are matched to the separated voice letter by letter, checked against the
+lyric file and the song's repeats, and lines the recording does not have are left out. English,
+Korean and Japanese kana are followed; other scripts fall back to the voice-only check.
+
+It adds about a minute per song and needs a phone with 4 GB of memory or more. If it cannot run
+(not enough memory), the song is still converted with the voice-only check and the summary says
+so. The same button removes it again to free the space.
+
 ## What we learned about lyric timing
 
 From converting real songs and checking every line by ear and by speech recognition:
@@ -133,8 +146,9 @@ From converting real songs and checking every line by ear and by speech recognit
    many ways; lines that break the pattern most passes keep are put where the pattern says, and
    an outro going round follows on at the pace of its first passes.
 8. **The small (quantized, 95 MB) speech model is not good enough:** it agreed with the full
-   one (378 MB) on only 20 of 36 lines. The phone app does not carry the speech model yet; it
-   uses the voice-only check above. The desktop runner uses the full model (`--words-model`).
+   one (378 MB) on only 20 of 36 lines. The app offers the full one as an optional download
+   (below); without it, the voice-only check above is used. The desktop runner uses the same
+   file (`--words-model`).
 9. **Checked on nine real songs, not one.** Besides the first song (R&B, NetEase lyrics), eight
    Creative Commons songs by Josh Woodward with independently timed lyrics from LRCLIB, three
    of them remixed versions. Before any of the lyric file's times were used, the aligner put 86%
