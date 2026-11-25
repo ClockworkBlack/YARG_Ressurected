@@ -176,6 +176,116 @@ public final class Lrc {
         return out;
     }
 
+    /**
+     * Names found after the colon in section headers of plain lyrics, as lyric sites write them:
+     * "[Verse 2: Travis Scott]", "[Chorus: Don Toliver & Travis Scott]". In order of first
+     * appearance, without repeats.
+     */
+    public static List<String> headerSingers(String plain) {
+        List<String> out = new ArrayList<>();
+        if (plain == null) return out;
+        for (String raw : plain.split("\\r?\\n")) {
+            String s = raw.trim();
+            if (!s.startsWith("[") || !s.endsWith("]") || s.length() > 80) continue;
+            int colon = s.indexOf(':');
+            if (colon < 0) continue;
+            for (String name : artists(s.substring(colon + 1, s.length() - 1), null)) {
+                boolean seen = false;
+                for (String o : out) if (o.equalsIgnoreCase(name)) seen = true;
+                if (!seen && name.length() >= 2 && name.length() <= 40) out.add(name);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The two singers of a song from everything that names them: how the artist is written (the
+     * file's tags, the lyric service's entry, the encyclopedia's credit) and, failing that, the
+     * names in the lyrics' own section headers. The first of {@code artistSpellings} that names
+     * two wins; otherwise the main artist plus the first other name in the headers.
+     */
+    public static List<String> findSingers(String title, String plainLyrics, String... artistSpellings) {
+        List<String> main = new ArrayList<>();
+        for (String spelling : artistSpellings) {
+            List<String> found = artists(spelling, title);
+            if (found.size() >= 2) return found;
+            if (main.isEmpty()) main = found;
+        }
+        List<String> out = new ArrayList<>(main);
+        for (String name : headerSingers(plainLyrics)) {
+            if (out.size() >= 2) break;
+            boolean seen = false;
+            for (String o : out) {
+                String a = o.toLowerCase(Locale.US), b = name.toLowerCase(Locale.US);
+                if (a.equals(b) || a.contains(b) || b.contains(a)) seen = true;
+            }
+            if (!seen) out.add(name);
+        }
+        return out;
+    }
+
+    private static String key(String words) {
+        return words.toLowerCase(Locale.US).replaceAll("[^\\p{L}\\p{Nd}]+", "");
+    }
+
+    /**
+     * Carries the singers named in plain lyrics' section headers over to timed lyrics of the same
+     * song. Timed lyrics hardly ever say who sings; the plain text of the same entry often does
+     * ("[Verse 2: Travis Scott]"). Lines are matched by their words, in order, so a chorus that
+     * comes round again is matched to the right time round.
+     *
+     * @return the timed lyrics with marks, or null when the plain lyrics name nobody (or too few
+     *         lines could be matched to trust it)
+     */
+    public static String markFromHeaders(String synced, String plain, List<String> artists) {
+        if (synced == null || plain == null || artists == null || artists.size() < 2) return null;
+        List<String> marked = plainLines(plain, artists);
+        List<String> keys = new ArrayList<>();
+        List<Integer> who = new ArrayList<>();
+        boolean any = false;
+        for (String l : marked) {
+            int[] singer = new int[1];
+            String words = stripMark(l, singer);
+            keys.add(key(words));
+            who.add(singer[0]);
+            any |= singer[0] != UNMARKED;
+        }
+        if (!any) return null;
+
+        List<Line> lines = parse(synced);
+        List<Line> out = new ArrayList<>();
+        int at = 0, matched = 0, withWords = 0, firsts = 0, seconds = 0;
+        for (Line l : lines) {
+            if (l.text.isEmpty() || l.singer != UNMARKED) {
+                out.add(l);
+                continue;
+            }
+            withWords++;
+            String k = key(l.text);
+            int found = -1;
+            // The same line a little further on: lyric files differ by a dropped or doubled line
+            for (int j = at; j < Math.min(keys.size(), at + 6) && found < 0; j++) {
+                if (!k.isEmpty() && (keys.get(j).equals(k) || keys.get(j).startsWith(k) || k.startsWith(keys.get(j)) && keys.get(j).length() >= 6)) found = j;
+            }
+            if (found < 0) {
+                out.add(l);
+                continue;
+            }
+            at = found + 1;
+            matched++;
+            int singer = who.get(found);
+            if (singer == FIRST) firsts++;
+            if (singer == SECOND) seconds++;
+            out.add(new Line(l.time, l.text, singer));
+        }
+        // Only worth using when the two texts really are the same song, and both singers appear
+        if (withWords == 0 || matched < 0.6 * withWords || seconds == 0 || firsts + seconds < 2) return null;
+        // Lines under a header that names nobody ("[Chorus]") belong to the main artist
+        List<Line> filled = new ArrayList<>();
+        for (Line l : out) filled.add(l.text.isEmpty() || l.singer != UNMARKED ? l : new Line(l.time, l.text, FIRST));
+        return format(filled);
+    }
+
     public static String format(List<Line> lines) {
         StringBuilder sb = new StringBuilder();
         for (Line l : lines) {

@@ -67,6 +67,25 @@ the one-time download of the instrument-separation model.
    Open the app again at any time to see where it is.
 6. Add the song to the game (next section).
 
+## Two artists, worked out for you
+
+The converter looks for a second singer by itself, in this order:
+
+1. **Who the singers are.** From how the artist is written in the file's tags ("A feat. B",
+   "A & B"), a "(feat. B)" in the title, how the lyric service and MusicBrainz credit the
+   song, and the names in the lyrics' own section headers.
+2. **Who sings which line, from the lyrics.** When the lyrics found online carry headers such
+   as `[Verse 2: Travis Scott]`, those are carried over to the timed lines: each line goes to
+   the singer its header names, "both" where it names both.
+3. **Fallback: their voices.** When there are two singers but the lyrics don't say who sings
+   what, and the song is converted with **Split** or **R&B mode**, the lines are split by the
+   sound of the two voices. This now happens by itself; the "guess it from their voices" box
+   is only needed to try it on a song where no second singer is named.
+
+The app says which of these happened, and the result is always shown as marks in the lyrics, so
+it can be checked and corrected with **Choose who sings what** (or the **Singers** button in a
+list). Normal mode cannot listen to voices: there, only the lyrics' own headers can split a song.
+
 ## Several songs at once
 
 Under **Several songs at once**, press **Choose files (up to 33)** and pick as many songs as you

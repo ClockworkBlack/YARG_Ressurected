@@ -32,6 +32,7 @@ final class RnbTest {
         followsTheSinger();
         runsInTheVocals();
         wholeSong();
+        singersFromLyrics();
         // normalModeKeepsPace() measures an experiment that is switched off (VocalCharter.PACE_FROM_SONG);
         // run it by hand when working on word timing without the separated voice.
         return failures;
@@ -314,6 +315,38 @@ final class RnbTest {
             check(close[1] >= 0.5 * words, "at least half the words land where they are sung");
             check(lastInTime[1] >= 0.6 * lines, "a line's last word is still in time, so the words have not run ahead or behind");
         }
+    }
+
+    /** Who sings what, read from the lyrics themselves: section headers of the plain text carried over to the timed text. */
+    private static void singersFromLyrics() {
+        System.out.println("Singers from the lyrics' own headers");
+        String plain = "[Intro]\nYeah, yeah\n\n[Verse 1: Lead One]\nFirst line of mine\nSecond line of mine\n\n"
+                + "[Chorus: Lead One & Guest Two]\nSing it all together\n\n[Verse 2: Guest Two]\nNow the guest comes in\nGuest keeps going on\n\n"
+                + "[Chorus: Lead One & Guest Two]\nSing it all together\n\n[Outro: Lead One]\nFirst line of mine\n";
+        String synced = "[00:01.00]Yeah, yeah\n[00:05.00]First line of mine\n[00:08.00]Second line of mine\n[00:11.00]Sing it all together\n"
+                + "[00:15.00]Now the guest comes in\n[00:18.00]Guest keeps going on!\n[00:21.00]\n[00:22.00]Sing it all together\n[00:26.00]First line of mine\n";
+
+        List<String> names = Lrc.findSingers("A Song", plain, "Lead One");
+        check(names.size() == 2 && names.get(0).equals("Lead One") && names.get(1).equals("Guest Two"), "the guest is found in the headers when the artist names only one: " + names);
+        check(Lrc.findSingers("A Song", plain, "Lead One", "Lead One feat. Somebody Else").get(1).equals("Somebody Else"), "an artist spelling that names two wins over the headers");
+        check(Lrc.findSingers("A Song (feat. Guest Two)", null, "Lead One").size() == 2, "a feature in the title counts");
+        check(Lrc.findSingers("A Song", "[Verse 1]\nwords\n[Chorus]\nwords", "Lead One").size() == 1, "headers that name nobody add nobody");
+
+        String marked = Lrc.markFromHeaders(synced, plain, names);
+        check(marked != null, "the timed lyrics get marks");
+        if (marked != null) {
+            List<Lrc.Line> lines = Lrc.parse(marked);
+            int[] want = {Lrc.FIRST, Lrc.FIRST, Lrc.FIRST, Lrc.BOTH, Lrc.SECOND, Lrc.SECOND, -99, Lrc.BOTH, Lrc.FIRST};
+            boolean right = lines.size() == want.length;
+            for (int i = 0; right && i < want.length; i++) {
+                if (want[i] != -99 && lines.get(i).singer != want[i]) right = false;
+            }
+            check(right, "each line goes to the singer its header names, the repeated chorus and the repeated line included:\n" + marked);
+            check(Math.abs(lines.get(4).time - 15.0) < 0.01, "the times are kept");
+        }
+        check(Lrc.markFromHeaders(synced, "[Verse 1]\nFirst line of mine\n[Chorus]\nSing it all together", names) == null, "plain lyrics that name nobody change nothing");
+        check(Lrc.markFromHeaders(synced, "[Verse 1: Lead One]\nCompletely other words\n[Verse 2: Guest Two]\nNothing alike at all", names) == null, "lyrics of a different song are not trusted");
+        check(Lrc.markFromHeaders(synced, plain, names.subList(0, 1)) == null, "one artist: nothing to split");
     }
 
     /** Through the whole converter: R&B mode is used when there is singing, and explained when it cannot be. */

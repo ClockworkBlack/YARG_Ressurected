@@ -85,6 +85,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
         SongMeta meta = new SongMeta();
         double seconds;
         boolean read;
+        /** How MusicBrainz credits its artists, when looked up. */
+        String credit = "";
         /** How this song is converted: MODE_NORMAL, MODE_SPLIT or MODE_RNB. */
         int mode = MODE_NORMAL;
         /** Lyrics found for it (with who sings each line, once marked), or null to look them up when it is converted. */
@@ -146,6 +148,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private TextView singersStatus;
     /** The two artists' names as typed on the "Who sings what" screen; null until that has been used. */
     private String[] singerNames;
+    /** How MusicBrainz credits the chosen song's artists ("A feat. B"), when it was looked up. */
+    private volatile String creditArtist = "";
     private TextView modelStatus;
     private Button modelButton;
     private static final int DENSITY_FEWER = 1, DENSITY_STANDARD = 2, DENSITY_MORE = 3;
@@ -757,6 +761,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private void setAudio(final Uri uri) {
         audioUri = uri;
         audioName = displayName(uri);
+        // A new song: its singers are worked out afresh
+        singerNames = null;
         audioSeconds = 0;
         fileLabel.setText(audioName + "\nReading song details…");
         log.setText("");
@@ -936,8 +942,17 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         } else if (f == null) {
                             lyricsStatus.setText("No lyrics found for that title and artist. Check the spelling, or paste them below.");
                         } else if (f.synced != null) {
-                            lyricsBox.setText(f.synced);
+                            // Who sings what, from the lyrics themselves when they say
+                            List<String> names = findSingers(title, artist, creditArtist, f);
+                            if (singerNames == null && names.size() >= 2) singerNames = names.toArray(new String[0]);
+                            String lyricsText = markedLyrics(f, java.util.Arrays.asList(singers()));
+                            lyricsBox.setText(lyricsText);
                             String note = "Found timed lyrics for \"" + f.title + "\" by " + f.artist + ".";
+                            if (hasMarks(lyricsText)) {
+                                note += " The lyrics say who sings what (" + singers()[0] + " / " + singers()[1] + "): check it with \"Choose who sings what\".";
+                            } else if (names.size() >= 2) {
+                                note += " Two artists (" + names.get(0) + " / " + names.get(1) + "), but the lyrics don't say who sings what: with a split mode their voices decide, or mark the lines yourself.";
+                            }
                             if (seconds > 1 && f.duration > 0 && Math.abs(f.duration - seconds) > 3) {
                                 note += String.format(Locale.US, " Their recording is %d s %s than your file, so the timing may drift.",
                                         Math.round(Math.abs(f.duration - seconds)), f.duration > seconds ? "longer" : "shorter");
@@ -1061,9 +1076,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
         options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
         int mode = modeGroup.getCheckedRadioButtonId();
         final boolean useStems = mode != MODE_NORMAL && ModelStore.installed(this);
-        final boolean guessSingers = useStems && guessCheck.isChecked();
-        final boolean rnb = useStems && mode == MODE_RNB;
         meta.singers = singers();
+        final boolean guessSingers = voicesDecide(useStems, guessCheck.isChecked(), singerNames != null ? singerNames
+                : Lrc.artists(meta.artist, meta.title).toArray(new String[0]));
+        final boolean rnb = useStems && mode == MODE_RNB;
 
         setBusy(true);
         progress.setIndeterminate(false);
@@ -1120,6 +1136,45 @@ public final class MainActivity extends Activity implements ConversionService.Li
         return target;
     }
 
+    // ---------------------------------------------------------------- who sings what, automatically
+
+    /**
+     * The song's two singers from everything that names them: the artist as tagged, as the lyric
+     * service has it, as MusicBrainz credits it, a "(feat. B)" in the title, and the names in the
+     * lyrics' own section headers. One name (or none) when nothing names a second.
+     */
+    private static List<String> findSingers(String title, String artist, String credit, LrcLib.Found f) {
+        return Lrc.findSingers(title, f == null ? null : f.plain, artist, credit, f == null ? "" : f.artist,
+                f == null ? "" : f.title.matches("(?i).*[\\[(]\\s*(feat|ft|featuring|with)\\b.*") ? artist + " " + f.title : "");
+    }
+
+    /**
+     * The timed lyrics, with each line given to the singer the plain lyrics' headers name when
+     * they do ("[Verse 2: Travis Scott]"). Otherwise the timed lyrics as found: with two singers
+     * and a split, the voices then decide (see {@link #voicesDecide}).
+     */
+    private static String markedLyrics(LrcLib.Found f, List<String> names) {
+        String marked = Lrc.markFromHeaders(f.synced, f.plain, names);
+        return marked != null ? marked : f.synced;
+    }
+
+    /** Whether any line of timed lyrics says who sings it. */
+    private static boolean hasMarks(String lrcText) {
+        for (Lrc.Line l : Lrc.parse(lrcText)) if (l.singer != Lrc.UNMARKED) return true;
+        return false;
+    }
+
+    /**
+     * The fallback: a song with two named singers whose lyrics do not say who sings what is split
+     * by the sound of their voices, whenever the song is separated into instruments. With one
+     * named singer that only happens when the "guess it from their voices" box is ticked.
+     */
+    private static boolean voicesDecide(boolean useStems, boolean boxTicked, String[] names) {
+        boolean two = names != null && names.length >= 2 && !blank(names[0]) && !blank(names[1])
+                && !names[0].startsWith("Singer ") && !names[1].startsWith("Singer ");
+        return useStems && (boxTicked || two);
+    }
+
     // ---------------------------------------------------------------- details from MusicBrainz
 
     /** True when a box is empty, so an online detail may go in it. */
@@ -1134,8 +1189,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private void fillFromOnline(final Uri uri, final String label) {
         final String title = titleBox.getText().toString();
         final String artist = artistBox.getText().toString();
+        creditArtist = "";
         boolean missing = blank(artist) || blank(albumBox.getText().toString()) || blank(yearBox.getText().toString())
-                || blank(genreBox.getText().toString());
+                || blank(genreBox.getText().toString()) || Lrc.artists(artist, title).size() < 2;
         if (!onlineDetails || !missing || blank(title)) return;
         fileLabel.setText(label + "\nLooking up missing details…");
         new Thread(new Runnable() {
@@ -1159,6 +1215,13 @@ public final class MainActivity extends Activity implements ConversionService.Li
                             return;
                         }
                         List<String> filled = new ArrayList<>();
+                        creditArtist = f.artist;
+                        // A featured artist the tags left out: the names for "who sings what"
+                        List<String> credited = Lrc.artists(f.artist, f.title);
+                        if (singerNames == null && credited.size() >= 2 && Lrc.artists(artistBox.getText().toString(), title).size() < 2) {
+                            singerNames = credited.toArray(new String[0]);
+                            filled.add("featured artist (" + credited.get(1) + ")");
+                        }
                         if (blank(artistBox.getText().toString()) && !blank(f.artist)) {
                             artistBox.setText(f.artist);
                             filled.add("artist");
@@ -1186,10 +1249,13 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private void fillFromOnline(Queued q) {
         SongMeta m = q.meta;
         if (!onlineDetails || blank(m.title)) return;
-        if (!(blank(m.artist) || blank(m.album) || blank(m.year) || blank(m.genre))) return;
+        if (!(blank(m.artist) || blank(m.album) || blank(m.year) || blank(m.genre) || m.singers.length < 2)) return;
         try {
             MusicBrainz.Found f = MusicBrainz.find(m.title, m.artist);
             if (f == null) return;
+            q.credit = f.artist;
+            List<String> credited = Lrc.artists(f.artist, f.title);
+            if (m.singers.length < 2 && credited.size() >= 2) m.singers = credited.toArray(new String[0]);
             if (blank(m.artist) && !blank(f.artist)) {
                 m.artist = f.artist;
                 m.singers = Lrc.artists(m.artist, m.title).toArray(new String[0]);
@@ -1398,7 +1464,11 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 String why = "No timed lyrics were found online for this song.";
                 try {
                     LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds);
-                    if (found != null && found.synced != null) text = found.synced;
+                    if (found != null && found.synced != null) {
+                        List<String> names = findSingers(q.meta.title, q.meta.artist, q.credit, found);
+                        if (names.size() >= 2) q.meta.singers = names.toArray(new String[0]);
+                        text = markedLyrics(found, names);
+                    }
                 } catch (IOException e) {
                     why = "The lyrics could not be looked up: " + e.getMessage();
                 }
@@ -1479,9 +1549,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
                             try {
                                 LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds);
                                 if (found != null && found.synced != null) {
-                                    lrcText = found.synced;
+                                    List<String> names = findSingers(q.meta.title, q.meta.artist, q.credit, found);
+                                    if (names.size() >= 2) q.meta.singers = names.toArray(new String[0]);
+                                    lrcText = markedLyrics(found, names);
                                     lyrics = Lrc.parse(lrcText);
-                                    lyricsNote = "with lyrics";
+                                    lyricsNote = hasMarks(lrcText) ? "with lyrics, singers from the lyrics"
+                                            : names.size() >= 2 ? "with lyrics, two singers" : "with lyrics";
                                 } else {
                                     lyricsNote = "no timed lyrics found";
                                 }
@@ -1492,7 +1565,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         // Each song its own way: Normal, Split or R&B, as set in the list
                         boolean useStems = q.mode != MODE_NORMAL && model;
                         boolean rnb = useStems && q.mode == MODE_RNB;
-                        boolean guessSingers = useStems && guessWanted;
+                        boolean guessSingers = voicesDecide(useStems, guessWanted, q.meta.singers);
                         runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, options.copy(), useStems, guessSingers, rnb);
                         ok++;
                         done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(modeName(useStemsNote(q, model)))
