@@ -21,7 +21,13 @@ the one-time download of the instrument-separation model.
 ## Using it
 
 1. Install the APK from this repo's **Releases** (`YARG Converter build N`).
-2. **Choose audio file** (or use *Share* / *Open with* from a file manager). Title and artist are filled in from the file's tags; fix them if needed.
+2. **Choose audio file** (or use *Share* / *Open with* from a file manager). Title, artist,
+   album, year and genre are filled in from the file's tags. With **Fill in missing details
+   online** ticked (the default), whatever the tags leave out is looked up on
+   [MusicBrainz](https://musicbrainz.org) by title and artist (or the file name) and put in the
+   empty boxes only; nothing you typed or the file had is replaced. Check them before converting.
+   The genre also helps the game's story mode suggest songs for each gig. The same happens for
+   every song in a list (below).
 3. Lyrics, any of:
    - **Find online** searches [LRCLIB](https://lrclib.net) for time-synced lyrics by title and artist.
    - **Open .lrc** loads a lyrics file you already have.

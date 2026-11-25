@@ -115,6 +115,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private boolean busy;
 
     private TextView fileLabel;
+    private CheckBox onlineDetailsCheck;
+    /** Read on other threads: whether to fill missing details from MusicBrainz. */
+    private volatile boolean onlineDetails = true;
     private EditText titleBox, artistBox, albumBox, yearBox, genreBox, lyricsBox;
     private TextView lyricsStatus, log;
     private Button pickButton, findButton, lrcButton, tapButton, convertButton;
@@ -252,6 +255,16 @@ public final class MainActivity extends Activity implements ConversionService.Li
         fileLabel.setText("No file chosen yet.");
         fileLabel.setPadding(0, dp(4), 0, dp(8));
         root.addView(fileLabel);
+        onlineDetailsCheck = new CheckBox(this);
+        onlineDetailsCheck.setText("Fill in missing details online. Title, artist, album, year and genre come from the file's own tags; whatever they leave out is looked up on MusicBrainz (only the title and artist are sent). The genre also helps YARG's story mode pick songs for each gig.");
+        onlineDetailsCheck.setChecked(true);
+        onlineDetailsCheck.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton b, boolean checked) {
+                onlineDetails = checked;
+            }
+        });
+        root.addView(onlineDetailsCheck);
 
         titleBox = field(root, "Title");
         artistBox = field(root, "Artist");
@@ -781,6 +794,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         genreBox.setText(clean(tags[4]));
                         String len = secondsFinal > 0 ? String.format(Locale.US, " (%d:%02d)", (int) secondsFinal / 60, (int) secondsFinal % 60) : "";
                         fileLabel.setText(audioName + len);
+                        fillFromOnline(uri, audioName + len);
                     }
                 });
             }
@@ -1081,6 +1095,88 @@ public final class MainActivity extends Activity implements ConversionService.Li
         return target;
     }
 
+    // ---------------------------------------------------------------- details from MusicBrainz
+
+    /** True when a box is empty, so an online detail may go in it. */
+    private static boolean blank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    /**
+     * Looks the chosen song up on MusicBrainz when its tags left something out, and puts what is
+     * found into the boxes that are still empty. Nothing typed or read from the file is replaced.
+     */
+    private void fillFromOnline(final Uri uri, final String label) {
+        final String title = titleBox.getText().toString();
+        final String artist = artistBox.getText().toString();
+        boolean missing = blank(artist) || blank(albumBox.getText().toString()) || blank(yearBox.getText().toString())
+                || blank(genreBox.getText().toString());
+        if (!onlineDetails || !missing || blank(title)) return;
+        fileLabel.setText(label + "\nLooking up missing details…");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                MusicBrainz.Found found = null;
+                String error = null;
+                try {
+                    found = MusicBrainz.find(title, artist);
+                } catch (IOException | RuntimeException e) {
+                    error = e.getMessage();
+                }
+                final MusicBrainz.Found f = found;
+                final String why = error;
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!uri.equals(audioUri)) return;
+                        if (f == null) {
+                            fileLabel.setText(label + (why != null ? "\nCould not look up details online." : "\nNo match found online; fill in anything missing by hand."));
+                            return;
+                        }
+                        List<String> filled = new ArrayList<>();
+                        if (blank(artistBox.getText().toString()) && !blank(f.artist)) {
+                            artistBox.setText(f.artist);
+                            filled.add("artist");
+                        }
+                        if (blank(albumBox.getText().toString()) && !blank(f.album)) {
+                            albumBox.setText(f.album);
+                            filled.add("album");
+                        }
+                        if (blank(yearBox.getText().toString()) && !blank(f.year)) {
+                            yearBox.setText(f.year);
+                            filled.add("year");
+                        }
+                        if (blank(genreBox.getText().toString()) && !blank(f.genre)) {
+                            genreBox.setText(f.genre);
+                            filled.add("genre");
+                        }
+                        fileLabel.setText(label + (filled.isEmpty() ? "" : "\nFilled in from MusicBrainz: " + android.text.TextUtils.join(", ", filled) + ". Check them."));
+                    }
+                });
+            }
+        }, "details").start();
+    }
+
+    /** The same for a song in the list (on its own thread, so it waits for the answer). */
+    private void fillFromOnline(Queued q) {
+        SongMeta m = q.meta;
+        if (!onlineDetails || blank(m.title)) return;
+        if (!(blank(m.artist) || blank(m.album) || blank(m.year) || blank(m.genre))) return;
+        try {
+            MusicBrainz.Found f = MusicBrainz.find(m.title, m.artist);
+            if (f == null) return;
+            if (blank(m.artist) && !blank(f.artist)) {
+                m.artist = f.artist;
+                m.singers = Lrc.artists(m.artist, m.title).toArray(new String[0]);
+            }
+            if (blank(m.album)) m.album = f.album;
+            if (blank(m.year)) m.year = f.year;
+            if (blank(m.genre)) m.genre = f.genre;
+        } catch (IOException | RuntimeException e) {
+            // The file's own details are used
+        }
+    }
+
     // ---------------------------------------------------------------- several songs
 
     private void pickBatch() {
@@ -1195,6 +1291,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
         m.genre = clean(tags[4]);
         m.singers = Lrc.artists(artist, title).toArray(new String[0]);
         q.meta = m;
+        fillFromOnline(q);
         q.read = true;
     }
 
