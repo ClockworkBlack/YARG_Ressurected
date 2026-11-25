@@ -14,7 +14,7 @@
 // Unity's log (exceptions nobody caught, with their stack trace), and the runtime's last-chance
 // handlers. Every line is written to disk straight away, so it survives the app being killed.
 //
-// On Windows the same files go to Documents\YARG\logs, which is easier to find than the
+// On Windows and macOS the same files go to Documents/YARG/logs, which is easier to find than the
 // game's own log under AppData\LocalLow.
 //
 // Nothing leaves the phone: the files are only ever written to local storage.
@@ -61,7 +61,8 @@ namespace YARG.Helpers
         private static void Start()
         {
             if (_started || (Application.platform != RuntimePlatform.Android &&
-                Application.platform != RuntimePlatform.WindowsPlayer))
+                Application.platform != RuntimePlatform.WindowsPlayer &&
+                Application.platform != RuntimePlatform.OSXPlayer))
             {
                 return;
             }
@@ -100,6 +101,13 @@ namespace YARG.Helpers
             {
                 string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 return string.IsNullOrEmpty(documents) ? Application.persistentDataPath : documents;
+            }
+
+            if (Application.platform == RuntimePlatform.OSXPlayer)
+            {
+                // Mono maps MyDocuments to the home folder on macOS, so name ~/Documents directly
+                string home = Environment.GetEnvironmentVariable("HOME");
+                return string.IsNullOrEmpty(home) ? Application.persistentDataPath : Path.Combine(home, "Documents");
             }
 
             string persistent = Application.persistentDataPath;

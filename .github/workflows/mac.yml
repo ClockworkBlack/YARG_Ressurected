@@ -1,0 +1,168 @@
+name: Build Mac
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "putudarma/YARG-DROID commit to build on (keep the same as the Android build)"
+        default: "9bebad16e63cde7022a1fb7b261b541c1fae5361"
+        required: true
+  push:
+    # Desktop work branch too, so it builds before the workflow is on main
+    branches: [main, ccr-cb2b20e6-xf3265]
+    paths:
+      - "patches/**"
+      - "patches-core/**"
+      - "overlay/**"
+      - "mac/**"
+      - "tests/**"
+      - ".github/workflows/mac.yml"
+
+permissions:
+  contents: write
+
+env:
+  # Same game as the Android build: YARG-DROID (YARG v0.15.0) + this repo's patches and overlay.
+  # mac/prepare-project.sh adds back the Mac Discord library from official YARG v0.15.0.
+  UPSTREAM_REPO: putudarma/YARG-DROID
+  UPSTREAM_REF: ${{ github.event.inputs.upstream_ref || '9bebad16e63cde7022a1fb7b261b541c1fae5361' }}
+  PROJECT_DIR: project
+
+jobs:
+  tests:
+    name: Automated tests (phone remote, guitar sound)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Make a test certificate
+        run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
+      - name: Run tests
+        run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes" "$RUNNER_TEMP/demo"
+
+  mac:
+    name: Unity macOS build (Intel x64)
+    needs: [tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: false
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
+      - uses: actions/checkout@v4
+
+      - name: Check Unity secrets
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$UNITY_LICENSE" ] && missing="$missing UNITY_LICENSE"
+          [ -z "$UNITY_EMAIL" ] && missing="$missing UNITY_EMAIL"
+          [ -z "$UNITY_PASSWORD" ] && missing="$missing UNITY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. See README.md > Setup."
+            exit 1
+          fi
+
+      - name: Get YARG source + submodules (LFS pulled separately so it can be cached)
+        run: |
+          git init "$PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          git remote add origin "https://github.com/$UPSTREAM_REPO"
+          GIT_LFS_SKIP_SMUDGE=1 git fetch --depth 1 origin "$UPSTREAM_REF"
+          GIT_LFS_SKIP_SMUDGE=1 git checkout FETCH_HEAD
+          GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --recursive --depth 1
+
+      - name: Restore LFS cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/.git/lfs
+          key: yarg-lfs-${{ env.UPSTREAM_REF }}
+          restore-keys: yarg-lfs-
+
+      - name: Pull LFS assets
+        run: |
+          cd "$PROJECT_DIR"
+          git lfs install --local
+          git lfs pull
+
+      - name: Apply patches, overlay and Mac libraries
+        run: bash mac/prepare-project.sh "$PROJECT_DIR"
+
+      - name: Restore NuGet packages
+        run: |
+          dotnet tool install --global NuGetForUnity.Cli
+          nugetforunity restore "$PROJECT_DIR"
+
+      - name: Restore Unity Library cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PROJECT_DIR }}/Library
+          key: yarg-library-mac-${{ env.UPSTREAM_REF }}-${{ hashFiles('patches/**', 'overlay/**', 'mac/**') }}
+          restore-keys: |
+            yarg-library-mac-${{ env.UPSTREAM_REF }}-
+            yarg-library-mac-
+
+      - name: Build with Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: ${{ env.PROJECT_DIR }}
+          targetPlatform: StandaloneOSX
+          buildMethod: YARG.Editor.Mac.YargMacBuild.Build
+          buildName: YARG
+          versioning: None
+          allowDirtyBuild: true
+
+      - name: Zip the app
+        id: zip
+        run: |
+          app="$(find build "$PROJECT_DIR/build" -maxdepth 3 -name 'YARG.app' -type d 2>/dev/null | head -n1)"
+          if [ -z "$app" ]; then echo "::error::No YARG.app produced"; exit 1; fi
+          # Unity ran in a container as root, so the build folder belongs to root
+          sudo chown -R "$(id -u):$(id -g)" "$(dirname "$(dirname "$app")")"
+          rm -rf "$(dirname "$app")"/*_BurstDebugInformation_DoNotShip "$(dirname "$app")"/*_BackUpThisFolder_ButDontShipItWithYourGame
+          name="YARG-Resurrected-Mac-${{ github.run_number }}"
+          mkdir "$name"
+          cp -a "$app" "$name/YARG Resurrected.app"
+          # The game's executable must stay executable after unzipping
+          chmod +x "$name/YARG Resurrected.app/Contents/MacOS/"*
+          grep -q NSMicrophoneUsageDescription "$name/YARG Resurrected.app/Contents/Info.plist" \
+            || echo "::warning::Info.plist has no microphone entry; vocals may stay silent"
+          zip -qry "$name.zip" "$name"
+          echo "file=$name.zip" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YARG-Resurrected-mac
+          path: ${{ steps.zip.outputs.file }}
+
+      - name: Publish as a GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mac-build-${{ github.run_number }}
+          name: YARG Resurrected for Mac, build ${{ github.run_number }}
+          prerelease: true
+          files: ${{ steps.zip.outputs.file }}
+          body: |
+            macOS build of YARG Resurrected (upstream `${{ env.UPSTREAM_REF }}`), with the same
+            features as the Android build: guitar sound on notes, Song Setup, menu music playlists,
+            PS5 / Xbox / Switch gamepad layouts and phones as controllers and mics.
+            Intel (x64) app; on Apple Silicon Macs it runs through Rosetta 2.
+            Unzip, move "YARG Resurrected.app" to Applications, then run once in Terminal:
+            `xattr -cr "/Applications/YARG Resurrected.app"` (the app isn't signed). See mac/README.md.
