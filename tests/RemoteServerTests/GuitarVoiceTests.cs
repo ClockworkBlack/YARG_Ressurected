@@ -717,7 +717,7 @@ namespace RemoteServerTests
                     && BitConverter.ToInt16(wav, 48) == -32767, "WAV file is well formed");
             }
 
-            // ---- A demo to listen to: the same riff in each of the three tones, then on bass
+            // ---- A demo to listen to: the same riff in each of the three sounds, then on bass
             if (!string.IsNullOrEmpty(outputFolder))
             {
                 Directory.CreateDirectory(outputFolder);
@@ -731,26 +731,48 @@ namespace RemoteServerTests
                         LowFret = 1, FretCount = frets, Soft = soft, Pitch = pitch,
                     });
                 }
-                // E minor: a picked run with hammer-ons, a held note, then power chords
+                // E minor: a picked run with hammer-ons, then a held note (listen for the vibrato)
                 Add(0, 0.5, 52); Add(0.5, 0.5, 55); Add(1, 0.5, 57, 1, true); Add(1.5, 0.5, 59);
                 Add(2, 0.5, 62); Add(2.5, 0.5, 59, 1, true); Add(3, 0.5, 57); Add(3.5, 0.5, 55, 1, true);
                 Add(4, 3, 64);
-                Add(8, 1.5, 40, 3); Add(9.5, 0.5, 40, 2); Add(10, 1.5, 43, 3); Add(11.5, 0.5, 43, 2);
-                Add(12, 1.5, 45, 3); Add(13.5, 0.5, 45, 2); Add(14, 2, 47, 3);
+                // the same note eight times (no two picks alike), then four quick ones higher up
+                for (int i = 0; i < 8; i++)
+                {
+                    Add(8 + i * 0.5, 0.5, 52);
+                }
+                for (int i = 0; i < 4; i++)
+                {
+                    Add(12 + i * 0.25, 0.25, 59);
+                }
+                Add(13, 1, 64);
+                // power chords: held, then strummed quickly down and up
+                Add(14, 1.5, 40, 3); Add(15.5, 0.5, 40, 2); Add(16, 1.5, 43, 3); Add(17.5, 0.5, 43, 2);
+                for (int i = 0; i < 6; i++)
+                {
+                    Add(18 + i * 0.25, 0.25, 45, 3);
+                }
+                Add(19.5, 0.5, 45, 2); Add(20, 2.5, 47, 3);
                 var notes = riff.ToArray();
+                const double SECONDS = 13.5;
 
                 var all = new List<float>();
                 foreach (var tone in new[] { GuitarVoiceTone.Clean, GuitarVoiceTone.Rock, GuitarVoiceTone.Heavy })
                 {
-                    all.AddRange(GuitarVoiceSynth.Render(notes, 9.5, tone, false, 0f, 0.12f, guitarBank));
+                    all.AddRange(GuitarVoiceSynth.Render(notes, SECONDS, tone, false, 0f, 0.12f, guitarBank));
                 }
+                // bass: a steady line, an octave jump at the end of each bar, hammer-ons on the way up
                 var bassLine = new List<VoiceNote>();
+                int[] roots = { 28, 28, 31, 33 };
                 for (int i = 0; i < 16; i++)
                 {
-                    int[] roots = { 28, 28, 31, 33 };
-                    bassLine.Add(new VoiceNote { Time = 0.3 + i * 0.5, LowFret = 1, FretCount = 1, Pitch = roots[i / 4] + (i % 4 == 3 ? 12 : 0) });
+                    bassLine.Add(new VoiceNote
+                    {
+                        Time = 0.3 + i * 0.5, LowFret = 1, FretCount = 1,
+                        Pitch = roots[i / 4] + (i % 4 == 3 ? 12 : i % 4 == 2 ? 7 : 0), Soft = i % 4 == 2,
+                    });
                 }
-                all.AddRange(GuitarVoiceSynth.Render(bassLine.ToArray(), 9.5, GuitarVoiceTone.Rock, true, 0f, 0.12f, bassBank));
+                bassLine.Add(new VoiceNote { Time = 0.3 + 16 * 0.5, Length = 2.0, LowFret = 1, FretCount = 1, Pitch = 28 });
+                all.AddRange(GuitarVoiceSynth.Render(bassLine.ToArray(), 11.5, GuitarVoiceTone.Rock, true, 0f, 0.12f, bassBank));
 
                 string path = Path.Combine(outputFolder, "guitar-sound-demo.wav");
                 File.WriteAllBytes(path, GuitarVoiceSynth.ToWav(all.ToArray(), SR, 2));
