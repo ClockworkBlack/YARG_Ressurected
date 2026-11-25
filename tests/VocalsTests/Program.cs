@@ -656,6 +656,27 @@ namespace VocalsTests
                     $"short notes that are sung still count in full ({sung.Fills.Min():P0})");
             }
 
+            // On a note so short that its two forgiven edges meet, the part they share is paid
+            // once: a note sung half in tune all the way is worth half, and missing its middle
+            // cannot make it worth more
+            {
+                var veryQuick = SmallSong();
+                foreach (var phrase in veryQuick.Phrases)
+                {
+                    foreach (var note in phrase.Notes)
+                    {
+                        note.Length = 0.12;
+                    }
+                }
+
+                var halfInTune = SimGame.Play(veryQuick, SingBy(veryQuick, (p, n, into) => 0.55f), expert);
+                var middleMissed = SimGame.Play(veryQuick, SingBy(veryQuick, (p, n, into) =>
+                    into > 0.03 && into < 0.07 ? 0.75f : 0.55f), expert);
+                Program.Check(halfInTune.MeanFill > 0.45 && halfInTune.MeanFill < 0.55 &&
+                    middleMissed.MeanFill <= halfInTune.MeanFill + 0.001,
+                    $"a very short note is never paid twice over ({halfInTune.MeanFill:P0} half in tune, {middleMissed.MeanFill:P0} with its middle missed)");
+            }
+
             // A computer singer is not at the mercy of the frame rate
             {
                 var bot = SimGame.Play(song, new List<SimInput>(), expert, 12, 0.003, bot: true);

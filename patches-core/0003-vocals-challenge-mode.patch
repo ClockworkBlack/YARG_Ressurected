@@ -1,5 +1,5 @@
 diff --git a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
-index dd8f59a..f4b5b03 100644
+index dd8f59a..cacce03 100644
 --- a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
 +++ b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
 @@ -9,6 +9,47 @@ namespace YARG.Core.Engine.Vocals.Engines
@@ -230,7 +230,7 @@ index dd8f59a..f4b5b03 100644
              if (note is null)
              {
                  // If we're not on a note, we cannot be hitting a note
-@@ -325,6 +455,284 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -325,6 +455,299 @@ namespace YARG.Core.Engine.Vocals.Engines
              }
          }
  
@@ -459,8 +459,23 @@ index dd8f59a..f4b5b03 100644
 +            // The end, from the first input made inside the last grace time to the last tick
 +            if (noteIsOver && _trackedEndFrom[index] != NO_TICK)
 +            {
-+                forgiven += Math.Max(0.0,
-+                    (end - _trackedEndFrom[index]) * (double) _trackedEndBest[index] - _trackedEndReal[index]);
++                uint startTo = _trackedStartTo[index];
++                uint endFrom = _trackedEndFrom[index];
++                double startBest = _trackedStartBest[index];
++                double endBest = _trackedEndBest[index];
++                if (startTo > endFrom)
++                {
++                    // A short note: the two edges overlap, and the part they share is paid
++                    // once (at the better of the two). Every input on such a note lies in
++                    // one edge or the other, so this is the whole note's pay.
++                    double pay = (startTo - start) * startBest + (end - endFrom) * endBest -
++                        (startTo - endFrom) * Math.Min(startBest, endBest);
++                    forgiven = Math.Max(0.0, pay - real);
++                }
++                else
++                {
++                    forgiven += Math.Max(0.0, (end - endFrom) * endBest - _trackedEndReal[index]);
++                }
 +            }
 +
 +            double credit = Math.Min(real + Math.Min(forgiven, real * FORGIVEN_LIMIT), ticks);
@@ -515,7 +530,7 @@ index dd8f59a..f4b5b03 100644
          private void CheckPercussionHit()
          {
              var phrase = Notes[NoteIndex];
-@@ -360,12 +768,26 @@ namespace YARG.Core.Engine.Vocals.Engines
+@@ -360,12 +783,26 @@ namespace YARG.Core.Engine.Vocals.Engines
          protected override bool CanVocalNoteBeHit(VocalNote note, out float hitPercent)
          {
              // If it is non-pitched, it is always hittable
