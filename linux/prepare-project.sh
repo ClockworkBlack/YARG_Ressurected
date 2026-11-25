@@ -87,6 +87,22 @@ for f in Assets/Plugins/STB2CSharp/Linux/x86_64/STB2CSharp.so Assets/Plugins/Sql
     [ -s "$f" ] || { echo "[linux] $f is missing from the base project" >&2; exit 1; }
 done
 
+# Minis (MIDI controller support) crashes the game at startup when MIDI can't start, which is
+# the case on Linux without an ALSA sequencer (/dev/snd/seq), Chromebooks' Linux included: the
+# failed backend stays hooked to the input system and keeps calling RtMidi on a broken handle
+# (SIGSEGV in rtmidi_get_port_count). Embed the same Minis commit in Packages/ (which overrides
+# the git copy) with linux/minis-no-midi-crash.patch, so MIDI is just switched off instead.
+MINIS_REF="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["dependencies"]["jp.keijiro.minis"]["hash"])' Packages/packages-lock.json)"
+if [ -n "$MINIS_REF" ] && [ ! -d Packages/jp.keijiro.minis ]; then
+    log "Embedding Minis $MINIS_REF with the no-MIDI crash fix"
+    git init -q "$NATIVES_TMP/minis"
+    git -C "$NATIVES_TMP/minis" remote add origin https://github.com/TheNathannator/Minis
+    git -C "$NATIVES_TMP/minis" fetch -q --depth 1 origin "$MINIS_REF"
+    git -C "$NATIVES_TMP/minis" checkout -q FETCH_HEAD
+    cp -r "$NATIVES_TMP/minis/Packages/jp.keijiro.minis" Packages/
+    git apply --whitespace=nowarn --directory=Packages/jp.keijiro.minis "$REPO_ROOT/linux/minis-no-midi-crash.patch"
+fi
+
 # Self-signed certificate for the phone remote's https page (phone mics need a secure page)
 log "Making the phone remote certificate"
 mkdir -p Assets/Resources/YargRemote

@@ -1,0 +1,48 @@
+# Minis (MIDI controllers), YARG fork at 29dee9f: do not crash when MIDI cannot start.
+# Applied by linux/prepare-project.sh to an embedded copy of the package.
+diff --git a/Runtime/Internal/MidiBackend.cs b/Runtime/Internal/MidiBackend.cs
+index bf1018e..6b9709c 100644
+--- a/Runtime/Internal/MidiBackend.cs
++++ b/Runtime/Internal/MidiBackend.cs
+@@ -22,10 +22,26 @@ internal sealed class MidiBackend : CustomInputBackend<MidiChannel>
+         public MidiBackend()
+         {
+             _rtMidi = rtmidi_in_create_default();
+-            if (_rtMidi == null || _rtMidi.IsInvalid)
+-                throw new Exception("Failed to create RtMidi handle!");
+-            if (!_rtMidi.Ok)
+-                throw new Exception($"Failed to create RtMidi handle: {_rtMidi.ErrorMessage}");
++            if (_rtMidi == null || _rtMidi.IsInvalid || !_rtMidi.Ok)
++            {
++                // YARG Resurrected: the base constructor already hooked InputSystem.onBeforeUpdate.
++                // Unhook before failing, or OnUpdate keeps calling RtMidi on the failed handle and
++                // the game crashes (SIGSEGV in rtmidi_get_port_count). This happens on Linux
++                // without an ALSA sequencer (/dev/snd/seq), e.g. Chromebooks' Linux.
++                string reason = "unknown error";
++                try
++                {
++                    if (_rtMidi != null && !_rtMidi.IsInvalid)
++                        reason = _rtMidi.ErrorMessage ?? reason;
++                }
++                catch (Exception)
++                {
++                    // The error text isn't always valid text (seen with ALSA's sequencer error)
++                }
++
++                Dispose();
++                throw new Exception($"Failed to create RtMidi handle: {reason}");
++            }
+         }
+ 
+         protected override void OnDispose()
+@@ -40,6 +56,10 @@ protected override void OnDispose()
+ 
+         protected override void OnUpdate()
+         {
++            // YARG Resurrected: never call RtMidi on a missing or failed handle
++            if (_rtMidi == null || _rtMidi.IsInvalid)
++                return;
++
+             // Check for port connections/disconnections
+             uint portCount = rtmidi_get_port_count(_rtMidi);
+             if (!_rtMidi.Ok)
