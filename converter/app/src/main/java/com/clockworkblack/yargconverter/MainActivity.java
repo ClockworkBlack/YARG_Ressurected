@@ -321,6 +321,22 @@ public final class MainActivity extends Activity implements ConversionService.Li
         log.setTextIsSelectable(true);
         root.addView(log);
 
+        root.addView(section("Change a song's notes"));
+        TextView editInfo = new TextView(this);
+        editInfo.setText("Add or take away notes in a song that is already converted, without converting it again.");
+        editInfo.setPadding(0, 0, 0, dp(4));
+        root.addView(editInfo);
+        root.addView(button("Edit a converted song's notes", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!hasStorageAccess()) {
+                    requestStorageAccess();
+                    return;
+                }
+                startActivity(new Intent(MainActivity.this, EditorActivity.class));
+            }
+        }));
+
         setContentView(scroll);
     }
 
@@ -745,7 +761,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
         if (Build.VERSION.SDK_INT >= 30) {
             new AlertDialog.Builder(this)
                     .setTitle("Allow access to the YARG folder")
-                    .setMessage("To place songs in Internal storage/YARG/songs, turn on \"Allow access to manage all files\" for YARG Converter on the next screen, then come back and press Convert again.")
+                    .setMessage("To place songs in Internal storage/YARG/songs, turn on \"Allow access to manage all files\" for YARG Converter on the next screen, then come back and try again.")
                     .setPositiveButton("Open settings", new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {

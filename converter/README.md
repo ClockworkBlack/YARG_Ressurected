@@ -97,6 +97,33 @@ A folder with only some of the files won't show up.
   back as in step 1 above and scan again.
 - Converting the same song again replaces the old folder; scan again to see the new chart.
 
+## Changing a song's notes
+
+A converted chart can be fixed by hand without converting the song again: press **Edit a
+converted song's notes** at the bottom of the converter's screen and pick the song.
+
+- The buttons at the top choose the instrument (tap to switch between guitar and bass) and the
+  level (**E**asy, **M**edium, **H**ard, E**x**pert).
+- **Tap** an empty spot in a lane to add a note there. Tapping beside a note on another fret
+  makes it a chord. **Tap a note** to take it away.
+- **Hold a note** until the phone buzzes, then slide up to hold it longer (slide back down to
+  shorten it).
+- **Drag** up and down to move through the song, **pinch** to zoom. **Play** plays the music
+  from where you are, with the notes scrolling to the white line like in the game.
+- **Snap** sets where new notes land: on the beat (1/4), half beats (1/8), quarter beats (1/16)
+  or eighths of a beat (1/32).
+- **Undo** takes back the last change, as many times as you like.
+- **More** can copy all of Expert (or Hard) onto the level you are on, squeezed onto the frets
+  that level uses, so you can make an easier level by taking notes away.
+- **Save**, then in YARG scan for songs again (as after a conversion) to play the new notes.
+  The first save keeps the original file as `notes.mid.bak` in the song's folder; to go back to
+  it, delete `notes.mid` and rename `notes.mid.bak` to `notes.mid`.
+
+Only the guitar, bass (and rhythm, co-op or keys, if a song has them) notes change. Vocals,
+lyrics, tempo, star power and sections are saved exactly as they were, so it also works on
+songs from other charting tools that use `notes.mid`. Converting the same song again replaces
+the folder, edits included.
+
 ## How the charts are made
 
 With **Split into instruments** on, a neural network (HT-Demucs) first separates the recording

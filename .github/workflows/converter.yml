@@ -172,6 +172,13 @@ jobs:
           dotnet run --project tests/GameReaderCheck -c Release \
             -p:YargCore="$GITHUB_WORKSPACE/yarg-core" -- "$RUNNER_TEMP/song"
 
+      - name: Edit the song's notes with the note editor, then scan and load it again
+        run: |
+          cp -r "$RUNNER_TEMP/song" "$RUNNER_TEMP/edited"
+          java -cp converter/core-test/out EditTest "$RUNNER_TEMP/edited"
+          dotnet run --project tests/GameReaderCheck -c Release \
+            -p:YargCore="$GITHUB_WORKSPACE/yarg-core" -- "$RUNNER_TEMP/edited"
+
   voice-check:
     name: Sung or rapped, measured on real a cappellas
     runs-on: ubuntu-latest
