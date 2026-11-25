@@ -70,6 +70,25 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private static final int REQ_PERMISSION = 4;
     private static final int REQ_NOTIFICATIONS = 5;
     private static final int REQ_SINGERS = 6;
+    private static final int REQ_BATCH = 7;
+
+    /** Most songs converted in one go. */
+    static final int BATCH_MAX = 33;
+
+    /** One song waiting in the list. */
+    private static final class Queued {
+        Uri uri;
+        String fileName = "";
+        SongMeta meta = new SongMeta();
+        double seconds;
+        boolean read;
+    }
+
+    private final List<Queued> batch = new ArrayList<>();
+    private LinearLayout batchList;
+    private TextView batchStatus;
+    private CheckBox batchLyricsCheck;
+    private Button batchPickButton, batchConvertButton, batchClearButton;
 
     /** Folder inside Internal storage/YARG/songs that converted songs go into. */
     private static final String SUBFOLDER = "Converted";
@@ -327,6 +346,45 @@ public final class MainActivity extends Activity implements ConversionService.Li
             }
         });
         root.addView(convertButton);
+
+        root.addView(section("Several songs at once"));
+        batchStatus = new TextView(this);
+        batchStatus.setText("Pick up to " + BATCH_MAX + " files and convert them all in one go, one after another, with the mode and number of notes chosen above. Each song's title and artist come from the file's tags (or its name).");
+        root.addView(batchStatus);
+        batchPickButton = button("Choose files (up to " + BATCH_MAX + ")", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                pickBatch();
+            }
+        });
+        root.addView(batchPickButton);
+        batchList = new LinearLayout(this);
+        batchList.setOrientation(LinearLayout.VERTICAL);
+        root.addView(batchList);
+        batchLyricsCheck = new CheckBox(this);
+        batchLyricsCheck.setText("Find lyrics online for each song (LRCLIB), so each one gets a vocals part to sing. Songs with no timed lyrics there are converted without vocals.");
+        batchLyricsCheck.setChecked(true);
+        root.addView(batchLyricsCheck);
+        LinearLayout batchRow = row();
+        batchConvertButton = button("Convert all", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onBatchPressed();
+            }
+        });
+        batchClearButton = button("Clear list", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (busy) return;
+                batch.clear();
+                showBatch();
+            }
+        });
+        batchRow.addView(batchConvertButton, weighted());
+        batchRow.addView(batchClearButton, weighted());
+        root.addView(batchRow);
+        showBatch();
+
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(1000);
         progress.setVisibility(View.GONE);
@@ -480,6 +538,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
         lrcButton.setEnabled(!value);
         tapButton.setEnabled(!value);
         convertButton.setEnabled(!value);
+        if (batchPickButton != null) {
+            batchPickButton.setEnabled(!value);
+            batchConvertButton.setEnabled(!value && !batch.isEmpty());
+            batchClearButton.setEnabled(!value && !batch.isEmpty());
+            for (int i = 0; i < batchList.getChildCount(); i++) batchList.getChildAt(i).setEnabled(!value);
+        }
         modelButton.setEnabled(!value);
         singersButton.setEnabled(!value);
         boolean model = ModelStore.installed(this);
@@ -596,7 +660,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null) return;
-        if (requestCode == REQ_AUDIO && data.getData() != null) {
+        if (requestCode == REQ_BATCH) {
+            addToBatch(data);
+        } else if (requestCode == REQ_AUDIO && data.getData() != null) {
             setAudio(data.getData());
         } else if (requestCode == REQ_LRC && data.getData() != null) {
             try {
@@ -1001,6 +1067,238 @@ public final class MainActivity extends Activity implements ConversionService.Li
         audioCopy = target;
         audioCopyOf = uri;
         return target;
+    }
+
+    // ---------------------------------------------------------------- several songs
+
+    private void pickBatch() {
+        if (busy) return;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("audio/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"audio/*", "application/ogg", "application/x-flac"});
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            startActivityForResult(i, REQ_BATCH);
+        } catch (RuntimeException e) {
+            message("No file picker", "This phone has no file picker app available.");
+        }
+    }
+
+    private void addToBatch(Intent data) {
+        List<Uri> picked = new ArrayList<>();
+        if (data.getClipData() != null) {
+            for (int i = 0; i < data.getClipData().getItemCount(); i++) picked.add(data.getClipData().getItemAt(i).getUri());
+        } else if (data.getData() != null) {
+            picked.add(data.getData());
+        }
+        int left = 0;
+        final List<Queued> added = new ArrayList<>();
+        for (Uri uri : picked) {
+            boolean already = false;
+            for (Queued q : batch) already |= q.uri.equals(uri);
+            if (already || uri == null) continue;
+            if (batch.size() >= BATCH_MAX) {
+                left++;
+                continue;
+            }
+            // Kept readable after this screen closes: the songs are read one at a time, much later
+            try {
+                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (RuntimeException e) {
+                // Not every file picker offers it; the song is still read while the app is open
+            }
+            Queued q = new Queued();
+            q.uri = uri;
+            q.fileName = displayName(uri);
+            q.meta.title = q.fileName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
+            batch.add(q);
+            added.add(q);
+        }
+        if (left > 0) {
+            message("List is full", left + (left == 1 ? " file was" : " files were") + " left out: at most " + BATCH_MAX + " songs go in one list.");
+        }
+        showBatch();
+        // Title, artist and the rest from each file's tags, off the main thread
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                for (final Queued q : added) {
+                    readTags(q);
+                    main.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showBatch();
+                        }
+                    });
+                }
+            }
+        }, "batch-tags").start();
+    }
+
+    /** Fills in a queued song's details from its tags, falling back to "Artist - Title" in the file name. */
+    private void readTags(Queued q) {
+        String[] tags = new String[5];
+        MediaMetadataRetriever r = new MediaMetadataRetriever();
+        try {
+            r.setDataSource(app, q.uri);
+            tags[0] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
+            tags[1] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
+            if (tags[1] == null) tags[1] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST);
+            tags[2] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
+            tags[3] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR);
+            if (tags[3] == null) tags[3] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE);
+            tags[4] = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE);
+            String d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if (d != null) q.seconds = Long.parseLong(d) / 1000.0;
+        } catch (RuntimeException e) {
+            // Tags are optional; the file name is used instead
+        } finally {
+            try {
+                r.release();
+            } catch (Exception ignored) {
+                // Nothing useful to do if releasing fails
+            }
+        }
+        String base = q.fileName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
+        String title = clean(tags[0]);
+        String artist = clean(tags[1]);
+        if (title.isEmpty()) {
+            int dash = base.indexOf(" - ");
+            if (dash > 0 && artist.isEmpty()) {
+                artist = base.substring(0, dash).trim();
+                title = base.substring(dash + 3).trim();
+            } else {
+                title = base.trim();
+            }
+        }
+        SongMeta m = new SongMeta();
+        m.title = title;
+        m.artist = artist;
+        m.album = clean(tags[2]);
+        String year = clean(tags[3]).replaceAll("[^0-9]", "");
+        m.year = year.length() >= 4 ? year.substring(0, 4) : "";
+        m.genre = clean(tags[4]);
+        m.singers = Lrc.artists(artist, title).toArray(new String[0]);
+        q.meta = m;
+        q.read = true;
+    }
+
+    /** Redraws the list: one row a song, with a button to take it out. */
+    private void showBatch() {
+        batchList.removeAllViews();
+        for (int i = 0; i < batch.size(); i++) {
+            final Queued q = batch.get(i);
+            LinearLayout r = row();
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            TextView t = new TextView(this);
+            String who = q.meta.artist == null || q.meta.artist.isEmpty() ? "" : q.meta.artist + " - ";
+            String len = q.seconds > 0 ? String.format(Locale.US, "  (%d:%02d)", (int) q.seconds / 60, (int) q.seconds % 60) : "";
+            t.setText((i + 1) + ". " + who + q.meta.titleOrDefault() + len + (q.read ? "" : "  (reading…)"));
+            t.setPadding(0, dp(6), dp(8), dp(6));
+            r.addView(t, weighted());
+            Button remove = button("Remove", new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (busy) return;
+                    batch.remove(q);
+                    showBatch();
+                }
+            });
+            r.addView(remove, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            batchList.addView(r);
+            style(r);
+        }
+        batchConvertButton.setText(batch.isEmpty() ? "Convert all" : "Convert all " + batch.size());
+        batchConvertButton.setEnabled(!busy && !batch.isEmpty());
+        batchClearButton.setEnabled(!busy && !batch.isEmpty());
+    }
+
+    private void onBatchPressed() {
+        if (busy || batch.isEmpty()) return;
+        if (!hasStorageAccess()) {
+            requestStorageAccess();
+            return;
+        }
+        final List<Queued> songs = new ArrayList<>(batch);
+        final GuitarCharter.Options options = new GuitarCharter.Options();
+        int choice = densityGroup.getCheckedRadioButtonId();
+        options.threshold = choice == DENSITY_FEWER ? 1.5 : choice == DENSITY_MORE ? 0.65 : 1.0;
+        int mode = modeGroup.getCheckedRadioButtonId();
+        final boolean useStems = mode != MODE_NORMAL && ModelStore.installed(this);
+        final boolean guessSingers = useStems && guessCheck.isChecked();
+        final boolean rnb = useStems && mode == MODE_RNB;
+        final boolean findLyrics = batchLyricsCheck.isChecked();
+
+        setBusy(true);
+        progress.setIndeterminate(false);
+        progress.setProgress(0);
+        progress.setVisibility(View.VISIBLE);
+        log.setText("Converting " + songs.size() + " songs…");
+        askForNotifications();
+        ConversionService.begin(this, songs.size() + " songs");
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                StringBuilder done = new StringBuilder();
+                StringBuilder failed = new StringBuilder();
+                final List<Queued> notDone = new ArrayList<>();
+                int ok = 0;
+                for (int i = 0; i < songs.size(); i++) {
+                    Queued q = songs.get(i);
+                    if (!q.read) readTags(q);
+                    String name = q.meta.titleOrDefault();
+                    ConversionService.setBatchLabel("Song " + (i + 1) + " of " + songs.size() + ": " + name);
+                    try {
+                        List<Lrc.Line> lyrics = new ArrayList<>();
+                        String lrcText = "";
+                        String lyricsNote = "no lyrics";
+                        if (findLyrics) {
+                            ConversionService.setTextAndProgress("Looking for lyrics…", -1);
+                            try {
+                                LrcLib.Found found = LrcLib.find(q.meta.title, q.meta.artist, q.meta.album, q.seconds);
+                                if (found != null && found.synced != null) {
+                                    lrcText = found.synced;
+                                    lyrics = Lrc.parse(lrcText);
+                                    lyricsNote = "with lyrics";
+                                } else {
+                                    lyricsNote = "no timed lyrics found";
+                                }
+                            } catch (IOException e) {
+                                lyricsNote = "lyrics lookup failed";
+                            }
+                        }
+                        runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, options.copy(), useStems, guessSingers, rnb);
+                        ok++;
+                        done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(lyricsNote).append(")\n");
+                    } catch (IOException e) {
+                        notDone.add(q);
+                        failed.append("  ").append(i + 1).append(". ").append(name).append(": ").append(e.getMessage()).append('\n');
+                    } catch (RuntimeException | OutOfMemoryError e) {
+                        notDone.add(q);
+                        failed.append("  ").append(i + 1).append(". ").append(name).append(": ").append(e).append('\n');
+                    }
+                }
+                StringBuilder sb = new StringBuilder();
+                sb.append("Done: ").append(ok).append(" of ").append(songs.size()).append(" songs converted into\nInternal storage/YARG/songs/")
+                        .append(SUBFOLDER).append("\n\n");
+                if (done.length() > 0) sb.append("Converted:\n").append(done);
+                if (failed.length() > 0) sb.append("\nNot converted:\n").append(failed);
+                sb.append("\nTo play them: open YARG, then Settings > Songs > Scan Songs.");
+                main.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        // Converted songs leave the list; any that failed stay, to try again
+                        batch.removeAll(songs);
+                        batch.addAll(0, notDone);
+                        showBatch();
+                    }
+                });
+                ConversionService.setBatchLabel("");
+                ConversionService.finish(ok > 0, sb.toString());
+            }
+        }, "convert-batch").start();
     }
 
     private void askForNotifications() {

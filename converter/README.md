@@ -61,6 +61,24 @@ the one-time download of the instrument-separation model.
    Open the app again at any time to see where it is.
 6. Add the song to the game (next section).
 
+## Several songs at once
+
+Under **Several songs at once**, press **Choose files (up to 33)** and pick as many songs as you
+like in the file picker (long-press the first, then tap the others). They are listed with the
+title and artist from each file's tags, or from a file name like `Artist - Title.mp3`; take any
+out with **Remove**. With **Find lyrics online for each song** ticked (the default), each song
+is looked up on LRCLIB by its title, artist and length, and gets a vocals part when timed lyrics
+are found there.
+
+**Convert all** converts them one after another with the mode and number of notes chosen in
+step 3, in the background with a notification ("Song 7 of 33: ..."). A song that fails does not
+stop the rest. At the end a summary lists which songs were converted (and whether lyrics were
+found) and which were not, and why; those stay in the list to try again. Then scan songs in YARG
+once for all of them.
+
+For a song that needs its lyrics fixed, two artists marked, or lyrics tapped in by hand, use the
+single-song steps above instead.
+
 ## Adding a converted song to YARG
 
 The converter already puts the song where YARG looks for songs, so there is nothing to copy or
