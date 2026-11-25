@@ -1,0 +1,825 @@
+diff --git a/Assets/Script/Audio/Bass/BassMicDevice.cs b/Assets/Script/Audio/Bass/BassMicDevice.cs
+index bdd0d54..216b9f8 100644
+--- a/Assets/Script/Audio/Bass/BassMicDevice.cs
++++ b/Assets/Script/Audio/Bass/BassMicDevice.cs
+@@ -1,10 +1,12 @@
+ ﻿using System;
+ using System.Collections.Concurrent;
++using System.Collections.Generic;
+ using System.Runtime.InteropServices;
+ using ManagedBass;
+ using ManagedBass.Fx;
+ using UnityEngine;
+ using YARG.Audio.PitchDetection;
++using YARG.Audio.Vocals;
+ using YARG.Core.Logging;
+ using YARG.Core.Audio;
+ using YARG.Core.IO;
+@@ -193,7 +195,7 @@ namespace YARG.Audio.BASS
+         }
+     }
+ 
+-    public sealed class BassMicDevice : MicDevice
++    public sealed class BassMicDevice : MicDevice, IVoiceMic
+     {
+         private const float MIC_HIT_INPUT_THRESHOLD = 25f;
+ 
+@@ -234,6 +236,7 @@ namespace YARG.Audio.BASS
+             }
+ 
+             device._pitchDetector = new PitchTracker(sampleRate: device._recordHandle.SampleRate);
++            device._voiceInput = new VoiceInput(device._recordHandle.SampleRate);
+ 
+             var monitorPlayback = MonitorPlaybackHandle.Create(device._recordHandle.SampleRate);
+             if (monitorPlayback == null)
+@@ -301,6 +304,46 @@ namespace YARG.Audio.BASS
+         private int _timeAccumulated;
+         private int _processedBufferLength;
+ 
++        // YARG Resurrected: the new voice analysis (see VoiceInput.cs). It is used while the
++        // "Improved Singing Detection" setting is on; with it off, this class works exactly
++        // as it did before.
++        private VoiceInput _voiceInput;
++        private readonly List<VoiceInputFrame> _voiceFrames = new();
++        private float[] _voiceSamples = new float[4096];
++        private volatile bool _useVoiceInput;
++        private volatile bool _voiceResetPending;
++
++        // The mic is not played back through the device's own loudspeaker: it sits right next
++        // to the mic, so the voice would come back late and be heard as a second singer.
++        private float _monitorVolume = 1f;
++        private volatile bool _monitorMuted;
++
++        /// <summary>
++        /// Called by the vocals player when a song starts (main thread). See <see cref="IVoiceMic"/>.
++        /// </summary>
++        public double BeginSong(bool strict)
++        {
++            double extra = SettingsManager.Settings.MicrophoneDelay.Value / 1000.0;
++
++            // Headphones may have been plugged in or pulled out since the last song
++            _monitorMuted = YARG.Helpers.AndroidAudioRoute.IsBuiltInSpeakerOnly();
++            ApplyMonitoringLevel();
++
++            if (!SettingsManager.Settings.ImprovedSingingDetection.Value || _voiceInput == null)
++            {
++                _useVoiceInput = false;
++                return extra;
++            }
++
++            double hold = VoiceMicTiming.DeviceHoldSeconds(_voiceInput.AnalysisSeconds, _recordHandle.RecordPeriod);
++            _voiceInput.Strict = strict;
++            _voiceInput.HoldSeconds = hold;
++            _voiceResetPending = true;
++            _useVoiceInput = true;
++
++            return hold + VoiceMicTiming.DEVICE_CAPTURE_SECONDS + extra;
++        }
++
+         public override int Reset()
+         {
+             _frameQueue.Clear();
+@@ -356,6 +399,18 @@ namespace YARG.Audio.BASS
+ 
+         public override bool DequeueOutputFrame(out MicOutputFrame frame)
+         {
++            // The new analysis stamps a frame with the moment it is due (see VoiceInput), which
++            // can be a few milliseconds ahead: hand it over when that moment has come.
++            // (Only the game's main thread takes frames out, so peeking first is safe.)
++            if (_useVoiceInput)
++            {
++                if (!_frameQueue.TryPeek(out frame) || frame.Time > InputManager.CurrentInputTime)
++                {
++                    frame = default;
++                    return false;
++                }
++            }
++
+             return _frameQueue.TryDequeue(out frame);
+         }
+ 
+@@ -366,6 +421,13 @@ namespace YARG.Audio.BASS
+ 
+         public override void SetMonitoringLevel(float volume)
+         {
++            _monitorVolume = volume;
++            ApplyMonitoringLevel();
++        }
++
++        private void ApplyMonitoringLevel()
++        {
++            float volume = _monitorMuted ? 0f : _monitorVolume;
+             if (!Bass.ChannelSetAttribute(_monitorHandle.Handle, ChannelAttribute.Volume, volume))
+             {
+                 YargLogger.LogFormatError("Failed to set volume attribute: {0}", Bass.LastError);
+@@ -394,8 +456,10 @@ namespace YARG.Audio.BASS
+             }
+             catch (Exception e)
+             {
++                // Returning false would stop the recording for good; one bad buffer should
++                // not take the microphone away for the rest of the session.
+                 YargLogger.LogException(e, "Error in static record callback");
+-                return false;
++                return true;
+             }
+         }
+ #endif
+@@ -403,7 +467,7 @@ namespace YARG.Audio.BASS
+         private bool ProcessRecordData(int handle, IntPtr buffer, int length, IntPtr user)
+         {
+             // Copies the data from the recording buffer to the monitor playback buffer.
+-            if (Bass.StreamPutData(_monitorHandle.Handle, buffer, length) == -1)
++            if (!_monitorMuted && Bass.StreamPutData(_monitorHandle.Handle, buffer, length) == -1)
+             {
+                 YargLogger.LogFormatError("Error pushing data to monitor stream: {0}", Bass.LastError);
+             }
+@@ -414,6 +478,12 @@ namespace YARG.Audio.BASS
+                 return true;
+             }
+ 
++            if (_useVoiceInput)
++            {
++                ProcessVoiceInput(buffer, length);
++                return true;
++            }
++
+             // Copy the data to the batch handle to apply FX
+             Bass.StreamPutData(_recordHandle.ProcessedHandle, buffer, length);
+ 
+@@ -443,6 +513,49 @@ namespace YARG.Audio.BASS
+             return true;
+         }
+ 
++        // YARG Resurrected: the new analysis. Every result is stamped with the moment its
++        // sound arrived (counted in samples, so it does not depend on when this thread ran).
++        private unsafe void ProcessVoiceInput(IntPtr buffer, int length)
++        {
++            double now = InputManager.CurrentInputTime;
++
++            if (_voiceResetPending)
++            {
++                _voiceResetPending = false;
++                _voiceInput.Reset();
++            }
++
++            int count = length / sizeof(short);
++            if (count <= 0)
++            {
++                return;
++            }
++
++            if (_voiceSamples.Length < count)
++            {
++                _voiceSamples = new float[count];
++            }
++
++            var source = (short*) buffer;
++            for (int i = 0; i < count; i++)
++            {
++                _voiceSamples[i] = source[i] / 32768f;
++            }
++
++            _voiceFrames.Clear();
++            _voiceInput.Feed(new ReadOnlySpan<float>(_voiceSamples, 0, count), now,
++                SettingsManager.Settings.MicrophoneSensitivity.Value, _voiceFrames);
++
++            for (int i = 0; i < _voiceFrames.Count; i++)
++            {
++                var frame = _voiceFrames[i];
++
++                // A pitch of 0 means "sound, but no sung tone" (see MicInputContext)
++                _frameQueue.Enqueue(new MicOutputFrame(frame.Time, frame.IsHit,
++                    frame.IsHit ? -1f : frame.PitchHz, frame.LevelDb));
++            }
++        }
++
+         private void CalculatePitchAndAmplitude(ReadOnlySpan<short> buffer)
+         {
+             int sampleCount = buffer.Length;
+diff --git a/Assets/Script/Gameplay/GameManager.Audio.cs b/Assets/Script/Gameplay/GameManager.Audio.cs
+index 64a2cd1..e1215ad 100644
+--- a/Assets/Script/Gameplay/GameManager.Audio.cs
++++ b/Assets/Script/Gameplay/GameManager.Audio.cs
+@@ -174,6 +174,31 @@ namespace YARG.Gameplay
+             }
+         }
+ 
++        private bool _leadVocalLowered;
++
++        /// <summary>
++        /// Vocals Challenge Mode: turns the song's own singer down (to the "Lead Singer Volume
++        /// In Challenge Mode" setting), so the player carries the tune and a microphone near the
++        /// speaker cannot simply hear the right notes. Only possible when the song has its
++        /// vocals on a track of their own. Undone when the song is left.
++        /// </summary>
++        public void LowerLeadVocal()
++        {
++            if (_leadVocalLowered)
++            {
++                return;
++            }
++
++            if (!_stemStates.ContainsKey(SongStem.Vocals) || _backgroundStem == SongStem.Vocals)
++            {
++                return;
++            }
++
++            _leadVocalLowered = true;
++            GlobalAudioHandler.SetVolumeMultiplier(SongStem.Vocals,
++                SettingsManager.Settings.ChallengeLeadVocalVolume.Value);
++        }
++
+         public void ChangeStarPowerStatus(bool active)
+         {
+             if (SettingsManager.Settings.UseCrowdFx.Value == CrowdFxMode.Disabled)
+diff --git a/Assets/Script/Gameplay/GameManager.cs b/Assets/Script/Gameplay/GameManager.cs
+index 2d18ae5..da8e2c3 100644
+--- a/Assets/Script/Gameplay/GameManager.cs
++++ b/Assets/Script/Gameplay/GameManager.cs
+@@ -241,6 +241,9 @@ namespace YARG.Gameplay
+                 GlobalAudioHandler.SetVolumeSetting(stem, state.Volume);
+             }
+ 
++            // Vocals Challenge Mode may have turned the song's singer down (see LowerLeadVocal)
++            GlobalAudioHandler.SetVolumeMultiplier(SongStem.Vocals, 1.0);
++
+             DisposeDebug();
+             _pauseMenu.PopAllMenus();
+             YARG.Audio.GuitarVoice.GuitarFreestyle.Clear();
+diff --git a/Assets/Script/Gameplay/HUD/VocalsPlayerHUD.cs b/Assets/Script/Gameplay/HUD/VocalsPlayerHUD.cs
+index 23e809e..46b5f21 100644
+--- a/Assets/Script/Gameplay/HUD/VocalsPlayerHUD.cs
++++ b/Assets/Script/Gameplay/HUD/VocalsPlayerHUD.cs
+@@ -37,6 +37,20 @@ namespace YARG.Gameplay.HUD
+         private bool                             _hudShowing = true;
+         private TextMeshProUGUI[] _textCache;
+ 
++        // YARG Resurrected: Vocals Challenge Mode colours the phrase meter by how the phrase is going
++        private Color _meterColor;
++        private int   _meterState = -1;
++
++        public enum MeterState
++        {
++            /// <summary>The usual colour.</summary>
++            Normal,
++            /// <summary>Enough of the phrase has been sung.</summary>
++            Passed,
++            /// <summary>The phrase cannot be hit any more (notes were skipped).</summary>
++            Lost
++        }
++
+         public void Initialize(EnginePreset enginePreset)
+         {
+             _textCache = MultiplierTextHelper.CreateMultiplierTextCache(EnginePreset.DEFAULT_MAX_MULTIPLIER, _multiplierText, GameManager.Players.Count > 1);
+@@ -60,6 +74,29 @@ namespace YARG.Gameplay.HUD
+             }
+ 
+             _starPowerFill.fillAmount = 0f;
++
++            _meterColor = _comboMeterFill.color;
++            _meterState = -1;
++        }
++
++        /// <summary>
++        /// Vocals Challenge Mode: the phrase meter shows how much of the phrase was really
++        /// sung, so its colour is what says "enough" (green) or "lost" (red).
++        /// </summary>
++        public void SetMeterState(MeterState state)
++        {
++            if (_meterState == (int) state)
++            {
++                return;
++            }
++            _meterState = (int) state;
++
++            _comboMeterFill.color = state switch
++            {
++                MeterState.Passed => new Color(0.30f, 0.90f, 0.40f),
++                MeterState.Lost   => new Color(0.90f, 0.20f, 0.20f),
++                _                 => _meterColor
++            };
+         }
+ 
+         private void Update()
+@@ -162,12 +199,19 @@ namespace YARG.Gameplay.HUD
+         }
+ 
+         public void ShowPhraseHit(double hitPercent, int combo)
++        {
++            ShowPhraseResult(GetVocalPerformanceText(hitPercent), combo);
++        }
++
++        /// <summary>
++        /// Shows the result of a phrase with the given words (see VocalsPlayer.GetPhraseResultText).
++        /// </summary>
++        public void ShowPhraseResult(string resultText, int combo)
+         {
+             if (!Settings.SettingsManager.Settings.DisableTextNotifications.Value)
+             {
+                 _textNotifications.UpdateNoteStreak(combo);
+             }
+-            var resultText = GetVocalPerformanceText(hitPercent);
+             _textNotifications.ShowVocalPhraseResult(resultText, combo);
+         }
+ 
+diff --git a/Assets/Script/Gameplay/Player/BasePlayer.cs b/Assets/Script/Gameplay/Player/BasePlayer.cs
+index bb249e1..710518f 100644
+--- a/Assets/Script/Gameplay/Player/BasePlayer.cs
++++ b/Assets/Script/Gameplay/Player/BasePlayer.cs
+@@ -60,7 +60,16 @@ namespace YARG.Gameplay.Player
+         // the song and fixed for the whole song, so the engine's clock never jumps.
+         private double? _remoteInputDelay;
+         private double RemoteInputDelay => _remoteInputDelay ??=
+-            Player.IsReplay ? 0.0 : YARG.Remote.RemotePlayManager.GetInputDelaySeconds(Player.Bindings);
++            Player.IsReplay ? 0.0 : MeasureInputDelay();
++
++        /// <summary>
++        /// How late this player's inputs reach the game, in seconds, on top of the profile's
++        /// input calibration. Asked once per song. (Vocals: the microphone's own delay.)
++        /// </summary>
++        protected virtual double MeasureInputDelay()
++        {
++            return YARG.Remote.RemotePlayManager.GetInputDelaySeconds(Player.Bindings);
++        }
+ 
+         public abstract BaseEngine BaseEngine { get; }
+ 
+@@ -372,6 +381,17 @@ namespace YARG.Gameplay.Player
+             _replayInputs.Add(input);
+         }
+ 
++        /// <summary>
++        /// Queues an input that was taken out by <see cref="InterceptInput"/> and held back.
++        /// Its time is already the engine's time.
++        /// </summary>
++        protected void QueueHeldInput(ref GameInput input)
++        {
++            BaseEngine.QueueInput(ref input);
++            OnInputQueued(input);
++            _replayInputs.Add(input);
++        }
++
+         protected virtual void OnStarPowerPhraseHit()
+         {
+             if (!GameManager.Paused && !GameManager.IsSeekingReplay)
+diff --git a/Assets/Script/Gameplay/Player/VocalsPlayer.cs b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
+index 21520b2..9749ee3 100644
+--- a/Assets/Script/Gameplay/Player/VocalsPlayer.cs
++++ b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
+@@ -65,6 +65,29 @@ namespace YARG.Gameplay.Player
+ 
+         private SongChart _chart;
+ 
++        // ---- YARG Resurrected ----
++
++        /// <summary>A phrase with this much of it sung is called PERFECT.</summary>
++        private const double PERFECT_PHRASE_PERCENT = 0.95;
++
++        // Vocals Challenge Mode (the "Challenge Mode" modifier) is on for this player
++        private bool _challenge;
++
++        // The microphone's own delay (see IVoiceMic), in seconds of real time
++        private bool   _hasMicDelay;
++        private double _micDelay;
++
++        // Buttons are not as late as the microphone. A press is kept for the difference, so
++        // that the engine gets it in step with what was sung at that moment.
++        private double _buttonHold;
++        private bool   _feedingMic;
++        private readonly List<GameInput> _heldButtons = new();
++
++        // Semitones the song was moved by on the Song Setup screen
++        private float _keyShift;
++
++        private int _perfectStreak;
++
+         public void Initialize(int index, int vocalIndex, YargPlayer player, SongChart chart,
+             VocalsPlayerHUD hud, VocalPercussionTrack percussionTrack, int? lastHighScore, float trackSpeed)
+         {
+@@ -122,14 +145,43 @@ namespace YARG.Gameplay.Player
+ 
+             _hud.ShowPlayerName(player, needleIndex);
+ 
++            // The song may have been moved to another key on the Song Setup screen. The
++            // singer follows the song, so what is sung is moved back to the chart's key.
++            _keyShift = Player.IsReplay || GameManager.ReplayInfo != null
++                ? 0f
++                : YARG.Menu.SongSetup.SongSetupState.KeyShiftFor(GameManager.Song);
++
+             // Create and start an input context for the mic
+             if (!Player.IsReplay && player.Bindings.Microphone != null)
+             {
++                // The microphone says how late its results are (and is told how strict to
++                // be), so singing is judged against the note that was playing when it was sung
++                if (player.Bindings.Microphone is YARG.Audio.Vocals.IVoiceMic voiceMic)
++                {
++                    bool strict = Player.Profile.IsModifierActive(YARG.Core.Game.Modifier.VocalsChallenge);
++                    _micDelay = voiceMic.BeginSong(strict);
++                    _hasMicDelay = true;
++
++                    double buttonDelay = YARG.Remote.RemotePlayManager.GetInputDelaySeconds(Player.Bindings);
++                    _buttonHold = System.Math.Max(0.0, _micDelay - buttonDelay);
++                }
++
+                 _inputContext = new MicInputContext(player.Bindings.Microphone, GameManager);
+                 _inputContext.Start();
+             }
+ 
+             Engine = CreateEngine();
++            _challenge = EngineParams.IsChallenge;
++
++            if (_challenge && !Player.IsReplay)
++            {
++                // The original singer steps back: you carry the song
++                GameManager.LowerLeadVocal();
++
++                // Say so on the singer's part of the screen as the song starts
++                _hud.ShowPhraseResult(
++                    YARG.Localization.Localize.Key("Enum.Modifier", "VocalsChallenge").ToUpperInvariant(), 0);
++            }
+ 
+             if (GameManager.IsPractice)
+             {
+@@ -152,10 +204,16 @@ namespace YARG.Gameplay.Player
+             if (!Player.IsReplay)
+             {
+                 var singToActivateStarPower = SettingsManager.Settings.VoiceActivatedVocalStarPower.Value;
++                bool challenge = Player.Profile.IsModifierActive(YARG.Core.Game.Modifier.VocalsChallenge);
++
++                // One microphone result may be credited for 1/25 s of the song. When the song
++                // is sped up, more of the song goes by between two results, so allow for that
++                // (otherwise a perfect singer could only ever be credited 1/speed of a phrase).
++                float updatesPerSecond = MicDevice.UPDATES_PER_SECOND / Mathf.Max(1f, GameManager.SongSpeed);
+ 
+                 // Create the engine params from the engine preset
+                 EngineParams = Player.EnginePreset.Vocals.Create(StarMultiplierThresholds, SoloBonusStarMultiplierThresholds,
+-                    Player.Profile.CurrentDifficulty, MicDevice.UPDATES_PER_SECOND, singToActivateStarPower);
++                    Player.Profile.CurrentDifficulty, updatesPerSecond, singToActivateStarPower, challenge);
+             }
+             else
+             {
+@@ -193,7 +251,7 @@ namespace YARG.Gameplay.Player
+                 ShowTextNotifications(isLastPhrase);
+ 
+                 // Order is important here. ShowVocalPhraseResult() will skip showing AWESOME! if other, more important notifications are already showing.
+-                _hud.ShowPhraseHit(percent, Combo);
++                _hud.ShowPhraseResult(GetPhraseResultText(engine, percent, fullPoints), Combo);
+             };
+ 
+             engine.OnNoteHit += (_, note) =>
+@@ -204,9 +262,11 @@ namespace YARG.Gameplay.Player
+                 }
+             };
+ 
+-            engine.OnNoteMissed += (_, _) =>
++            engine.OnNoteMissed += (_, note) =>
+             {
+-                if (LastCombo >= 2)
++                // (A missed percussion note does not break the combo, so it gets no miss sound;
++                // it used to play one for every tambourine note that went by)
++                if (LastCombo >= 2 && !note.IsPercussion)
+                 {
+                     GlobalAudioHandler.PlaySoundEffect(SfxSample.NoteMiss);
+                 }
+@@ -266,6 +326,9 @@ namespace YARG.Gameplay.Player
+             _phraseIndex = -1;
+             _percussionTrack.Initialize(NoteTrack.Notes);
+ 
++            _heldButtons.Clear();
++            _perfectStreak = 0;
++
+             base.ResetPracticeSection();
+         }
+ 
+@@ -282,19 +345,90 @@ namespace YARG.Gameplay.Player
+ 
+         protected override void UpdateInputs(double time)
+         {
++            // Button presses that were kept back to stay in step with the microphone
++            if (_heldButtons.Count > 0)
++            {
++                double engineTime = time + InputCalibration;
++                int released = 0;
++                while (released < _heldButtons.Count && _heldButtons[released].Time <= engineTime)
++                {
++                    var button = _heldButtons[released++];
++                    QueueHeldInput(ref button);
++                }
++
++                if (released > 0)
++                {
++                    _heldButtons.RemoveRange(0, released);
++                }
++            }
++
+             // Push all inputs from mic
+             if (!Player.IsReplay && _inputContext != null)
+             {
++                _feedingMic = true;
+                 foreach (var input in _inputContext.GetInputsFromMic())
+                 {
+                     var i = input;
++
++                    // Sung in the key the song was moved to: put it back in the chart's key
++                    // (a pitch below zero is sound without a tone, and stays as it is)
++                    if (_keyShift != 0f && i.GetAction<VocalsAction>() == VocalsAction.Pitch && i.Axis >= 0f)
++                    {
++                        i = GameInput.Create(i.Time, VocalsAction.Pitch, i.Axis - _keyShift);
++                    }
++
+                     OnGameInput(ref i);
+                 }
++                _feedingMic = false;
+             }
+ 
+             base.UpdateInputs(time);
+         }
+ 
++        protected override double MeasureInputDelay()
++        {
++            // A microphone that knows its own delay replaces the phone controller's: singing is
++            // judged by when it was sung. The delay is in real time; the engine's clock runs
++            // in song time, which goes by faster or slower with the song speed.
++            if (_hasMicDelay)
++            {
++                return _micDelay * GameManager.SongSpeed;
++            }
++
++            return base.MeasureInputDelay();
++        }
++
++        /// <summary>
++        /// The words shown when a phrase ends, with the part of the phrase that was really sung.
++        /// </summary>
++        private string GetPhraseResultText(VocalsEngine engine, double percent, bool fullPoints)
++        {
++            double sung = engine.LastPhrasePercent;
++            bool perfect = fullPoints && sung >= PERFECT_PHRASE_PERCENT;
++            _perfectStreak = perfect ? _perfectStreak + 1 : 0;
++
++            string words;
++            if (engine.LastPhraseLostToNotes)
++            {
++                // Vocals Challenge Mode: enough of the phrase was sung, but notes were left out
++                words = YARG.Localization.Localize.Key("Gameplay.Vocals.Performance", "MissedNotes");
++            }
++            else if (perfect)
++            {
++                words = YARG.Localization.Localize.Key("Gameplay.Vocals.Performance", "Perfect");
++                if (_perfectStreak >= 3)
++                {
++                    words = _perfectStreak + "x " + words;
++                }
++            }
++            else
++            {
++                words = VocalsPlayerHUD.GetVocalPerformanceText(percent);
++            }
++
++            return words + " " + Mathf.FloorToInt((float) (sung * 100.0)) + "%";
++        }
++
+         private bool IsInThreshold(double currentTime, double? lastTime)
+         {
+             if (lastTime is null)
+@@ -315,7 +449,31 @@ namespace YARG.Gameplay.Player
+             if (Engine.PhraseTicksTotal != null && Engine.PhraseTicksTotal.Value != 0)
+             {
+                 fill = (float) (Engine.PhraseTicksHit / Engine.PhraseTicksTotal.Value);
+-                fill /= (float) EngineParams.PhraseHitPercent;
++
++                if (_challenge)
++                {
++                    // Vocals Challenge Mode: the meter shows how much of the phrase was really
++                    // sung, and its colour says whether that is enough yet (or cannot be)
++                    var state = VocalsPlayerHUD.MeterState.Normal;
++                    if (Engine.IsPhraseLost)
++                    {
++                        state = VocalsPlayerHUD.MeterState.Lost;
++                    }
++                    else if (fill >= EngineParams.PhraseHitPercent)
++                    {
++                        state = VocalsPlayerHUD.MeterState.Passed;
++                    }
++
++                    _hud.SetMeterState(state);
++                }
++                else
++                {
++                    fill /= (float) EngineParams.PhraseHitPercent;
++                }
++            }
++            else if (_challenge)
++            {
++                _hud.SetMeterState(VocalsPlayerHUD.MeterState.Normal);
+             }
+ 
+             // In multiplayer, don't double the score multiplier in the strikeline element
+@@ -379,7 +537,8 @@ namespace YARG.Gameplay.Player
+             const float NEEDLE_ROT_MAX = 12f;
+ 
+             // Reduce the provided distance by applying a dead zone. This will prevent oversteer if the player's current pitch is well within the "Perfect" window.
+-            var deadzoneInSemitones = EngineParams.PitchWindowPerfect / 2;
++            // (Vocals Challenge Mode shows every bit of it.)
++            var deadzoneInSemitones = _challenge ? 0f : EngineParams.PitchWindowPerfect / 2;
+             var adjustedPitchDist = ApplyPitchDeadZone(pitchDist, deadzoneInSemitones);
+ 
+             // Determine how off that is compared to the hit window
+@@ -412,7 +571,11 @@ namespace YARG.Gameplay.Player
+             // Get whether or not the player has sang within the time threshold.
+             // We gotta use a threshold here because microphone inputs are passed every X seconds,
+             // not in a constant stream.
+-            if (!IsInThreshold(singTime, _lastSingTime) || _shouldHideNeedle)
++            // Sound without a tone (breath, noise) has no pitch to show, unless it is counting
++            // for a spoken note
++            bool toneless = Engine.IsSoundWithoutTone && !IsInThreshold(singTime, _lastHitTime);
++
++            if (!IsInThreshold(singTime, _lastSingTime) || _shouldHideNeedle || toneless)
+             {
+                 // Hide the needle if there's no singing
+                 if (_needleVisualContainer.activeSelf)
+@@ -457,6 +620,13 @@ namespace YARG.Gameplay.Player
+                         // Get how off the player is
+                         (float pitchDist, _) = GetPitchDistanceIgnoringOctave(lastNotePitch, Engine.PitchSang);
+                         targetRotation = GetNeedleRotation(pitchDist);
++
++                        // Vocals Challenge Mode: the needle sits where the voice really is,
++                        // not on the middle of the note
++                        if (_challenge)
++                        {
++                            pitch += pitchDist;
++                        }
+                     }
+                     else
+                     {
+@@ -618,6 +788,16 @@ namespace YARG.Gameplay.Player
+ 
+         protected override bool InterceptInput(ref GameInput input)
+         {
++            // A button press (Star Power, percussion) while the microphone runs behind: keep
++            // it for the difference, so it is judged at the moment it was made. Taking it
++            // out here and queueing it later keeps the engine's inputs in order.
++            if (_hasMicDelay && !_feedingMic && _buttonHold > 0.0)
++            {
++                _heldButtons.Add(new GameInput(input.Time + _buttonHold * GameManager.SongSpeed,
++                    input.Action, input.Integer));
++                return true;
++            }
++
+             return false;
+         }
+ 
+diff --git a/Assets/Script/Input/MicInputContext.cs b/Assets/Script/Input/MicInputContext.cs
+index 7044e29..492048e 100644
+--- a/Assets/Script/Input/MicInputContext.cs
++++ b/Assets/Script/Input/MicInputContext.cs
+@@ -8,6 +8,9 @@ namespace YARG.Input
+ {
+     public class MicInputContext
+     {
++        // Seconds. Longer than any delay a microphone can have, far shorter than a pause.
++        private const double MAX_FRAME_AGE = 0.25;
++
+         public readonly MicDevice Device;
+ 
+         private readonly GameManager _gameManager;
+@@ -34,15 +37,27 @@ namespace YARG.Input
+         /// </summary>
+         public IEnumerable<GameInput> GetInputsFromMic()
+         {
++            // YARG Resurrected: anything the mic heard while the game was not listening (a
++            // pause, a rewind) is too old to judge; without this it would all arrive at once.
++            double oldest = InputManager.CurrentInputTime - MAX_FRAME_AGE;
++
+             while (Device.DequeueOutputFrame(out var frame))
+             {
+-                // frame.VoiceDetected will ALWAYS be true here, as it wouldn't be queued otherwise
++                if (frame.Time < oldest)
++                {
++                    continue;
++                }
+ 
+                 // Queue it up!
+                 GameInput gameInput;
+                 if (!frame.IsHit)
+                 {
+-                    gameInput = GameInput.Create(frame.Time, VocalsAction.Pitch, frame.PitchAsMidiNote);
++                    // A frame without a pitch is sound with no sung tone (breath, noise): the
++                    // engine counts it for spoken notes only
++                    float pitch = frame.Pitch > 0f
++                        ? frame.PitchAsMidiNote
++                        : YARG.Core.Engine.Vocals.VocalsEngine.UNPITCHED_INPUT;
++                    gameInput = GameInput.Create(frame.Time, VocalsAction.Pitch, pitch);
+                 }
+                 else
+                 {
+diff --git a/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs b/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
+index 95b9275..5084e43 100644
+--- a/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
++++ b/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
+@@ -19,6 +19,14 @@ namespace YARG.Menu.ScoreScreen
+ 
+         public void InitializeForModifier(Modifier modifier)
+         {
++            // YARG Resurrected: Vocals Challenge Mode has no drawing of its own in the icon
++            // sheet (art cannot be added from a patch); it borrows the "tighter hit window" one
++            if (modifier == Modifier.VocalsChallenge)
++            {
++                InitializeCustom(DYNAMIC_HIT_WINDOW);
++                return;
++            }
++
+             InitializeCustom(modifier.ToString());
+         }
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index b742c6d..b3a1857 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -261,6 +261,9 @@ namespace YARG.Settings
+             public VolumeSetting VocalsVolume { get; } =
+                 new(1f, v => GlobalAudioHandler.SetVolumeSetting(SongStem.Vocals, v));
+ 
++            // Vocals Challenge Mode: how loud the song's own singer stays (see GameManager.LowerLeadVocal)
++            public VolumeSetting ChallengeLeadVocalVolume { get; } = new(0.35f);
++
+             public VolumeSetting SongVolume { get; } =
+                 new(1f, v => GlobalAudioHandler.SetVolumeSetting(SongStem.Song, v));
+ 
+@@ -291,6 +294,12 @@ namespace YARG.Settings
+ 
+             public SliderSetting MicrophoneSensitivity { get; } = new(2f, -50f, 50f);
+ 
++            // The new voice analysis (see VoiceInput.cs). Off = YARG's original pitch tracking.
++            public ToggleSetting ImprovedSingingDetection { get; } = new(true);
++
++            // Milliseconds added to what the game assumes for the microphone's delay
++            public SliderSetting MicrophoneDelay { get; } = new(0f, -100f, 300f);
++
+             public DropdownSetting<AudioFxMode> MuteOnMiss { get; } = new(AudioFxMode.MultitrackOnly)
+             {
+                 AudioFxMode.Off,
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 7d1554d..5545b0f 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -103,6 +103,7 @@ namespace YARG.Settings
+                 new FieldMetadata(nameof(Settings.KeysVolume), isAdvanced: true),
+                 nameof(Settings.DrumsVolume),
+                 nameof(Settings.VocalsVolume),
++                nameof(Settings.ChallengeLeadVocalVolume),
+                 new FieldMetadata(nameof(Settings.SongVolume), isAdvanced: true),
+                 new FieldMetadata(nameof(Settings.CrowdVolume), isAdvanced: true),
+                 nameof(Settings.SfxVolume),
+@@ -120,6 +121,8 @@ namespace YARG.Settings
+ 
+                 new HeaderMetadata("Input"),
+                 nameof(Settings.MicrophoneSensitivity),
++                nameof(Settings.MicrophoneDelay),
++                nameof(Settings.ImprovedSingingDetection),
+ 
+                 new HeaderMetadata("Gameplay"),
+                 nameof(Settings.GuitarVoice),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index c4c3d8a..b79a83d 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "No Dynamics",
+             "NoVocalPercussion" : "No Percussion",
+             "RangeCompress": "No Range Shifts",
+-            "OpensToGreens": "Opens To Greens"
++            "OpensToGreens": "Opens To Greens",
++            "VocalsChallenge": "Challenge Mode"
+         },
+         "SortAttribute": {
+             "Album": "Album",
+@@ -623,7 +624,9 @@
+                 "Awful": "AWFUL",
+                 "Good": "GOOD",
+                 "Messy": "MESSY",
++                "MissedNotes": "MISSED NOTES",
+                 "Okay": "OKAY",
++                "Perfect": "PERFECT!",
+                 "Strong": "STRONG"
+             }
+         },
+@@ -1279,6 +1282,18 @@
+                 "Name": "Microphone Sensitivity (Db)",
+                 "Description": "Adjusts your microphone's sensitivity in decibels. Lower values are more sensitive."
+             },
++            "MicrophoneDelay": {
++                "Name": "Microphone Delay (ms)",
++                "Description": "How late your microphone is, on top of what the game already allows for. Raise it if you only score when you sing ahead of the notes (a Bluetooth microphone usually needs 100 to 200). Lower it if you only score when you sing behind them."
++            },
++            "ImprovedSingingDetection": {
++                "Name": "Improved Singing Detection",
++                "Description": "Finds your pitch 50 times a second with a newer method, tells singing from breath and noise, and judges every sound by when you sang it rather than when it reached the game. Turn it off to go back to the original pitch tracking. The Challenge Mode modifier for vocals is meant to be played with this on."
++            },
++            "ChallengeLeadVocalVolume": {
++                "Name": "Lead Singer Volume In Challenge Mode",
++                "Description": "How loud the song's own singer is while someone sings with the Challenge Mode modifier. Turn it down and you carry the tune yourself, and a microphone near the speaker cannot pick the right notes up from the recording. Only does something if the song is multi-track."
++            },
+             "MusicPlayerVolume": {
+                 "Name": "Music Player Volume",
+                 "Description": "Adjusts the volume of the music that plays in the main menu. Set to \"0\" to disable."

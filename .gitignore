@@ -7,3 +7,5 @@ converter/build/
 converter/app/build/
 converter/core-test/out/
 converter/local.properties
+tests/*/bin/
+tests/*/obj/

@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using UnityEngine;
 using YARG.Audio.PitchDetection;
+using YARG.Audio.Vocals;
 using YARG.Core.Audio;
 using YARG.Input;
 using YARG.Settings;
@@ -181,7 +182,14 @@ namespace YARG.Remote
             }
         }
 
-        internal static void Feed(RemoteClient client, byte[] data, int offset, int count)
+        /// <summary>The network hold (ms) to assume for a phone mic that is not connected yet.</summary>
+        public const double DEFAULT_NETWORK_HOLD_MS = 20;
+
+        /// <param name="firstSample">
+        /// The phone's running count of the first sample in this packet, or -1 if the page did
+        /// not send one (an older copy of the page). It shows where packets were lost.
+        /// </param>
+        internal static void Feed(RemoteClient client, byte[] data, int offset, int count, long firstSample = -1)
         {
             RemoteMicDevice[] devices;
             int sampleRate;
@@ -198,7 +206,7 @@ namespace YARG.Remote
 
             foreach (var device in devices)
             {
-                device.Feed(data, offset, count, sampleRate);
+                device.Feed(data, offset, count, sampleRate, firstSample);
             }
         }
 
@@ -222,9 +230,12 @@ namespace YARG.Remote
     /// A microphone whose audio comes from a phone's browser (16-bit mono PCM over the WebSocket).
     /// Pitch and volume detection match <c>BassMicDevice</c>, so scoring behaves the same.
     /// </summary>
-    public sealed class RemoteMicDevice : MicDevice
+    public sealed class RemoteMicDevice : MicDevice, IVoiceMic
     {
         private const float MIC_HIT_INPUT_THRESHOLD = 25f;
+
+        // The original pitch tracker cannot work below this rate (it would never finish)
+        private const int CLASSIC_MIN_SAMPLE_RATE = 16000;
 
         private readonly object _lock = new object();
         private readonly ConcurrentQueue<MicOutputFrame> _frameQueue = new ConcurrentQueue<MicOutputFrame>();
@@ -237,8 +248,54 @@ namespace YARG.Remote
         private float? _lastPitch;
         private float? _lastAmplitude;
 
+        // The new voice analysis (see VoiceInput.cs), used while "Improved Singing Detection"
+        // is on. With it off, the code below works as it did before.
+        private VoiceInput _voiceInput;
+        private readonly List<VoiceInputFrame> _voiceFrames = new List<VoiceInputFrame>();
+        private float[] _voiceSamples = new float[1024];
+        private bool _useVoiceInput;
+        private volatile bool _gateFrames;
+        private bool _strict;
+        private double _holdSeconds;
+        private long _nextSample = -1;
+
         internal RemoteMicDevice(string displayName) : base(displayName)
         {
+        }
+
+        /// <summary>
+        /// Called by the vocals player when a song starts (main thread). See <see cref="IVoiceMic"/>.
+        /// </summary>
+        public double BeginSong(bool strict)
+        {
+            bool improved = SettingsManager.Settings.ImprovedSingingDetection.Value;
+            double extra = SettingsManager.Settings.MicrophoneDelay.Value / 1000.0;
+            double networkHoldMs = RemotePlayManager.GetMicNetworkHoldMs(this);
+
+            lock (_lock)
+            {
+                _strict = strict;
+                _useVoiceInput = improved;
+                _gateFrames = improved;
+                _nextSample = -1;
+
+                if (!improved)
+                {
+                    // As before: the mic's usual network delay plus one 10 ms packet
+                    return (networkHoldMs + 10) / 1000.0 + extra;
+                }
+
+                double analysis = _voiceInput != null ? _voiceInput.AnalysisSeconds : 0.021;
+                _holdSeconds = VoiceMicTiming.RemoteHoldSeconds(analysis, networkHoldMs);
+                if (_voiceInput != null)
+                {
+                    _voiceInput.Reset();
+                    _voiceInput.Strict = strict;
+                    _voiceInput.HoldSeconds = _holdSeconds;
+                }
+
+                return _holdSeconds + VoiceMicTiming.BROWSER_CAPTURE_SECONDS + extra;
+            }
         }
 
         internal void SetSampleRate(int sampleRate)
@@ -257,12 +314,19 @@ namespace YARG.Remote
             }
 
             _sampleRate = sampleRate;
-            _pitchDetector = new PitchTracker(sampleRate);
+            _pitchDetector = sampleRate >= CLASSIC_MIN_SAMPLE_RATE ? new PitchTracker(sampleRate) : null;
             _chunk = new float[Math.Max(64, sampleRate * RECORD_PERIOD_MS / 1000)];
             _chunkFill = 0;
+
+            _voiceInput = new VoiceInput(sampleRate)
+            {
+                Strict = _strict,
+                HoldSeconds = _holdSeconds
+            };
+            _nextSample = -1;
         }
 
-        internal void Feed(byte[] data, int offset, int count, int sampleRate)
+        internal void Feed(byte[] data, int offset, int count, int sampleRate, long firstSample = -1)
         {
             lock (_lock)
             {
@@ -272,10 +336,18 @@ namespace YARG.Remote
                 if (!IsRecordingOutput || _chunk == null)
                 {
                     _chunkFill = 0;
+                    _nextSample = -1;
                     return;
                 }
 
                 int samples = count / 2;
+
+                if (_useVoiceInput || _pitchDetector == null)
+                {
+                    FeedVoiceInput(data, offset, samples, firstSample);
+                    return;
+                }
+
                 for (int i = 0; i < samples; i++)
                 {
                     int index = offset + i * 2;
@@ -288,6 +360,51 @@ namespace YARG.Remote
                         _chunkFill = 0;
                     }
                 }
+            }
+        }
+
+        // The new analysis. Every result is stamped with the moment its sound arrived, counted
+        // in samples, so bursts and jitter on the Wi-Fi do not move it; packets the phone had
+        // to drop are counted as silence.
+        private void FeedVoiceInput(byte[] data, int offset, int samples, long firstSample)
+        {
+            double now = InputManager.CurrentInputTime;
+
+            if (samples <= 0 || _voiceInput == null)
+            {
+                return;
+            }
+
+            // Packets the phone dropped (it counts its samples) are fed as silence, which
+            // keeps the timing of everything after them right
+            long missing = VoiceMicTiming.MissingSamples(_nextSample, firstSample);
+            if (firstSample >= 0)
+            {
+                _nextSample = (firstSample + samples) & 0xFFFFFFFFL;
+            }
+
+            if (_voiceSamples.Length < samples)
+            {
+                _voiceSamples = new float[samples];
+            }
+
+            for (int i = 0; i < samples; i++)
+            {
+                int index = offset + i * 2;
+                _voiceSamples[i] = (short) (data[index] | (data[index + 1] << 8)) / 32768f;
+            }
+
+            _voiceFrames.Clear();
+            _voiceInput.Feed(new ReadOnlySpan<float>(_voiceSamples, 0, samples), now,
+                SettingsManager.Settings.MicrophoneSensitivity.Value, _voiceFrames, missing);
+
+            for (int i = 0; i < _voiceFrames.Count; i++)
+            {
+                var frame = _voiceFrames[i];
+
+                // A pitch of 0 means "sound, but no sung tone" (see MicInputContext)
+                _frameQueue.Enqueue(new MicOutputFrame(frame.Time, frame.IsHit,
+                    frame.IsHit ? -1f : frame.PitchHz, frame.LevelDb));
             }
         }
 
@@ -342,6 +459,8 @@ namespace YARG.Remote
                 _lastPitch = null;
                 _lastAmplitude = null;
                 _pitchDetector?.Reset();
+                _voiceInput?.Reset();
+                _nextSample = -1;
             }
             ClearOutputQueue();
             return 0;
@@ -349,6 +468,18 @@ namespace YARG.Remote
 
         public override bool DequeueOutputFrame(out MicOutputFrame frame)
         {
+            // The new analysis stamps a frame with the moment it is due (see VoiceInput), which
+            // is a little ahead: hand it over when that moment has come.
+            // (Only the game's main thread takes frames out, so peeking first is safe.)
+            if (_gateFrames)
+            {
+                if (!_frameQueue.TryPeek(out frame) || frame.Time > InputManager.CurrentInputTime)
+                {
+                    frame = default;
+                    return false;
+                }
+            }
+
             return _frameQueue.TryDequeue(out frame);
         }
 

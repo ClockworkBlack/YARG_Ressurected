@@ -13,6 +13,7 @@ BASS callbacks, `/storage/emulated/0/YARG/songs`, touch controls, the all-files-
 - **working menu text**: YARG-DROID's extractor read the APK through JNI into a C# array that Java never filled,
   so language files never unpacked and menus showed raw keys like `MENU.MAIN.OPTIONS.QUICKPLAY`,
 - the **phone's own mic** for vocals, plus **other phones as controllers and mics** over Wi-Fi (see below),
+- **fairer singing scores** and a **Challenge Mode** for vocals that makes you really sing the song (see below),
 - a controller-type prompt on Android (gamepad / CRKD guitar / other guitar),
 - CI that publishes the APK as a GitHub Release.
 
@@ -21,6 +22,7 @@ copies `overlay/` on top, builds the native libraries (`android/native/`), then 
 
 `patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 `tests/RemoteServerTests` checks the phone remote server on every build (runs before the Unity build).
+`tests/VocalsTests` checks singing: pitch detection, microphone timing and scoring, with the game's own engine.
 
 > Status: **experimental.** Expect the first CI runs to need fixes from the logs.
 
@@ -124,6 +126,106 @@ Notes:
 - Each build makes a new self-signed certificate, so guests see the warning again after an update.
 - Anyone on the same Wi-Fi can open the page, so use it on networks you trust.
 - Wi-Fi adds a little delay. Run YARG's calibration with a phone if timing feels off.
+
+## Singing: fairer scores, and Challenge Mode
+
+### What changed for every singer
+
+- **Your pitch is read better.** The game now finds your pitch 50 times a second (it was 25) with a
+  newer method. In the automated tests it is within half a cent of the true note on average, where
+  the original was 4 cents flat. Breath, "shhh" and room noise are never mistaken for a note.
+  (**Settings > Sound > Improved Singing Detection**; turn it off to get the original back.)
+- **You are judged by when you sang, not by when the sound reached the game.** A microphone is
+  always a little late, and the original scoring held every sound against the notes playing when
+  the sound *arrived*. A trained singer could only be credited about three quarters of a phrase
+  that way; now it is 99%. This also covers phone mics over Wi-Fi: each packet of sound is
+  counted, so jitter and lost packets no longer shift your timing.
+  If you only score when you sing ahead of the notes (a Bluetooth microphone will do this), raise
+  **Settings > Sound > Microphone Delay**.
+- **The mic is no longer played back through the phone's own loudspeaker.** It sits right next to
+  the mic, so your voice came back late and was heard as a second singer. You still hear yourself
+  (Vocal Monitoring Volume) with headphones, a Bluetooth speaker, USB or HDMI sound.
+- **Each phrase tells you how much of it you sang**: "AWESOME! 84%". 95% or more is "PERFECT!",
+  and three in a row are counted ("3x PERFECT!").
+- **Changing the key on the Song Setup screen now moves the notes you have to sing too.** Before,
+  the song moved and the scoring did not, so nothing you sang could match.
+- **Faster song speeds are scored properly** (at 150% speed a perfect singer used to be credited
+  two thirds of a phrase at most).
+- Small fixes: no "miss" sound for every tambourine note you let go by; restarting a section in
+  practice no longer counts a held note twice.
+
+One thing to know: because the game no longer loses a quarter of what you sing, **normal vocals are
+easier to pass than before**. That is what Challenge Mode is for.
+
+### Challenge Mode
+
+Turn it on where you pick your difficulty: **Modifiers > Challenge Mode**. It stays on for that
+profile until you turn it off. With several singers, the first singer's modifiers apply to all of
+them, as with the other vocal modifiers. A phone that joins as a singer has a **Challenge mode**
+checkbox on its join screen.
+
+Normal vocals only ask you to hit part of each phrase: on Expert, 57.5% of it, and you can leave
+out any notes you like. Challenge Mode asks for the song:
+
+| | In tune within (full credit / some credit) | Of each phrase | Notes you may leave out |
+|---|---|---|---|
+| Easy | 90 / 150 cents | 60% | 2 per phrase |
+| Medium | 72 / 120 cents | 70% | 1 per phrase |
+| Hard | 54 / 90 cents | 75% | 1 per phrase |
+| Expert | 40 / 70 cents | 80% | none |
+| *Expert without it* | *48 / 80 cents* | *57.5%* | *any* |
+
+(100 cents is one semitone, the step from one piano key to the next. For scale: studies of
+singing count a note as accurate within 50 cents, and trained listeners start to notice a note
+held about 25 cents off. [1](https://livelab.mcmaster.ca/app/uploads/2021/07/DemorestPfordresher_2015_MPSpecial.pdf)
+[2](https://www.voicescience.org/articles/how-to-sing-in-tune/))
+
+- **Every note counts.** A note is "left out" if less than 30% of it was sung in tune. One note
+  too many and the phrase is lost, however well the rest went. (Notes shorter than about a tenth
+  of a second are too quick to judge alone; they still count towards the phrase.)
+- **The start and end of a note are forgiven** (a tenth of a second each): the time a consonant
+  takes, finding the pitch, leaving a moment early to breathe.
+- **Only a voice counts.** Breath and noise never hold a note, and spoken parts need you to speak.
+- **Any octave is fine**, as always: low voices can sing high songs.
+- **The original singer steps back.** On songs with a separate vocal track, the recorded singer
+  drops to 35% volume (**Settings > Sound > Lead Singer Volume In Challenge Mode**), so you carry
+  the tune, and the mic cannot simply hear the right notes from the speaker.
+- **The screen is honest.** The phrase meter fills with what you really sang: it turns green when
+  that is enough and red when the phrase is lost. The needle sits where your voice is instead of
+  snapping to the note. The percentage on the results screen is what you sang, not 100% for every
+  phrase you passed.
+- **Same points per phrase** as without it, so scores compare, and stars are harder to earn.
+
+What it cannot do is check the words. Humming the tune note for note, in time and in tune, passes.
+
+For the real thing, **wear headphones, or sing into a second phone** (see the phone remote above).
+A phone's loudspeaker is a finger's width from its mic, so with the song playing out loud the mic
+hears the band as well as you. Hold the mic close either way.
+
+### How the numbers were chosen
+
+By having made-up singers of known skill sing made-up songs (pop, fast and slow) through the real
+pitch detector and the real scoring. Phrases cleared, from the automated tests:
+
+| Singer | Expert | Easy Challenge | Medium Challenge | Hard Challenge | Expert Challenge |
+|---|---|---|---|---|---|
+| Trained (within 8 cents, on time) | 100% | 100% | 100% | 100% | 100% |
+| Good amateur (within 22 cents, a wrong note now and then) | 98% | 98% | 98% | 98% | 80% |
+| Average karaoke singer (within 42 cents, some wrong and missed notes) | 40% | 80% | 50% | 20% | 6% |
+| Trained, but sings only 70% of each phrase | 100% | 100% | 58% | 4% | 0% |
+| Trained, but leaves out the highest note of each phrase | 98% | 96% | 88% | 86% | 8% |
+| Hums one note | 2% | 4% | 2% | 2% | 0% |
+| Makes noise | 0% | 0% | 0% | 0% | 0% |
+
+("Expert" is Expert without Challenge Mode, with the new microphone timing. Easy Challenge is
+wider on pitch than plain Expert, which is why the karaoke singer does better there.)
+
+A trained singer still clears Expert Challenge with a microphone 30 ms earlier or later than the
+game assumes, and over Wi-Fi with jitter and lost packets. These are models, not people: real
+voices and real rooms are messier. If a level feels wrong on your phone, the numbers are in one
+table (`GetChallengeLevel` in `patches-core/0002-vocals-challenge-mode.patch`), and
+`tests/VocalsTests` prints these tables for any numbers you try (`-- readme`, `-- grid`, `-- robust`).
+The same tests run on every build.
 
 ## Guitar sound on your notes
 

@@ -27,7 +27,7 @@ namespace YARG.Remote
             return _phones.TryGetValue(client, out var phone) ? phone : null;
         }
 
-        private void SetRole(RemoteClient client, string role, string difficulty)
+        private void SetRole(RemoteClient client, string role, string difficulty, bool? challenge = null)
         {
             var phone = FindPhone(client);
             if (phone == null)
@@ -37,6 +37,7 @@ namespace YARG.Remote
 
             phone.Role = role;
             phone.Difficulty = difficulty;
+            phone.Challenge = challenge;
             phone.RolePending = true;
 
             if (role != "none" && InGameplay)
@@ -177,6 +178,21 @@ namespace YARG.Remote
             player.Profile.PreferredInstrument = instrument;
             player.Profile.CurrentDifficulty = difficulty;
             player.Profile.DifficultyFallback = difficulty;
+
+            // A singer can ask for Vocals Challenge Mode on the phone's join screen. (With
+            // several singers, the one who picks the modifiers on the host decides for all,
+            // as with the other vocal modifiers.)
+            if (vocals && phone.Challenge.HasValue)
+            {
+                if (phone.Challenge.Value)
+                {
+                    player.Profile.AddSingleModifier(YARG.Core.Game.Modifier.VocalsChallenge);
+                }
+                else
+                {
+                    player.Profile.RemoveModifiers(YARG.Core.Game.Modifier.VocalsChallenge);
+                }
+            }
 
             bool micReady = true;
             if (vocals && !(player.Bindings.Microphone is RemoteMicDevice))

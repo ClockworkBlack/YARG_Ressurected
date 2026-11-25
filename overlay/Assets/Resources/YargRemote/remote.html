@@ -117,6 +117,9 @@
       <option value="expert">Expert</option>
     </select>
   </label>
+  <label class="note hidden" id="challengeRow">
+    <input type="checkbox" id="challenge"> Challenge mode: sing every note, in tune, all the way through
+  </label>
   <button id="joinBtn" class="big">Join</button>
   <p class="note" id="joinNote"></p>
 </div>
@@ -230,6 +233,7 @@
   // What this phone plays. The host makes a player for it automatically ("none" = host sets it up).
   var role = store.get('yargRemoteRole') || 'guitar';
   var difficulty = store.get('yargRemoteDifficulty') || 'medium';
+  var challenge = store.get('yargRemoteChallenge') === '1'; // vocals: Challenge Mode
   var ws = null, joined = false, connected = false, reconnectTimer = 0;
   var playerNumber = 0, rtt = -1;
 
@@ -307,7 +311,7 @@
         if (p[4]) { playerName = p[4]; }
         buttons = 0;
         sendState();
-        ws.send('role\n' + role + '\n' + difficulty);
+        ws.send('role\n' + role + '\n' + difficulty + '\n' + (challenge ? '1' : '0'));
         if (mic.on) { ws.send('mic\n' + mic.rate); }
         updateStatus();
         updateMicName();
@@ -617,14 +621,19 @@
   var mic = { on: false, rate: 0, ctx: null, stream: null, node: null };
   var WORKLET = [
     'class YargMic extends AudioWorkletProcessor {',
-    '  constructor(o) { super(); this.size = o.processorOptions.size; this.buf = new Int16Array(this.size); this.n = 0; }',
+    '  constructor(o) { super(); this.size = o.processorOptions.size; this.buf = new Int16Array(this.size); this.n = 0; this.first = 0; }',
     '  process(inputs) {',
     '    var ch = inputs[0] && inputs[0][0];',
     '    if (ch) {',
     '      for (var i = 0; i < ch.length; i++) {',
     '        var s = ch[i]; s = s < -1 ? -1 : s > 1 ? 1 : s;',
     '        this.buf[this.n++] = s < 0 ? s * 32768 : s * 32767;',
-    '        if (this.n === this.size) { this.port.postMessage(this.buf, [this.buf.buffer]); this.buf = new Int16Array(this.size); this.n = 0; }',
+    // Every packet says where it starts in the stream of samples, so the host can tell
+    // when one was dropped on the way and keep its timing right.
+    '        if (this.n === this.size) {',
+    '          this.port.postMessage({ first: this.first, samples: this.buf }, [this.buf.buffer]);',
+    '          this.first = (this.first + this.size) >>> 0; this.buf = new Int16Array(this.size); this.n = 0;',
+    '        }',
     '      }',
     '    }',
     '    return true;',
@@ -639,7 +648,9 @@
 
   function micMessage(text) { $('micStatus').textContent = text; }
 
-  function sendAudio(samples) {
+  // first = how many samples came before this packet since the mic started (counts on
+  // through packets that are not sent, which is how the host sees the gap)
+  function sendAudio(samples, first) {
     // Level meter
     var sum = 0;
     for (var i = 0; i < samples.length; i += 4) sum += samples[i] * samples[i];
@@ -647,10 +658,13 @@
     $('micLevel').style.width = Math.min(100, rms * 400) + '%';
 
     if (!ws || ws.readyState !== 1 || !connected) return;
-    if (ws.bufferedAmount > 16 * 1024) return; // Wi-Fi is behind: drop audio rather than lag
-    var out = new Uint8Array(1 + samples.byteLength);
-    out[0] = 2;
-    out.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength), 1);
+    // Wi-Fi is behind: drop audio rather than lag. (About 80 ms of backlog; audio that late
+    // would be judged against the wrong notes anyway.)
+    if (ws.bufferedAmount > 8 * 1024) return;
+    var out = new Uint8Array(5 + samples.byteLength);
+    out[0] = 3;
+    out[1] = first & 255; out[2] = (first >>> 8) & 255; out[3] = (first >>> 16) & 255; out[4] = (first >>> 24) & 255;
+    out.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength), 5);
     ws.send(out);
   }
 
@@ -687,7 +701,7 @@
         var url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
         await mic.ctx.audioWorklet.addModule(url);
         mic.node = new AudioWorkletNode(mic.ctx, 'yarg-mic', { processorOptions: { size: size } });
-        mic.node.port.onmessage = function (e) { sendAudio(e.data); };
+        mic.node.port.onmessage = function (e) { sendAudio(e.data.samples, e.data.first); };
       } catch (e) {
         mic.node = null;
       }
@@ -695,6 +709,7 @@
     if (!mic.node) {
       // Older browsers
       var sp = mic.ctx.createScriptProcessor(512, 1, 1);
+      var spFirst = 0;
       sp.onaudioprocess = function (ev) {
         var f = ev.inputBuffer.getChannelData(0);
         var out = new Int16Array(f.length);
@@ -702,7 +717,8 @@
           var s = Math.max(-1, Math.min(1, f[i]));
           out[i] = s < 0 ? s * 32768 : s * 32767;
         }
-        sendAudio(out);
+        sendAudio(out, spFirst);
+        spFirst = (spFirst + f.length) >>> 0;
       };
       mic.node = sp;
     }
@@ -746,19 +762,23 @@
     Array.prototype.forEach.call(document.querySelectorAll('.role'), function (b) {
       b.classList.toggle('active', b.getAttribute('data-role') === role);
     });
+    $('challengeRow').classList.toggle('hidden', role !== 'vocals');
   }
   Array.prototype.forEach.call(document.querySelectorAll('.role'), function (b) {
     b.addEventListener('click', function () { role = b.getAttribute('data-role'); showRole(); });
   });
   showRole();
   $('difficulty').value = difficulty;
+  $('challenge').checked = challenge;
 
   function join() {
     var name = $('name').value.trim().slice(0, 20);
     if (!name) { $('name').focus(); return; }
     difficulty = $('difficulty').value || 'medium';
+    challenge = role === 'vocals' && $('challenge').checked;
     store.set('yargRemoteRole', role);
     store.set('yargRemoteDifficulty', difficulty);
+    store.set('yargRemoteChallenge', challenge ? '1' : '0');
     playerName = name;
     store.set('yargRemoteName', name);
     joined = true;
