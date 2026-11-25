@@ -12,8 +12,8 @@
 //     let go of every fret and the string is damped;
 //   - the whammy bar bends the ringing note down, like a real one.
 //
-// The notes are recorded ahead of time (while the song loads) by the same modelled guitar that
-// plays the generated guitar track, then played back the instant the input arrives.
+// The notes are made ahead of time (while the song loads) by the same guitar and amplifier that
+// play the generated guitar track, then played back the instant the input arrives.
 
 using System;
 using System.Collections.Generic;
@@ -52,7 +52,7 @@ namespace YARG.Audio.GuitarVoice
 
         /// <summary>Records the notes. Slow (a second or two): call from a worker thread.</summary>
         public static FreestyleBank Build(SongHarmony harmony, GuitarVoiceTone tone, bool bass,
-            float keyShiftSemitones, float targetRms)
+            float keyShiftSemitones, float targetRms, StringBank strings)
         {
             // The pentatonic scale every song in this key shares: built on the minor root,
             // which sits three semitones under the major root.
@@ -84,7 +84,8 @@ namespace YARG.Audio.GuitarVoice
 
             // In tune with the recording, and moved along with it if the song's key was changed
             float cents = harmony.Cents + 100f * keyShiftSemitones;
-            var recordings = GuitarVoiceSynth.RenderBank(notes.ToArray(), SECONDS, tone, bass, cents, targetRms);
+            var recordings = GuitarVoiceSynth.RenderBank(notes.ToArray(), SECONDS, tone, bass, cents, targetRms,
+                strings);
             return new FreestyleBank(bass, recordings);
         }
 
@@ -352,17 +353,17 @@ namespace YARG.Audio.GuitarVoice
 
         /// <summary>Records the notes for this song. Worker thread.</summary>
         public static void Prepare(SongHarmony harmony, GuitarVoiceTone tone, float keyShiftSemitones,
-            bool guitar, bool bass)
+            bool guitar, bool bass, StringBank guitarStrings, StringBank bassStrings)
         {
             Clear();
             float target = Math.Min(0.2f, Math.Max(0.04f, harmony.Rms * 0.6f));
             if (guitar)
             {
-                _guitar = FreestyleBank.Build(harmony, tone, false, keyShiftSemitones, target);
+                _guitar = FreestyleBank.Build(harmony, tone, false, keyShiftSemitones, target, guitarStrings);
             }
             if (bass)
             {
-                _bassBank = FreestyleBank.Build(harmony, tone, true, keyShiftSemitones, target * 1.15f);
+                _bassBank = FreestyleBank.Build(harmony, tone, true, keyShiftSemitones, target * 1.15f, bassStrings);
             }
         }
 

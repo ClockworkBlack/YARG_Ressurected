@@ -310,7 +310,7 @@ index 6b5ee91..c4c3d8a 100644
 +            },
              "GuitarVoice": {
                  "Name": "Guitar Sound On Notes",
-                 "Description": "For songs with no separate guitar or bass audio: plays your notes on a generated electric guitar (or bass), in tune and in key with the song. It sounds as the notes go by, drops out when you miss, and bends with the whammy bar. Uses the Guitar and Bass volume sliders. Adds a few seconds to loading.",
+                 "Description": "For songs with no separate guitar or bass audio: plays your notes on an electric guitar (or bass), in tune and in key with the song. The notes are recordings of a real guitar and bass, played through a modelled amplifier and speaker. It sounds as the notes go by, drops out when you miss, and bends with the whammy bar. Uses the Guitar and Bass volume sliders. Adds a few seconds to loading.",
 @@ -1643,6 +1660,20 @@
                  "Name": "DMX Broadcast Universe",
                  "Description": "This is the universe that YARG will send the sACN packet to. Default is \"1\". Maximum is \"65535\"."

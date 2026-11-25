@@ -7,3 +7,6 @@ converter/build/
 converter/app/build/
 converter/core-test/out/
 converter/local.properties
+tests/RemoteServerTests/bin/
+tests/RemoteServerTests/obj/
+__pycache__/
