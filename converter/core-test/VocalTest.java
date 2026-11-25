@@ -319,6 +319,12 @@ final class VocalTest {
             System.out.printf(Locale.US, "  %s: %d of %d lines given to the right singer (voices %.1f apart)%n", plan, right, song.lines.size(), guess.separation);
             check(right >= 0.85 * song.lines.size(), "most lines given to the right singer in " + plan);
             check(guess.partOfLine[0] == VocalCharter.PART_FIRST, "whoever sings the first line is the first singer");
+            // Told there are two singers (two artists named), the answer must be at least as good
+            VoiceSplitter.Guess sure = VoiceSplitter.guess(chart, voice, lines.size(), true);
+            int sameSure = 0;
+            for (int i = 0; sure != null && i < song.lines.size(); i++) if (sure.partOfLine[i] == song.lines.get(i).voice) sameSure++;
+            int rightSure = sure == null ? 0 : Math.max(sameSure, song.lines.size() - sameSure);
+            check(rightSure >= right - 1, "knowing there are two singers does not make it worse in " + plan + " (" + rightSure + " vs " + right + ")");
             chart.assignParts(guess.partOfLine);
             check(chart.twoParts() && chart.partLines[0] == guess.firstLines && chart.partLines[1] == guess.secondLines, "the guess is applied to the chart");
         }

@@ -158,6 +158,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private String[] singerNames;
     /** How MusicBrainz credits the chosen song's artists ("A feat. B"), when it was looked up. */
     private volatile String creditArtist = "";
+    /** The last song's analysis, for the list's summary (how the singers were split). */
+    private volatile SongWriter.Result lastResult;
     private TextView modelStatus;
     private Button modelButton;
     private static final int DENSITY_FEWER = 1, DENSITY_STANDARD = 2, DENSITY_MORE = 3;
@@ -1707,22 +1709,19 @@ public final class MainActivity extends Activity implements ConversionService.Li
         detailsStatus.setPadding(0, dp(2), 0, dp(4));
         box.addView(detailsStatus);
 
-        TextView notesLabel = new TextView(this);
-        notesLabel.setText("How many notes");
-        notesLabel.setPadding(0, dp(10), 0, 0);
-        box.addView(notesLabel);
-        final RadioGroup notes = new RadioGroup(this);
-        notes.setOrientation(RadioGroup.HORIZONTAL);
-        String[] names = {"As in step 3", "Fewer", "Standard", "More"};
-        int[] ids = {100, 100 + DENSITY_FEWER, 100 + DENSITY_STANDARD, 100 + DENSITY_MORE};
-        for (int i = 0; i < names.length; i++) {
-            RadioButton rb = new RadioButton(this);
-            rb.setId(ids[i]);
-            rb.setText(names[i]);
-            notes.addView(rb, new RadioGroup.LayoutParams(0, RadioGroup.LayoutParams.WRAP_CONTENT, 1f));
-        }
-        notes.check(100 + q.density);
-        box.addView(notes);
+        // One button that steps through the choices: four side by side do not fit a phone
+        final int[] density = {q.density};
+        final String[] densityNames = {"As in step 3", "Fewer", "Standard", "More"};
+        final Button notesButton = button("Notes: " + densityNames[density[0]], null);
+        notesButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                density[0] = (density[0] + 1) % 4;
+                notesButton.setText("Notes: " + densityNames[density[0]] + "   (tap to change)");
+            }
+        });
+        notesButton.setText("Notes: " + densityNames[density[0]] + "   (tap to change)");
+        box.addView(notesButton);
 
         TextView lyricsLabel = new TextView(this);
         lyricsLabel.setText("Lyrics");
@@ -1796,8 +1795,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         if (!q.singersMarked || !q.meta.artist.equals(oldArtist)) {
                             q.meta.singers = Lrc.artists(q.meta.artist, q.meta.title).toArray(new String[0]);
                         }
-                        int picked = notes.getCheckedRadioButtonId() - 100;
-                        q.density = picked > 0 ? picked : 0;
+                        q.density = density[0];
                         String text = lyrics.getText().toString();
                         if (!text.equals(q.lrcText == null ? "" : q.lrcText)) {
                             q.lrcText = text.trim().isEmpty() ? null : text;
@@ -1979,8 +1977,22 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         if (q.density != 0) {
                             own.threshold = q.density == DENSITY_FEWER ? 1.5 : q.density == DENSITY_MORE ? 0.65 : 1.0;
                         }
+                        lastResult = null;
                         runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, own, useStems, guessSingers, rnb);
                         ok++;
+                        // How the singers came out, now that the song has been listened to
+                        SongWriter.Result res = lastResult;
+                        if (res != null && res.lyricLines > 0 && q.meta.singers.length >= 2) {
+                            if (res.vocals.twoParts()) {
+                                lyricsNote += String.format(Locale.US, "; %s %d lines, %s %d%s", q.meta.singerName(0),
+                                        res.vocals.partLines[VocalCharter.PART_FIRST], q.meta.singerName(1),
+                                        res.vocals.partLines[VocalCharter.PART_SECOND],
+                                        res.vocals.partLines[VocalCharter.PART_BOTH] > 0 ? ", both " + res.vocals.partLines[VocalCharter.PART_BOTH] : "");
+                                if (res.singerGuess != null) lyricsNote += " (guessed from their voices: check it in the song's lyrics.lrc or convert it alone)";
+                            } else if (res.singersGuessTried) {
+                                lyricsNote += "; the two voices could not be told apart, so one part for everybody";
+                            }
+                        }
                         done.append("  ").append(i + 1).append(". ").append(name).append(" (").append(modeName(useStemsNote(q, model)))
                                 .append(", ").append(lyricsNote).append(")\n");
                     } catch (IOException e) {
@@ -2114,8 +2126,13 @@ public final class MainActivity extends Activity implements ConversionService.Li
         if (stems != null) {
             stems.guessSingers = guessSingers;
             stems.rnb = rnb;
+            String[] named = meta.singers;
+            boolean two = named != null && named.length >= 2 && !blank(named[0]) && !blank(named[1])
+                    && !named[0].startsWith("Singer ") && !named[1].startsWith("Singer ");
+            stems.singerNames = two ? named : null;
         }
         SongWriter.Result result = SongWriter.analyze(features, lyrics, options, stems);
+        lastResult = result;
         if (result.singerGuess != null) {
             // Saved with the song and shown back in the app, where the guess can be corrected.
             lrcText = Lrc.format(result.lyricsOut);

@@ -66,6 +66,8 @@ public final class SongWriter {
         public VocalAnalyzer.Voice voice;
         /** For a song with two singers whose lines are not marked: work out who sings what from their voices. */
         public boolean guessSingers;
+        /** The two singers' names when the song names two artists (makes the guess surer), or null. */
+        public String[] singerNames;
         /** The vocals on their own, measured like an instrument; only needed for R&amp;B mode. */
         public Features vocals;
         /**
@@ -111,7 +113,9 @@ public final class SongWriter {
             for (Lrc.Line l : lyrics) marked |= l.singer != Lrc.UNMARKED;
             if (stems != null && stems.guessSingers && voice != null && !marked) {
                 r.singersGuessTried = true;
-                r.singerGuess = VoiceSplitter.guess(r.vocals, voice, lyrics.size());
+                // Two artists named: there certainly are two singers, only the lines need sorting
+                boolean knownTwo = stems.singerNames != null && stems.singerNames.length >= 2;
+                r.singerGuess = VoiceSplitter.guess(r.vocals, voice, lyrics.size(), knownTwo);
                 if (r.singerGuess != null) {
                     r.vocals.assignParts(r.singerGuess.partOfLine);
                     // Written back into the lyrics, so the guess is saved and can be corrected by hand.

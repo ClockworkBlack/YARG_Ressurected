@@ -102,6 +102,13 @@ The converter looks for a second singer by itself, in this order:
    sound of the two voices. This now happens by itself; the "guess it from their voices" box
    is only needed to try it on a song where no second singer is named.
 
+When two artists are named, the voice guess knows there certainly are two singers, so it now
+splits the song even when their voices are fairly alike (it used to give up and leave one part).
+The voice guess happens while the song is converted, so the "who sings what" screen shows every
+line for the first artist until then. After a list is converted, its summary says how each
+song's lines came out ("Coi Leray 40 lines, H.E.R. 38"), or that the voices could not be told
+apart.
+
 **More than two artists.** The game has two parts to hand out, so a song with three or more
 names becomes the main artist against the guests together ("B & C"): a line under any guest's
 header goes to the guests' part, and a line shared with the main artist to both.
