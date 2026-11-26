@@ -46,6 +46,7 @@ public final class CoreTest {
         oddInputs();
         fileNames();
         failures += StemTest.run();
+        failures += TrapTest.run();
         lyrics();
         failures += VocalTest.run();
         failures += EditTest.run(forEditor);

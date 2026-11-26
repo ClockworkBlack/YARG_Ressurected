@@ -16,6 +16,9 @@ Saved for later, roughly in the order they would help most.
 
 ## Would improve what is there
 - [ ] **Long stretches with no notes** when the song has little guitar (found play-testing a hip-hop song: nothing to play for the first half minute with "Split into instruments" on). Fill gaps longer than a few measures from the other pitched instruments or the full mix. Until then, converting that song with the box unticked charts the whole mix from the start.
+- [ ] Bass frets on heavily distorted 808s: their pitch reads as the note's fourth, fifth or octave too often, so the same 808 note gets the same fret only about half the time on the synthetic trap beat (TrapTest prints it). Reading the pitch later in the note fixes the 808 but hurts plucked basses; a pitch reading that knows a distorted bass's overtones would be the fix.
+- [ ] Regular guitar in songs carried by the vocals covers a beat's loop only where nobody sings (about 55-60% of the loop's clear notes on "It Happens"); Deep Music Mode guitar covers about 90%. If the regular guitar should carry the loop too, make it an option.
+- [ ] Flute / pipe / synth lines that glide between notes: their notes are found from the change in sound (spectral flux); a pitch-based legato detector was tried and added nothing measurable, so it was left out.
 - [ ] Play-test Deep Music Mode on band songs (it is written for every song now; tuned on rap songs).
 - [ ] Trap hi-hat rolls: the bass takes about every other hat; a setting could take all of them on Expert, or none.
 - [ ] Tempo of "guillermoandrade" (Veeze): charted at 109.9 BPM, but the drums repeat every 1.52 s, which fits about 158 BPM (or 79). Not changed: the measure-repeat check does not clearly prefer either.
