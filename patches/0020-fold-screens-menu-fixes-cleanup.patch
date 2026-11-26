@@ -1,5 +1,5 @@
 diff --git a/Assets/Plugins/Android/AndroidManifest.xml b/Assets/Plugins/Android/AndroidManifest.xml
-index f9c7b57..caa3064 100644
+index f9c7b57..ae38e0d 100644
 --- a/Assets/Plugins/Android/AndroidManifest.xml
 +++ b/Assets/Plugins/Android/AndroidManifest.xml
 @@ -27,8 +27,8 @@
@@ -9,7 +9,7 @@ index f9c7b57..caa3064 100644
 -            android:resizeableActivity="false"
 -            android:screenOrientation="landscape"
 +            android:resizeableActivity="true"
-+            android:screenOrientation="fullUser"
++            android:screenOrientation="userLandscape"
              android:theme="@style/UnityThemeSelector">
              <intent-filter>
                  <action android:name="android.intent.action.MAIN" />
@@ -969,9 +969,20 @@ index 5fab337..4633ffd 100644
                  "Name": "Sing-Off Turn Length",
                  "Description": "In a sing-off on the Vocals instrument: how many lines a singer gets before the other takes over.",
 diff --git a/ProjectSettings/ProjectSettings.asset b/ProjectSettings/ProjectSettings.asset
-index 7b967a1..28bbf7e 100644
+index 7b967a1..c4d2d77 100644
 --- a/ProjectSettings/ProjectSettings.asset
 +++ b/ProjectSettings/ProjectSettings.asset
+@@ -59,8 +59,8 @@ PlayerSettings:
+   iosShowActivityIndicatorOnLoading: -1
+   androidShowActivityIndicatorOnLoading: -1
+   iosUseCustomAppBackgroundBehavior: 0
+-  allowedAutorotateToPortrait: 1
+-  allowedAutorotateToPortraitUpsideDown: 1
++  allowedAutorotateToPortrait: 0
++  allowedAutorotateToPortraitUpsideDown: 0
+   allowedAutorotateToLandscapeRight: 1
+   allowedAutorotateToLandscapeLeft: 1
+   useOSAutorotation: 1
 @@ -72,7 +72,7 @@ PlayerSettings:
    androidUseSwappy: 0
    androidDisplayOptions: 1

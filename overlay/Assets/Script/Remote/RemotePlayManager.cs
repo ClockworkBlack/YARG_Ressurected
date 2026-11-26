@@ -206,6 +206,7 @@ namespace YARG.Remote
         private TextMeshProUGUI _text;
         private RectTransform _panel;
         private string _lastText;
+        private float _lastRoom;
 
         private void Awake()
         {
@@ -774,16 +775,23 @@ namespace YARG.Remote
                 return;
             }
 
+            // Never wider than the screen (a Fold's inner screen is nearly square): the text wraps
+            // onto a second line instead of running off both sides
+            float room = ((RectTransform) _canvas.transform).rect.width - 80f;
             string text = BuildOverlayText();
-            if (text == _lastText)
+            if (text == _lastText && Mathf.Approximately(room, _lastRoom))
             {
                 return;
             }
             _lastText = text;
+            _lastRoom = room;
 
             _text.text = text;
-            var size = _text.GetPreferredValues(text);
-            _panel.sizeDelta = new Vector2(size.x + 56f, size.y + 20f);
+            _text.textWrappingMode = TextWrappingModes.Normal;
+            var size = _text.GetPreferredValues(text, Mathf.Max(200f, room - 56f), 0f);
+            float width = Mathf.Min(size.x + 56f, room);
+            size = _text.GetPreferredValues(text, width - 56f, 0f);
+            _panel.sizeDelta = new Vector2(width, size.y + 20f);
         }
 
         private string BuildOverlayText()
