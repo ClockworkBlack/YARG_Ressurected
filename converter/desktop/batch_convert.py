@@ -21,6 +21,11 @@ import argparse, csv, json, os, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Java writes file names in the locale's encoding: under a plain "C" or "POSIX" locale only ASCII,
+# so "Girls’ Generation" or a Korean title would not fit. UTF-8 for the converter, always.
+JAVA_ENV = dict(os.environ)
+if "UTF-8" not in (os.environ.get("LC_ALL") or os.environ.get("LC_CTYPE") or os.environ.get("LANG") or "").upper().replace("UTF8", "UTF-8"):
+    JAVA_ENV["LC_ALL"] = "C.UTF-8"
 AUDIO = (".mp3", ".wav", ".ogg", ".opus", ".flac", ".m4a", ".aac", ".wma", ".webm")
 
 
@@ -80,7 +85,7 @@ def main():
         say("%s %s (%s, %s notes)" % (tag, name, mode, notes))
         started = time.time()
         with open(base + ".log", "w") as log:
-            proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=JAVA_ENV)
             wrote = False
             while proc.poll() is None:
                 if not wrote and os.path.exists(base + ".lrc.needed"):

@@ -317,8 +317,36 @@ final class MusicBrainz {
         return s.trim().replaceAll("([+\\-!(){}\\[\\]^\"~*?:\\\\/]|&&|\\|\\|)", "\\\\$1");
     }
 
-    /** @return the response body, or null for "not found" */
-    private static synchronized String get(String url) throws IOException {
+    /**
+     * @return the response body, or null for "not found". MusicBrainz answers 503 when it is
+     * busy or when requests come too fast; that is waited out and asked again a few times.
+     */
+    private static String get(String url) throws IOException {
+        for (int attempt = 0; ; attempt++) {
+            try {
+                return getOnce(url);
+            } catch (Busy | java.net.SocketException e) {
+                // Busy, or the connection dropped on the way
+                if (attempt >= 4) {
+                    throw e instanceof Busy ? new IOException("MusicBrainz is busy (error 503); try again in a minute.") : e;
+                }
+                try {
+                    Thread.sleep(1500L * (attempt + 1) + (long) (Math.random() * 1000));
+                } catch (InterruptedException stop) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted");
+                }
+            }
+        }
+    }
+
+    private static final class Busy extends IOException {
+        Busy() {
+            super("MusicBrainz answered with error 503.");
+        }
+    }
+
+    private static synchronized String getOnce(String url) throws IOException {
         long wait = lastRequest + 1100 - System.currentTimeMillis();
         if (wait > 0) {
             try {
@@ -336,6 +364,7 @@ final class MusicBrainz {
             c.setRequestProperty("Accept", "application/json");
             int code = c.getResponseCode();
             if (code == 404) return null;
+            if (code == 503) throw new Busy();
             if (code != 200) throw new IOException("MusicBrainz answered with error " + code + ".");
             try (InputStream in = c.getInputStream()) {
                 ByteArrayOutputStream out = new ByteArrayOutputStream();

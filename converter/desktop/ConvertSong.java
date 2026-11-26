@@ -43,6 +43,35 @@ import java.util.Map;
  * until that lyrics file exists (made from the voice, for instance) and uses it.
  */
 public final class ConvertSong {
+    /**
+     * A folder name this computer can write. Under a plain "POSIX" locale Java can only write
+     * ASCII names, and "Girls’ Generation" or "소녀시대" would stop the conversion; run with
+     * LC_ALL=C.UTF-8 (batch_convert.py does) to keep such names as they are.
+     */
+    static String writableName(String name) {
+        java.nio.charset.Charset native_;
+        try {
+            native_ = java.nio.charset.Charset.forName(System.getProperty("sun.jnu.encoding", "UTF-8"));
+        } catch (RuntimeException e) {
+            return name;
+        }
+        java.nio.charset.CharsetEncoder enc = native_.newEncoder();
+        if (enc.canEncode(name)) return name;
+        String folded = java.text.Normalizer.normalize(name.replace('\u2019', '\'').replace('\u2018', '\'')
+                .replace('\u201c', '"').replace('\u201d', '"').replace('\u2013', '-').replace('\u2014', '-'),
+                java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < folded.length(); ) {
+            int c = folded.codePointAt(i);
+            String ch = new String(Character.toChars(c));
+            sb.append(enc.canEncode(ch) ? ch : "_");
+            i += Character.charCount(c);
+        }
+        String out = sb.toString().replaceAll("_{2,}", "_").trim();
+        System.err.println("This computer cannot write \"" + name + "\" as a folder name (set LC_ALL=C.UTF-8); using \"" + out + "\"");
+        return out.replaceAll("[_ -]", "").isEmpty() ? "Song " + Math.abs(name.hashCode()) : out;
+    }
+
     /** Processor threads for the models: all of them, or a share when several songs run at once (--threads). */
     private static int THREADS = Runtime.getRuntime().availableProcessors();
 
@@ -109,10 +138,14 @@ public final class ConvertSong {
         if (meta.album.isEmpty()) meta.album = tags.getOrDefault("album", "");
         if (meta.year.isEmpty()) meta.year = tags.getOrDefault("date", "").replaceAll("^(\\d{4}).*", "$1");
         if (meta.genre.isEmpty()) meta.genre = tags.getOrDefault("genre", "");
+        boolean artistFromName = false;
         if (meta.title.isEmpty() || meta.artist.isEmpty()) {
             String base = audio.getName().replaceAll("^cut-\\d+-", "").replaceAll("^[0-9a-f]{8}-", "");
             String[] named = com.clockworkblack.yargconverter.core.SongNames.fromFileName(base);
-            if (meta.artist.isEmpty()) meta.artist = named[0];
+            if (meta.artist.isEmpty()) {
+                meta.artist = named[0];
+                artistFromName = !named[0].isEmpty();
+            }
             if (meta.title.isEmpty()) meta.title = named[1];
         }
         // File names that lost their brackets: "Title Official 4K Video", "Title Lyric Video", "Title MV"
@@ -142,6 +175,10 @@ public final class ConvertSong {
             String[] found = com.clockworkblack.yargconverter.Lookup.details(meta.title, meta.artist);
             if (found != null) {
                 if (meta.artist.isEmpty() && !found[1].isEmpty()) meta.artist = found[1];
+                // The artist as the record writes it ("Girls' Generation"), when ours is only the
+                // same name read from a file name ("Girls Generation")
+                if (artistFromName && com.clockworkblack.yargconverter.core.SongNames.key(found[1])
+                        .equals(com.clockworkblack.yargconverter.core.SongNames.key(meta.artist))) meta.artist = found[1];
                 // The title as the record has it, when ours came from a mangled file name
                 if (!a.containsKey("title") && !found[0].isEmpty()) meta.title = found[0];
                 if (meta.album.isEmpty()) meta.album = found[2];
@@ -159,7 +196,7 @@ public final class ConvertSong {
         GuitarCharter.Options options = new GuitarCharter.Options();
         options.threshold = notes.equals("fewer") ? 1.5 : notes.equals("more") ? 0.65 : 1.0;
 
-        File dir = new File(new File(req(a, "out")), meta.folderName());
+        File dir = new File(new File(req(a, "out")), writableName(meta.folderName()));
         if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Could not create " + dir);
 
         String name = audio.getName();

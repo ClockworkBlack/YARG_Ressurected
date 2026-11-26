@@ -1445,6 +1445,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         if (blank(artistBox.getText().toString()) && !blank(f.artist)) {
                             artistBox.setText(f.artist);
                             filled.add("artist");
+                        } else if (sameNameOtherSpelling(artistBox.getText().toString(), f.artist)) {
+                            // "Girls Generation" from a file name: written as the record has it
+                            artistBox.setText(f.artist);
+                            filled.add("artist's spelling");
                         }
                         if (blank(albumBox.getText().toString()) && !blank(f.album)) {
                             albumBox.setText(f.album);
@@ -1476,7 +1480,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
             q.credit = f.artist;
             List<String> credited = Lrc.artists(f.artist, f.title);
             if (m.singers.length < 2 && credited.size() >= 2) m.singers = credited.toArray(new String[0]);
-            if (blank(m.artist) && !blank(f.artist)) {
+            if ((blank(m.artist) && !blank(f.artist)) || sameNameOtherSpelling(m.artist, f.artist)) {
                 m.artist = f.artist;
                 m.singers = Lrc.artists(m.artist, m.title).toArray(new String[0]);
             }
@@ -1486,6 +1490,13 @@ public final class MainActivity extends Activity implements ConversionService.Li
         } catch (IOException | RuntimeException e) {
             // The file's own details are used
         }
+    }
+
+    /** The same name written another way ("Girls Generation", "Girls' Generation"). */
+    private static boolean sameNameOtherSpelling(String ours, String found) {
+        if (blank(ours) || blank(found) || ours.trim().equals(found.trim())) return false;
+        String k = com.clockworkblack.yargconverter.core.SongNames.key(ours);
+        return !k.isEmpty() && k.equals(com.clockworkblack.yargconverter.core.SongNames.key(found));
     }
 
     // ---------------------------------------------------------------- several songs
