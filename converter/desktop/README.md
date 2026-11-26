@@ -56,6 +56,10 @@ the voice is silent dropped. Expect about 3 words in 10 to be wrong on English r
 other languages): good enough to sing along to and to time, not a lyric sheet. `lyrics_wer.py
 real.lrc heard.lrc` measures it on a song whose lyrics are known.
 
+**Long batches.** `batch_convert.py ... --save-to <folder>` copies each song to `<folder>/Converted/` the
+moment it is done and keeps `<folder>/report.csv` up to date; run it again after an interruption and the
+songs already there are skipped. The Colab notebook saves to Drive this way.
+
 **Song names in other alphabets** ("Girls’ Generation", 소녀시대, Beyoncé) need a UTF-8 locale:
 Java writes file names in the locale's encoding, and under a plain `C` or `POSIX` locale only
 ASCII fits. `batch_convert.py` runs the converter with `LC_ALL=C.UTF-8` by itself; when running

@@ -15,9 +15,11 @@ An optional songs.csv in the songs folder gives, per file: file,mode,notes,title
 (any column may be empty; mode and notes default to the command line's; start and end, in seconds,
 cut a music video's intro or outro off). The file column is matched in any letter case, with or
 without the extension.
-Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv.
+Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv. With --save-to <folder>,
+each song is also copied to <folder>/Converted/ the moment it is done and <folder>/report.csv is kept up to
+date; songs already done there are skipped, so running again after an interruption carries on.
 """
-import argparse, csv, json, os, subprocess, sys, threading, time
+import argparse, csv, json, os, shutil, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +41,9 @@ def main():
     ap.add_argument("--words-model", default=os.environ.get("YARG_WORDS", "wav2vec2-base-960h.onnx"))
     ap.add_argument("--whisper", default="large-v3")
     ap.add_argument("--jobs", default="auto")
+    ap.add_argument("--save-to", default="",
+                    help="copy each song here (into Converted/) as soon as it is done, keep report.csv there up to date, "
+                         "and skip songs already done there")
     args = ap.parse_args()
 
     plan = {}
@@ -51,6 +56,20 @@ def main():
                 if name: plan[name] = plan[os.path.splitext(name)[0]] = {k: (v or "").strip() for k, v in row.items() if k}
 
     files = sorted(f for f in os.listdir(args.songs) if f.lower().endswith(AUDIO))
+    # Saving as it goes: what an earlier run already saved is kept and skipped, so a run that was
+    # cut off (a Colab session that disconnected) picks up where it stopped
+    saved_songs = os.path.join(args.save_to, "Converted") if args.save_to else ""
+    saved_report = os.path.join(args.save_to, "report.csv") if args.save_to else ""
+    earlier = {}
+    if saved_report and os.path.exists(saved_report):
+        with open(saved_report, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row.get("file"): earlier[row["file"]] = row
+    skipped = [f for f in files if (earlier.get(f) or {}).get("folder") and not (earlier[f].get("error") or "").strip()
+               and os.path.isdir(os.path.join(saved_songs, earlier[f]["folder"]))]
+    if skipped:
+        print("%d songs already done in %s (delete a song's folder there to convert it again)" % (len(skipped), saved_songs), flush=True)
+    files = [f for f in files if f not in skipped]
     out_songs = os.path.join(args.out, "Converted")
     work = os.path.join(args.out, ".work")
     os.makedirs(out_songs, exist_ok=True); os.makedirs(work, exist_ok=True)
@@ -60,6 +79,8 @@ def main():
     print("%d songs, %d at a time" % (len(files), jobs), flush=True)
     whisper_lock = threading.Lock()
     print_lock = threading.Lock()
+    save_lock = threading.Lock()
+    done_rows = dict(earlier)
     total = len(files)
 
     def say(text):
@@ -117,6 +138,18 @@ def main():
             s = dict(file=name, mode=mode, notes=notes, folder="", error=tail.strip().splitlines()[-1] if tail.strip() else "failed")
             say("%s FAILED %s: %s" % (tag, name, s["error"]))
         if os.path.exists(base + ".vocals.wav"): os.remove(base + ".vocals.wav")
+        if saved_songs:
+            with save_lock:
+                try:
+                    if s.get("folder"):
+                        target = os.path.join(saved_songs, s["folder"])
+                        if os.path.isdir(target): shutil.rmtree(target)
+                        shutil.copytree(os.path.join(out_songs, s["folder"]), target)
+                    done_rows[name] = s
+                    write_report(saved_report, list(done_rows.values()))
+                    if s.get("folder"): say("%s saved to %s" % (tag, target))
+                except OSError as e:
+                    say("%s could not save to %s: %s" % (tag, saved_songs, e))
         return s
 
     started_all = time.time()
@@ -124,12 +157,23 @@ def main():
         report = list(pool.map(lambda a: convert(*a), [(n, name) for n, name in enumerate(files, 1)]))
     print("All done in %d min %02d s" % divmod(int(time.time() - started_all), 60), flush=True)
 
-    cols = ["file", "folder", "title", "artist", "mode", "notes", "bpm", "tempo", "guitarFrom", "lyrics", "vocalLines", "guitarExpert",
-            "bassExpert", "deepGuitarExpert", "deepBassExpert", "seconds", "timing", "error"]
-    with open(os.path.join(args.out, "report.csv"), "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore"); w.writeheader(); w.writerows(report)
+    write_report(os.path.join(args.out, "report.csv"), report)
     ok = sum(1 for r in report if r.get("folder"))
     print("Converted %d of %d songs into %s" % (ok, len(report), out_songs))
+    if saved_songs:
+        print("All %d songs done so far are in %s" % (sum(1 for r in done_rows.values() if r.get("folder") and not (r.get("error") or "").strip()),
+                                                     saved_songs))
+
+
+REPORT_COLUMNS = ["file", "folder", "title", "artist", "mode", "notes", "bpm", "tempo", "guitarFrom", "lyrics", "vocalLines",
+                  "guitarExpert", "bassExpert", "deepGuitarExpert", "deepBassExpert", "seconds", "timing", "error"]
+
+
+def write_report(path, rows):
+    # Written whole to a new file and then moved into place, so a cut-off run never leaves half a report
+    with open(path + ".tmp", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=REPORT_COLUMNS, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
+    os.replace(path + ".tmp", path)
 
 
 def memory_mb():
