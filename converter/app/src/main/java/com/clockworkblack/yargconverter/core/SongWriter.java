@@ -32,6 +32,8 @@ public final class SongWriter {
          * guitar chart follows the instruments on their own. 0 otherwise.
          */
         public int instrumentalMeasures;
+        /** True when the song was charted at one steady tempo (music made on a grid). */
+        public boolean steadyTempo;
         /**
          * Deep Music Mode guitar (written as the co-op guitar part, which the game's Deep Music
          * Mode modifier plays in place of the guitar): the guitar chart plus the vocals and the
@@ -87,6 +89,19 @@ public final class SongWriter {
      */
     static final double VOCAL_LED_SHARE = 0.35;
 
+    /**
+     * In a song carried by the vocals, a measure where the instruments reach this share of the
+     * vocals' power (half, -3 dB) is led by the instruments: the guitar chart follows them there.
+     */
+    static final double INSTRUMENTS_LEAD = 0.5;
+
+    /**
+     * How much worse one steady tempo may fit the note starts than the beats found (which bend
+     * towards the notes, so always fit a little better) and still be used. On ten real songs
+     * with programmed beats it fit 0.06 worse at most; songs that drift fit 0.4-0.6 worse.
+     */
+    static final double STEADY_TOLERANCE = 0.12;
+
     /** A measure whose vocals are under this share of the song's usual vocal level has none. */
     static final double NO_VOCALS_LEVEL = 0.1;
 
@@ -126,7 +141,31 @@ public final class SongWriter {
             strengths[i] = onsets.get(i).strength;
         }
         double[] aligned = BeatTracker.alignToOnsets(beats.beats, times, strengths);
-        r.tempo = TempoMap.fromBeats(aligned, beats.firstDownbeat, beats.beatsPerMeasure);
+        // Music made on a grid keeps perfect time: where one steady tempo puts the song's note
+        // starts on its sixteenths about as well as the beats found do, it is used, so the grid
+        // cannot wander with the accents. A band that speeds up and slows down fits a steady
+        // tempo far worse and keeps the beats found.
+        int firstDownbeat = beats.firstDownbeat;
+        double[] steady = BeatTracker.steady(aligned, times, strengths);
+        if (steady != null) {
+            // Beats the steady grid puts at or before the start of the song are left out, and the
+            // count to the first downbeat moves with them.
+            int early = 0;
+            while (1 + early < steady.length - 4 && steady[1 + early] < steady[0] + 0.02) early++;
+            if (early > 0) {
+                double[] kept = new double[steady.length - early];
+                kept[0] = steady[0];
+                System.arraycopy(steady, 1 + early, kept, 1, kept.length - 1);
+                steady = kept;
+            }
+            if (BeatTracker.gridFit(steady, times, strengths) >= BeatTracker.gridFit(aligned, times, strengths) - STEADY_TOLERANCE) {
+                aligned = steady;
+                firstDownbeat -= early;
+                r.bpm = 60.0 / (steady[steady.length - 1] - steady[steady.length - 2]);
+                r.steadyTempo = true;
+            }
+        }
+        r.tempo = TempoMap.fromBeats(aligned, firstDownbeat, beats.beatsPerMeasure);
         r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm, options);
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {
@@ -251,18 +290,33 @@ public final class SongWriter {
         GuitarCharter.Chart vocals = GuitarCharter.build(stems.vocals, GuitarCharter.detectOnsets(stems.vocals), r.tempo, r.bpm, single);
         GuitarCharter.Chart instruments = stems.melodic == null ? null
                 : GuitarCharter.build(stems.melodic, GuitarCharter.detectOnsets(stems.melodic), r.tempo, r.bpm, soft);
-        boolean[] quiet = measuresWithoutVocals(stems.vocals, r.tempo, r.duration);
+        // Measures where the instruments lead: nobody sings, or the instruments are about as loud
+        // as the vocals (a guitar intro, a guitar break, the ending of a rap song with a band).
+        boolean[] noVocals = measuresWithoutVocals(stems.vocals, r.tempo, r.duration);
+        boolean[] lead = noVocals.clone();
+        if (stems.melodic != null) {
+            double[] played = measureLevels(stems.melodic, r.tempo, r.duration);
+            double[] sung = measureLevels(stems.vocals, r.tempo, r.duration);
+            for (int k = 0; k < lead.length && k < played.length && k < sung.length; k++) {
+                if (played[k] > 0 && played[k] >= INSTRUMENTS_LEAD * sung[k]) lead[k] = true;
+            }
+        }
         GuitarCharter.Chart out = new GuitarCharter.Chart(), deep = new GuitarCharter.Chart();
         for (int d = 0; d < vocals.notes.size(); d++) {
-            List<GuitarCharter.Note> sung = new ArrayList<>();
-            for (GuitarCharter.Note n : vocals.notes.get(d)) if (!isQuiet(quiet, r.tempo, n.tick)) sung.add(n);
+            List<GuitarCharter.Note> sung = new ArrayList<>(), sungUnder = new ArrayList<>();
+            for (GuitarCharter.Note n : vocals.notes.get(d)) (isQuiet(lead, r.tempo, n.tick) ? sungUnder : sung).add(n);
             List<GuitarCharter.Note> played = instruments == null ? new ArrayList<GuitarCharter.Note>() : instruments.notes.get(d);
-            List<GuitarCharter.Note> between = new ArrayList<>();
-            for (GuitarCharter.Note n : played) if (isQuiet(quiet, r.tempo, n.tick)) between.add(n);
-            // Normal guitar: the vocals, and the instruments where nobody sings. Deep Music Mode:
-            // the instruments' melody all the way through as well.
-            out.notes.add(merge(sung, between, MERGE_GAP[d]));
-            deep.notes.add(merge(sung, played, MERGE_GAP[d]));
+            List<GuitarCharter.Note> leading = new ArrayList<>(), under = new ArrayList<>();
+            for (GuitarCharter.Note n : played) (isQuiet(lead, r.tempo, n.tick) ? leading : under).add(n);
+            // Normal guitar: the vocals, and the instruments where they lead. Deep Music Mode: the
+            // instruments' melody all the way through as well, and first where they lead.
+            List<GuitarCharter.Note> main = merge(sung, leading, MERGE_GAP[d]);
+            out.notes.add(main);
+            // Under the instruments, the vocals still come in where they are really sung (not in
+            // measures without vocals, where the vocal part holds only leakage).
+            List<GuitarCharter.Note> rest = new ArrayList<>(under);
+            for (GuitarCharter.Note n : sungUnder) if (!isQuiet(noVocals, r.tempo, n.tick)) rest.add(n);
+            deep.notes.add(merge(main, rest, MERGE_GAP[d]));
         }
         int notes = out.notes.get(GuitarCharter.EXPERT).size();
         if (notes < 24 || notes < 0.2 * mixNotes) return false;
@@ -275,9 +329,9 @@ public final class SongWriter {
         r.chart = out;
         r.deepChart = deep;
         r.guitarSource = "the separated instruments and vocals, as single notes";
-        int quietCount = 0;
-        for (boolean q : quiet) if (q) quietCount++;
-        r.instrumentalMeasures = quietCount;
+        int leadCount = 0;
+        for (boolean q : lead) if (q) leadCount++;
+        r.instrumentalMeasures = leadCount;
         return true;
     }
 
@@ -395,6 +449,21 @@ public final class SongWriter {
         if (usual <= 0) return quiet;
         for (int k = 0; k < count; k++) quiet[k] = frames[k] > 0 && sum[k] / frames[k] < NO_VOCALS_LEVEL * usual;
         return quiet;
+    }
+
+    /** Mean power of each measure (index = measure + 1, as for measuresWithoutVocals). */
+    static double[] measureLevels(Features f, TempoMap tempo, double duration) {
+        int count = Math.max(0, tempo.measureOf(tempo.timeToTick(duration))) + 2;
+        double[] sum = new double[count];
+        int[] frames = new int[count];
+        for (int i = 0; i < f.frames(); i++) {
+            int at = tempo.measureOf(tempo.timeToTick(f.timeOf(i))) + 1;
+            if (at < 0 || at >= count) continue;
+            sum[at] += (double) f.rms[i] * f.rms[i];
+            frames[at]++;
+        }
+        for (int k = 0; k < count; k++) sum[k] = frames[k] > 0 ? sum[k] / frames[k] : 0;
+        return sum;
     }
 
     private static boolean isQuiet(boolean[] quiet, TempoMap tempo, long tick) {

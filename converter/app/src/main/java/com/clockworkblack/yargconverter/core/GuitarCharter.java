@@ -66,8 +66,10 @@ public final class GuitarCharter {
     private static final float PERC_WEIGHT = 0.4f;
     private static final float TONAL_SHARE = 0.20f;
     private static final float TONAL_CONF = 0.30f;
-    /** Pitch confidence needed to count a change of bass note that has no new attack. */
-    private static final float SURE_PITCH = 0.85f;
+    /** Pitch confidence needed, once a hit on a ringing bass note has settled, to take its reading. */
+    private static final float SURE_PITCH = 0.6f;
+    /** Pitch confidence needed to trust the reading at the hit itself when no settled one is to be had. */
+    private static final float SURE_EARLY_PITCH = 0.85f;
     /**
      * A bass note this far under the song's usual bass level (-24 dB) is other instruments leaking
      * into the separated bass, in a passage where the bass is not playing.
@@ -77,8 +79,8 @@ public final class GuitarCharter {
     private static final float BASS_HOLD = 0.178f;
     /** A bass note still within this of its own start (-6 dB) is still ringing at full strength. */
     private static final float STILL_FULL = 0.5f;
-    /** On a bass, how much louder a same-note start must get to be a new note: 4 dB. */
-    private static final float RETRIGGER_RISE = 1.585f;
+    /** How much louder a start on a still-ringing bass note must get to be a new hit: 1.5 dB. */
+    private static final float RETRIGGER_RISE = 1.189f;
     /** MIDI pitch above which sounds are charted as single notes (B3). */
     private static final float CHORD_CEILING = 59.5f;
 
@@ -182,7 +184,7 @@ public final class GuitarCharter {
             while (rise > 0 && i - rise < 2 && env[rise - 1] >= 0.3f * v) rise--;
             Onset o = new Onset(f.timeOf(rise), i, (float) (v - threshold));
             describe(f, o, tMean, pMean);
-            if (groupByPitch && !o.tonal) settledPitch(f, o);
+            if (groupByPitch && !o.tonal) settledPitch(f, o, n - 1, TONAL_CONF);
             found.add(o);
         }
         if (found.isEmpty()) return found;
@@ -223,7 +225,7 @@ public final class GuitarCharter {
             // where its bass notes fall between the note names.
             double tuning = tuning(out);
             for (Onset o : out) if (o.tonal) o.group = Math.floorMod(Math.round(o.height - tuning), 12);
-            out = dropRetriggers(f, out);
+            out = dropRetriggers(f, out, tuning);
         } else {
             groupBySound(out);
         }
@@ -231,15 +233,23 @@ public final class GuitarCharter {
     }
 
     /**
-     * A long bass note (a trap 808 above all) pumps and buzzes while it rings, and each small swell
-     * reads as a new note start. On a bass that plays one note at a time, a start on the same note
-     * name as the note before only counts when the sound gets clearly louder again
-     * ({@link #RETRIGGER_RISE}) from the dip just before it; otherwise the note is still ringing.
-     * A change of note (a slide to a new pitch) counts when the pitch reading is sure of it; the
-     * heavy distortion on an 808 often makes the reading jump to the note's fifth or octave.
+     * Sorts out the note starts of a bass that plays one note at a time (a trap 808 above all).
+     *
+     * An 808 is often hit again while its last note is still ringing at full strength. Each hit
+     * is a real note, though a heavily compressed 808 only gets 2-3 dB louder at it; right after
+     * a hit, while the 808 drops onto its pitch, a second "start" shows up that gets less than
+     * 1.5 dB louder and is not a note. So on a note that is still ringing, a start counts when
+     * the sound rises at least {@link #RETRIGGER_RISE} from the dip just before it. (Measured on
+     * eight rap and R&amp;B songs: real hits rose 2 dB or more, the after-ripples 0.4-1.4 dB. An
+     * earlier cut-off of 4 dB threw away most of the real hits.)
+     *
+     * The pitch read at the moment of such a hit is unreliable (two notes sound at once, and the
+     * 808 starts above its note), so it is read again once the hit has settled; unless that
+     * reading is sure of a different note, the hit is the same note again and gets the same fret.
+     *
      * Starts far below the song's usual bass level are leakage from other instruments.
      */
-    private static List<Onset> dropRetriggers(Features f, List<Onset> onsets) {
+    private static List<Onset> dropRetriggers(Features f, List<Onset> onsets, double tuning) {
         int n = f.frames();
         int before = Math.max(2, (int) Math.round(f.fps * 0.08));
         int after = Math.max(2, (int) Math.round(f.fps * 0.06));
@@ -251,24 +261,31 @@ public final class GuitarCharter {
         List<Onset> kept = new ArrayList<>(onsets.size());
         Onset last = null;
         float lastPeak = 0;
-        for (Onset o : onsets) {
-            int at = Math.min(n - 1, Math.max(0, o.frame));
+        for (int idx = 0; idx < onsets.size(); idx++) {
+            Onset o = onsets.get(idx);
+            int p = Math.min(n - 1, Math.max(0, o.frame));
             float loudest = 0;
-            for (int k = at; k <= Math.min(n - 1, at + after); k++) loudest = Math.max(loudest, f.rms[k]);
+            for (int k = p; k <= Math.min(n - 1, p + after); k++) loudest = Math.max(loudest, f.rms[k]);
             if (loudest < BASS_FLOOR * usual) continue;
-            // An unsure pitch reading is not enough to call it a new note without a new attack.
-            // (Only notes that were kept count as "the note before".)
-            boolean sameNote = last != null && (!o.tonal || !last.tonal || o.group == last.group || o.conf < SURE_PITCH);
-            if (sameNote) {
-                int p = Math.min(n - 1, Math.max(0, o.frame));
-                float dip = Float.MAX_VALUE, peak = 0;
+            if (last != null) {
+                float dip = Float.MAX_VALUE;
                 for (int k = Math.max(0, p - before); k <= p; k++) dip = Math.min(dip, f.rms[k]);
-                for (int k = p; k <= Math.min(n - 1, p + after); k++) peak = Math.max(peak, f.rms[k]);
-                // A plucked string has already faded by its next pick, so a re-pick on the same
-                // note counts even when it barely gets louder. Only a note that is still at full
-                // strength (an 808, a held synth bass) needs a clear new attack.
-                boolean stillFull = dip >= STILL_FULL * lastPeak;
-                if (stillFull && peak < RETRIGGER_RISE * dip) continue;
+                // A plucked string has already faded by its next pick; this is about a note that
+                // is still at full strength (an 808, a held synth bass).
+                boolean ringing = dip >= STILL_FULL * lastPeak;
+                if (ringing) {
+                    if (loudest < RETRIGGER_RISE * dip) continue;
+                    int nextStart = idx + 1 < onsets.size() ? onsets.get(idx + 1).frame - 1 : n - 1;
+                    boolean settled = settledPitch(f, o, nextStart, SURE_PITCH);
+                    if (settled) {
+                        o.group = Math.floorMod(Math.round(o.height - tuning), 12);
+                    } else if (!o.tonal || o.conf < SURE_EARLY_PITCH) {
+                        o.tonal = last.tonal;
+                        o.height = last.height;
+                        o.print = last.print;
+                        o.group = last.group;
+                    }
+                }
             }
             kept.add(o);
             last = o;
@@ -342,14 +359,18 @@ public final class GuitarCharter {
     }
 
     /**
-     * A bass note that starts with a click (a trap 808 with a kick on it) has no clear pitch at
-     * first; its tone settles a little later. Reads the pitch from there instead, up to about a
-     * quarter of a second in, so the note can get its own fret and be held.
+     * Reads a bass note's pitch once it has settled: a trap 808 starts with a click and drops
+     * onto its note, so the reading at the start can be missing or too high. Looks from about
+     * 0.1 s to a quarter of a second in, stopping before {@code lastFrame} (the next start), and
+     * takes the reading when its confidence reaches {@code needed}.
+     *
+     * @return true if the note's pitch was set from the settled reading
      */
-    private static void settledPitch(Features f, Onset o) {
+    private static boolean settledPitch(Features f, Onset o, int lastFrame, float needed) {
         int n = f.frames();
         int from = o.frame + 9;
-        int to = Math.min(n - 1, o.frame + (int) Math.round(f.fps * 0.23));
+        int to = Math.min(Math.min(n - 1, lastFrame), o.frame + (int) Math.round(f.fps * 0.23));
+        if (to < from + 1) return false;
         float[] print = new float[12];
         float bestWeight = 0;
         float height = Float.NaN, conf = 0;
@@ -370,13 +391,13 @@ public final class GuitarCharter {
         double norm = 0;
         for (float v : print) norm += v * v;
         norm = Math.sqrt(norm);
-        if (norm > 1e-6 && conf >= TONAL_CONF && !Float.isNaN(height)) {
-            for (int c = 0; c < 12; c++) print[c] = (float) (print[c] / norm);
-            o.print = print;
-            o.height = height;
-            o.conf = conf;
-            o.tonal = true;
-        }
+        if (norm <= 1e-6 || conf < needed || Float.isNaN(height)) return false;
+        for (int c = 0; c < 12; c++) print[c] = (float) (print[c] / norm);
+        o.print = print;
+        o.height = height;
+        o.conf = conf;
+        o.tonal = true;
+        return true;
     }
 
     /**

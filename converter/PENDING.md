@@ -16,12 +16,14 @@ Saved for later, roughly in the order they would help most.
 - [ ] Play-test vocal-led charts (rap, R&B) in YARG; adjust the 35% cut-off if songs with a quiet guitar get switched, or rap songs with loud synths don't.
 
 ## Would improve what is there
-- [ ] Bass frets on heavily distorted 808s: their pitch reads as the note's fourth, fifth or octave too often, so the same 808 note gets the same fret only about half the time on the synthetic trap beat (TrapTest prints it). Reading the pitch later in the note fixes the 808 but hurts plucked basses; a pitch reading that knows a distorted bass's overtones would be the fix.
-- [ ] Regular guitar in songs carried by the vocals covers a beat's loop only where nobody sings (about 55-60% of the loop's clear notes on "It Happens"); Deep Music Mode guitar covers about 90%. If the regular guitar should carry the loop too, make it an option.
+- [ ] Regular guitar in songs carried by the vocals covers a beat's loop only where the instruments lead (about 68% of the loop's clear notes on "It Happens"); Deep Music Mode guitar covers about 90%. If the regular guitar should carry the loop too, make it an option.
 - [ ] Flute / pipe / synth lines that glide between notes: their notes are found from the change in sound (spectral flux); a pitch-based legato detector was tried and added nothing measurable, so it was left out.
 - [ ] Play-test Deep Music Mode on band songs (it is written for every song now; tuned on rap songs).
 - [ ] Trap hi-hat rolls: the bass takes about every other hat; a setting could take all of them on Expert, or none.
-- [ ] Tempo of "guillermoandrade" (Veeze): charted at 109.9 BPM, but the drums repeat every 1.52 s, which fits about 158 BPM (or 79). Not changed: the measure-repeat check does not clearly prefer either.
+- [ ] Double time: two rap songs are charted at twice the tempo a musician would count (158 for 79, 190 for 95). The grid is the same and the notes are on time; beat lines and measures are twice as close. Nothing in the music says which is right, so it is left.
+- [ ] 808 double hits a 32nd note apart ("Haw Thorne"): the chart's finest step is a sixteenth and Expert notes are at least 85 ms apart, so one of each pair is charted. Charting such songs in double time was tried: no more hits on time, a third more notes.
+- [ ] Bass on played (not 808) bass lines: about half to two thirds of the hits are charted ("It Happens" 52%, "Get Throwed" 69%), against 83-99% on 808s.
+- [ ] Bass frets follow the pitch poorly on 808s (on real songs the fret moves the way the pitch does in only a third of the changes; repeated notes stay on their fret 46-90% of the time). Needs a pitch reading that knows a distorted 808's overtones.
 - [ ] Bass on rock songs: the 808 rules cost a few real notes on a rock bass ("Sax, Rock, and Roll": 74% -> 69% of bass notes charted, while frets moving the right way went 61% -> 82%). Smooth note changes (walking lines, hammer-ons) need a surer pitch reading to count; a better tell between a slide and a misread would win them back.
 - [ ] **Play-test on real songs** in YARG on the Z Fold 7. The engine is now scored against synthetic band recordings with known answers, but only one real record has been through it (in the automated build, with nobody listening). Things to listen for: are there too many or too few notes (try the Fewer / More setting), do frets change where the music changes, do drum hits pull the chart away from the guitar.
 - [ ] Confirm in-game that YARG's lyric bar shows `.chart` lyrics the way this app writes them; if not, switch lyrics to a `notes.mid` vocals track.
@@ -47,4 +49,6 @@ Saved for later, roughly in the order they would help most.
 - [x] In those songs, measures without vocals (piano intro, breaks) charted from the instruments with a lower note threshold.
 - [x] Deep Music Mode parts (co-op guitar / rhythm slots, played by the game's Deep Music Mode modifier): guitar adds vocals and the beat's melody, bass adds the drum hits.
 - [x] Tempo: dotted/triplet look-alike tempos (3/4, 4/3, 2/3, 3/2) checked by how the song repeats measure by measure.
-- [x] Bass: song tuning, no phantom notes inside long 808s, settled pitch after a click, held notes by loudness, leakage left out.
+- [x] Bass: song tuning, hits on a still-ringing 808 kept (1.5 dB rule) and held on their fret, settled pitch after a click, held notes by loudness, leakage left out. (An earlier "no phantom notes inside long 808s" rule with a 4 dB cut-off was wrong: it removed real hits.)
+- [x] Tempo from the song's loop length; one steady tempo for music made on a grid.
+- [x] Real-song check (real-songs/): nine rap and R&B recordings with expected tempo, coverage and timing.

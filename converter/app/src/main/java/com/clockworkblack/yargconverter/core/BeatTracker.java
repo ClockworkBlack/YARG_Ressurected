@@ -1,6 +1,7 @@
 package com.clockworkblack.yargconverter.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -124,6 +125,121 @@ public final class BeatTracker {
      * what makes notes in the game line up with what is heard. Beats with no note nearby take
      * the average nudge of their neighbours.
      */
+    /**
+     * The same beats at one steady tempo, for music made on a grid (a programmed beat keeps
+     * perfect time, while the beats found follow the accents and can wander: 808s on the
+     * off-beats left one rap song's notes 47 ms from the hits they belong to, typically).
+     *
+     * The tempo and phase are the ones that put the song's note starts closest to sixteenth
+     * notes, searched within 1.5% of the tempo of a line fitted through the beats; which
+     * sixteenth is the beat is then taken from where most of the found beats are. The first
+     * entry of {@code beats} is the start of the song and stays; entry k of the result is the
+     * steady version of entry k (it can fall before the start when the first beat comes right at
+     * the start, which the caller deals with).
+     *
+     * @return the steady beats, or null when there are too few beats to tell
+     */
+    public static double[] steady(double[] beats, double[] onsetTimes, float[] onsetStrengths) {
+        int n = beats.length - 1;
+        if (n < 16) return null;
+        double mk = (n - 1) / 2.0, mt = 0;
+        for (int k = 1; k <= n; k++) mt += beats[k];
+        mt /= n;
+        double num = 0, den = 0;
+        for (int k = 0; k < n; k++) {
+            num += (k - mk) * (beats[k + 1] - mt);
+            den += (k - mk) * (k - mk);
+        }
+        double period0 = num / den;
+        if (!(period0 > 0.2)) return null;
+        // The note starts between the first and last beat, as times from the middle of the song
+        // (so changing the tempo turns the grid about the middle).
+        double from = beats[1], to = beats[n], mid = (from + to) / 2;
+        int count = 0;
+        for (double t : onsetTimes) if (t >= from && t <= to) count++;
+        if (count < 32) return null;
+        double[] at = new double[count];
+        float[] w = new float[count];
+        int c = 0;
+        for (int k = 0; k < onsetTimes.length; k++) {
+            if (onsetTimes[k] < from || onsetTimes[k] > to) continue;
+            at[c] = onsetTimes[k] - mid;
+            w[c++] = onsetStrengths[k];
+        }
+        // Tempo steps that move the ends of the song 4 ms; phase steps of a 32nd of a sixteenth.
+        double step = 0.004 / Math.max(10, (to - from) / 2);
+        int steps = (int) Math.ceil(0.015 / step);
+        final int phases = 32;
+        double best = -1, bestPeriod = period0, bestPhase = 0;
+        double[] bins = new double[phases];
+        for (int i = -steps; i <= steps; i++) {
+            double period = period0 * (1 + i * step), six = period / 4;
+            Arrays.fill(bins, 0);
+            // Each start adds to the two phase bins either side of where it falls.
+            for (int k = 0; k < count; k++) {
+                double pos = at[k] / six;
+                pos = (pos - Math.floor(pos)) * phases;
+                int b = (int) pos;
+                double fr = pos - b;
+                bins[b % phases] += w[k] * (1 - fr);
+                bins[(b + 1) % phases] += w[k] * fr;
+            }
+            for (int b = 0; b < phases; b++) {
+                // A sharp peak: how much more sits at this phase than a quarter of a sixteenth away.
+                double v = bins[b] + 0.5 * (bins[(b + 1) % phases] + bins[(b + phases - 1) % phases]);
+                if (v > best) {
+                    best = v;
+                    bestPeriod = period;
+                    bestPhase = (b / (double) phases) * six;
+                }
+            }
+        }
+        // Fine phase: the weighted middle of the starts near the chosen phase.
+        double six = bestPeriod / 4, sum = 0, weight = 0;
+        for (int k = 0; k < count; k++) {
+            double d = (at[k] - bestPhase) / six;
+            d = (d - Math.round(d)) * six;
+            if (Math.abs(d) < 0.02) {
+                sum += w[k] * d;
+                weight += w[k];
+            }
+        }
+        if (weight > 0) bestPhase += sum / weight;
+        // Which sixteenth is the beat: where the found beats sit, by their median distance from
+        // the grid, to the nearest sixteenth.
+        double[] residual = new double[n];
+        for (int k = 0; k < n; k++) residual[k] = beats[k + 1] - mid - bestPhase - (k - mk) * bestPeriod;
+        Arrays.sort(residual);
+        double shift = Math.round(residual[n / 2] / six) * six;
+        double[] out = new double[n + 1];
+        out[0] = beats[0];
+        for (int k = 0; k < n; k++) out[k + 1] = mid + bestPhase + shift + (k - mk) * bestPeriod;
+        return out;
+    }
+
+    /**
+     * How well note starts sit on the sixteenth notes of the beats: the strength-weighted share
+     * that falls within 30 ms of one, counted less the further off (1 on the dot, 0 at 30 ms).
+     */
+    public static double gridFit(double[] beats, double[] onsetTimes, float[] onsetStrengths) {
+        int n = beats.length;
+        if (n < 3) return 0;
+        double on = 0, all = 0;
+        int i = 1;
+        for (int k = 0; k < onsetTimes.length; k++) {
+            double t = onsetTimes[k];
+            if (t < beats[1] || t >= beats[n - 1]) continue;
+            while (i + 1 < n - 1 && beats[i + 1] <= t) i++;
+            double len = beats[i + 1] - beats[i];
+            if (len <= 0) continue;
+            double pos = (t - beats[i]) / len * 4;
+            double off = Math.abs(pos - Math.round(pos)) * len / 4;
+            all += onsetStrengths[k];
+            on += onsetStrengths[k] * Math.max(0, 1 - off / 0.03);
+        }
+        return all > 0 ? on / all : 0;
+    }
+
     public static double[] alignToOnsets(double[] beats, double[] onsetTimes, float[] onsetStrengths) {
         int n = beats.length;
         double[] shift = new double[n];
@@ -251,18 +367,60 @@ public final class BeatTracker {
      */
     static int lookAlike(double[] ac, int lag, int minLag, int maxLag, double fps) {
         double beat = beatScore(ac, lag);
-        double score = beat * measureScore(ac, lag) * preference(fps, lag);
+        double measure = measureScore(ac, lag);
+        double score = beat * measure * preference(fps, lag);
         int best = lag;
         double bestScore = score;
-        for (double r : LOOK_ALIKES) {
-            int alt = (int) Math.round(lag * r);
-            if (alt < minLag || alt > maxLag || alt * 8 + 8 >= ac.length) continue;
+        boolean bestFitsLoop = false;
+        // Candidates: the fixed look-alike ratios, and the beat that makes the song's own loop
+        // (its strongest repeat between 1.5 and 4.5 seconds) exactly one measure of 4 or 3 beats,
+        // or two. A rap beat in a 3-3-3-3-4 or swung pattern can sit at any odd ratio to the
+        // first choice (one read 123.5 BPM for a loop that is a 96.6 BPM measure).
+        List<Integer> candidates = new ArrayList<>();
+        for (double r : LOOK_ALIKES) candidates.add((int) Math.round(lag * r));
+        int loop = strongestRepeat(ac, (int) Math.round(fps * 1.5), (int) Math.round(fps * 4.5));
+        if (loop > 0) {
+            for (int beats : MEASURE_BEATS) candidates.add((int) Math.round((double) loop / beats));
+        }
+        for (int alt : candidates) {
+            if (alt == lag || alt < minLag || alt > maxLag || alt * 8 + 8 >= ac.length) continue;
             double altBeat = beatScore(ac, alt);
-            double altScore = altBeat * measureScore(ac, alt) * preference(fps, alt);
-            if (altBeat >= 0.8 * beat && altScore >= 1.5 * score && altScore > bestScore) {
+            double altMeasure = measureScore(ac, alt);
+            double altScore = altBeat * altMeasure * preference(fps, alt);
+            // The song's loop must hold a whole number of beats. When it does not at the first
+            // choice (a 2.48 s loop is 5.2 beats at 126 BPM; a 3.04 s loop is 5.5 beats at 108)
+            // but does at the look-alike, the look-alike only has to repeat by the measure better,
+            // whatever the preference for tempos near 120 says: the first choice cannot be right.
+            // Otherwise the look-alike must be clearly better all told.
+            boolean loopSaysSo = loop > 0 && !wholeBeats(loop, lag) && wholeBeats(loop, alt);
+            boolean better = loopSaysSo ? altBeat * altMeasure > beat * measure : altScore >= 1.5 * score;
+            if (altBeat < 0.8 * beat || !better) continue;
+            // A tempo that fits the loop replaces one that does not; between two of a kind, the
+            // higher score wins (which settles, say, 79 against 158 BPM for the same loop).
+            boolean take = loopSaysSo != bestFitsLoop ? loopSaysSo : altScore > bestScore;
+            if (take) {
+                bestFitsLoop = loopSaysSo;
                 best = alt;
                 bestScore = altScore;
             }
+        }
+        return best;
+    }
+
+    /** Beats per loop tried when the loop is taken as one or two measures. */
+    private static final int[] MEASURE_BEATS = {4, 3, 8, 6};
+
+    /** Whether a loop of {@code loop} frames holds a whole number of beats of {@code lag} frames. */
+    private static boolean wholeBeats(int loop, int lag) {
+        double beats = (double) loop / lag;
+        return Math.abs(beats - Math.round(beats)) <= 0.15;
+    }
+
+    /** The lag in [from, to] where the song repeats most strongly, or -1. */
+    private static int strongestRepeat(double[] ac, int from, int to) {
+        int best = -1;
+        for (int l = Math.max(2, from); l <= Math.min(ac.length - 2, to); l++) {
+            if (ac[l] >= ac[l - 1] && ac[l] >= ac[l + 1] && (best < 0 || ac[l] > ac[best])) best = l;
         }
         return best;
     }

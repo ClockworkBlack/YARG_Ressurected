@@ -88,10 +88,11 @@ bass. Without it, everything below is done on the full mix and there is no bass 
 guitar chart to follow once the drums and bass are taken out. When the pitched instruments
 are under 35% of the pitched instruments and vocals together, the **guitar chart follows the
 vocals**, as single notes (a voice sings one note at a time, and its breathy sound would
-otherwise turn into chords). In measures without vocals (intro, breaks, outro) it follows the
-instruments instead, with half the usual bar for how strong a note must be, since an intro
-is usually softer than the rest of the song. Songs with a real guitar part don't reach the
-cut-off and are charted as before.
+otherwise turn into chords). In measures where the instruments lead (nobody sings, or the
+instruments are at least half as strong as the vocals: an intro, a guitar break, the ending)
+it follows the instruments instead, with half the usual bar for how strong a note must be,
+since an intro is usually softer than the rest of the song. Songs with a real guitar part
+throughout don't reach the cut-off and are charted as before.
 
 **Deep Music Mode parts.** Every song split into instruments also gets a second guitar and bass
 part that cover the whole song, for playing with no drum or vocal chart. They are written as
@@ -110,14 +111,52 @@ On two rap tracks, Deep Music Mode guitar covers 85-92% of the chime/keys notes 
 Mode bass covers 81% of the main drum hits on one, and every other trap hi-hat on the other.
 The Done message gives how many notes each part adds.
 
+The app listens about 86 times a second and works in five steps.
+
+1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
+   seconds so songs that speed up or slow down stay locked. Each beat is nudged onto the nearest
+   note start, bass hits and chord changes say which beat is the "one", and it tells 4/4 from
+   3/4. Two things are then checked, because rap and other loop-based music fooled the first
+   version:
+   - **The tempo against the song's own loop.** A dotted rhythm can pass for the beat (trap 808s
+     in dotted eighths made 95 BPM songs read as 127, and a 79 BPM one as 110). Tempos at 3/4,
+     4/3, 2/3 and 3/2 of the first choice are tried, and so are the tempos that make the song's
+     strongest repeat (its loop, 1.5-4.5 s long) exactly one or two measures. One that makes the
+     song repeat measure by measure clearly better wins; when the first choice does not even
+     fit a whole number of beats into the loop, a tempo that does only has to repeat better.
+   - **One steady tempo.** Music made on a grid keeps perfect time, but beats found by ear follow
+     the accents and wander (808s on the off-beats left one song's notes 23 ms from their hits,
+     typically, and some 70 ms). So the tempo and phase that put the song's note starts closest
+     to sixteenth notes are found, and where that steady grid fits about as well as the beats
+     found, it is used: one tempo marker for the whole song. A band that speeds up and slows
+     down fits a steady tempo far worse and keeps the beats found.
+2. **Note starts.** Every moment where new sound arrives is split into *pitched* sound (guitar,
+   bass, voice, keys) and *noisy bursts* (drums). Pitched starts count fully; bare drum hits
+   count less, so the chart leans towards the instruments rather than the drum kit.
+3. **What each note is.** For each pitched start it reads the pitch of the new sound and takes a
+   "fingerprint" of it. Starts with the same fingerprint are the same note or chord played
+   again.
+4. **Frets.** Within each four-measure phrase the distinct sounds are lined up from lowest to
+   highest and spread over the frets. The same sound always gets the same fret, higher sounds
+   get higher frets, low thick sounds become chords, and drum hits between strums repeat the
+   fret before them. Notes that keep ringing become sustains.
+5. **Repeats and difficulties.** Measures that repeat in the music (same rhythm, same notes) are
+   pooled, so a riff played eight times gets one pattern decided by all eight hearings, and a
+   verse that comes round again gets the same chart. Expert is written first; Hard, Medium and
+   Easy are thinned-out versions of it (eighths, quarters, half notes, adapting to the song's
+   speed) on 5, 4 and 3 frets.
+
 **Bass charts** (from the separated bass) read each note's name allowing for the song's own
-tuning, which is often not A = 440 Hz. A long note (a trap 808, a held synth bass) pumps and
-buzzes while it rings; a start on the same note only counts as a new note when the sound gets
-clearly louder again (4 dB) or the note had already faded, and a change of note without a new
-attack needs a sure pitch reading, since a distorted 808 often reads as its own fifth or octave.
-A note that starts with a click has its pitch read a little later, once its tone settles.
-Notes are held for as long as they stay loud (until 15 dB down). Sounds far below the song's
-usual bass level (-24 dB) are other instruments leaking into the bass and are left out.
+tuning, which is often not A = 440 Hz. A trap 808 is often hit again while its last note is
+still ringing at full strength. Each hit is a note, even though a heavily compressed 808 only
+gets 2-3 dB louder at it; so on a note that is still ringing, a start counts when the sound
+rises at least 1.5 dB from the dip just before it. (Right after a hit, while the 808 drops
+onto its pitch, a second "start" turns up that rises less than that and is not a note.) The
+pitch at such a hit is read again once it has settled, and unless that reading is sure of a
+different note, the hit is the same note again and gets the same fret. A note that starts with
+a click also has its pitch read a little later. Notes are held for as long as they stay loud
+(until 15 dB down, or the next hit). Sounds far below the song's usual bass level (-24 dB) are
+other instruments leaking into the bass and are left out.
 
 The **How many notes** choice (Fewer / Standard / More) moves the bar for how strong a sound
 has to be to become a note.
@@ -156,7 +195,8 @@ Typical scores on the 4/4 songs:
 "Right" is below 100% mostly because five frets cannot give every pitch its own position;
 neighbouring pitches share a fret rather than going the wrong way.
 
-For separation, five things are checked on every build:
+For separation, five things are checked on every build (and real recordings by hand, see
+[real-songs](real-songs/README.md)):
 
 1. **The plumbing**, with a stand-in model: cutting a song into overlapping segments and joining
    the results gives back every sample exactly once, aligned with the original.
@@ -170,17 +210,16 @@ For separation, five things are checked on every build:
    and outro must follow the instruments instead. The full band songs, which have singing too,
    must still chart guitar from the guitar.
 4. **A trap / R&B beat with known answers** (`TrapSong`, `TrapTest`), built like the real rap and
-   R&B songs the converter was tuned on: 808s in dotted eighths that dominate the mix (76% of the
-   sound, drums 1.5%), long 808s that pump while they ring and drop onto their note with a kick
-   click, a song tuned off A = 440 Hz, a quiet flute-like loop that glides between notes, and a
-   vocal line louder than the loop. It must keep each lesson: the tempo is the beat's and not
-   the dotted 808's (without that fix it reads 126.7 BPM for 95), every 808 is charted with no
-   phantom notes inside the long ones and the long ones held, the regular guitar follows the
-   vocals, Deep Music Mode guitar adds the loop (94-100% of its notes) and Deep Music Mode bass
-   the claps. Each of these checks was seen to fail with its fix taken out. Not yet checked
-   there, only measured on real songs: 808 tuning, reading an 808's pitch once it settles, and
-   holding by loudness (the synthetic 808 does not trip them), and frets for the same 808 note,
-   which is a known weak spot on heavily distorted 808s (printed, not checked).
+   R&B songs the converter was tuned on: 808s in dotted eighths that dominate the mix (72% of the
+   sound, drums 1.5%), an 808 that is hit again while it still rings (each hit only 3 dB
+   louder), a sustained 808 with the slight flutter real ones have, kick clicks and pitch drops
+   on every 808 hit, a song tuned off A = 440 Hz, a quiet flute-like loop that glides between
+   notes and is turned up for two measures, and a vocal line louder than the loop. It must keep
+   each lesson: the tempo is the beat's and not the dotted 808's (126.7 BPM for 95 without that
+   fix); hits on a ringing 808 are charted and stay on their fret (none are charted with the
+   earlier 4 dB rule); a sustained 808 is one held note; the regular guitar follows the vocals,
+   and the instruments where they lead; Deep Music Mode guitar adds the loop and Deep Music
+   Mode bass the claps. Each of these checks was seen to fail with its fix taken out.
 5. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their

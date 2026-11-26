@@ -856,7 +856,7 @@ public final class MainActivity extends Activity {
         sb.append("Guitar chart made from ").append(result.guitarSource).append("\n");
         if (result.instrumentalMeasures > 0) {
             sb.append(result.instrumentalMeasures).append(result.instrumentalMeasures == 1 ? " measure" : " measures")
-                    .append(" without vocals (intro, breaks) charted from the instruments\n");
+                    .append(" where the instruments lead (intro, breaks) charted from the instruments\n");
         }
         if (result.deepChart != null || result.deepBassChart != null) {
             sb.append("Deep Music Mode charts included (turn on the Deep Music Mode modifier in YARG): guitar +")

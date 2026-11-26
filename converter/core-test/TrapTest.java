@@ -9,10 +9,9 @@ import java.util.Locale;
 /**
  * Guards what was learned converting real rap and R&B songs, on a synthetic beat with known
  * answers (TrapSong), so that later changes to the converter keep every fix:
- * dotted-808 tempo, the song's own tuning, an 808's pitch read once it settles, no phantom
- * notes inside long 808s, held 808s, guitar following the vocals, the soft loop in Deep Music
- * Mode guitar, and drums in Deep Music Mode bass. Each check here was seen to fail with its fix
- * taken out.
+ * dotted-808 tempo, hits on a still-ringing 808 charted and kept on their fret, a sustained 808
+ * as one held note, guitar following the vocals (and the instruments where they lead), the soft
+ * loop in Deep Music Mode guitar, and drums in Deep Music Mode bass.
  */
 final class TrapTest {
     private static int failures;
@@ -49,29 +48,52 @@ final class TrapTest {
             System.out.printf(Locale.US, "  regular guitar covers %.0f%% of the loop notes (vocals carry it; the loop only where nobody sings)%n", 100 * plainLoop);
             check(loop > plainLoop, "Deep Music Mode guitar adds the loop that the regular guitar leaves to the vocals");
         }
+        // Where the loop is turned up as loud as the vocals (a guitar break over the rap), the
+        // regular guitar follows it there.
+        {
+            double brk = covered(r.chart, r, song.breakNotes);
+            System.out.printf(Locale.US, "  regular guitar where the loop is as loud as the vocals: %.0f%% of its notes%n", 100 * brk);
+            check(brk >= 0.8, "regular guitar follows the instruments where they lead (" + brk + ")");
+        }
         // 4. Bass: every 808 charted, nothing inside a long pumping 808, long 808s held.
         check(r.bassChart != null, "a bass chart is written");
         if (r.bassChart != null) {
             List<GuitarCharter.Note> bass = r.bassChart.notes.get(GuitarCharter.EXPERT);
             double hits = covered(r.bassChart, r, song.bassNotes);
             int phantom = 0, held = 0;
-            for (double[] note : song.longBass) {
-                for (GuitarCharter.Note b : bass) {
-                    double t = r.tempo.tickToTime(b.tick);
-                    if (t > note[0] + 0.15 && t < note[0] + note[1] - 0.05) phantom++;
-                    if (Math.abs(t - note[0]) < 0.07 && r.tempo.tickToTime(b.tick + b.sustain) - t > 0.7 * note[1]) held++;
-                }
-            }
             StringBuilder lengths = new StringBuilder();
             for (double[] note : song.longBass) {
                 for (GuitarCharter.Note b : bass) {
                     double t = r.tempo.tickToTime(b.tick);
-                    if (Math.abs(t - note[0]) < 0.07) lengths.append(String.format(Locale.US, "%.2f/%.2fs ", r.tempo.tickToTime(b.tick + b.sustain) - t, note[1]));
+                    if (t > note[0] + 0.15 && t < note[0] + note[1] - 0.05) phantom++;
+                    if (Math.abs(t - note[0]) < 0.07) {
+                        double len = r.tempo.tickToTime(b.tick + b.sustain) - t;
+                        lengths.append(String.format(Locale.US, "%.2f/%.2fs ", len, note[1]));
+                        if (len > 0.7 * note[1]) held++;
+                    }
                 }
             }
-            System.out.println("  long 808s held (charted/real): " + lengths);
-            System.out.printf(Locale.US, "  bass: %d Expert notes for %d 808 notes; 808s covered %.0f%%; %d phantom notes inside %d long 808s; %d of them held%n",
-                    bass.size(), song.bassNotes.size(), 100 * hits, phantom, song.longBass.size(), held);
+            // Hits on a still-ringing 808 are notes too, and the same note again: same fret.
+            double rehits = covered(r.bassChart, r, song.ringingHits);
+            int sameFret = 0, pairs = 0;
+            int lastFret = -1, lastMeasure = -1;
+            for (int i = 0; i < song.ringingHits.size(); i++) {
+                int fret = -1;
+                for (GuitarCharter.Note b : bass) if (Math.abs(r.tempo.tickToTime(b.tick) - song.ringingHits.get(i)) < 0.07) fret = b.lane;
+                if (fret >= 0 && lastFret >= 0 && lastMeasure == song.ringingMeasure.get(i)) {
+                    pairs++;
+                    if (fret == lastFret) sameFret++;
+                }
+                lastFret = fret;
+                lastMeasure = song.ringingMeasure.get(i);
+            }
+            double steadyFret = pairs == 0 ? 0 : (double) sameFret / pairs;
+            System.out.println("  sustained 808s held (charted/real): " + lengths);
+            System.out.printf(Locale.US, "  bass: %d Expert notes for %d 808 notes; 808s covered %.0f%%; hits on a ringing 808 covered %.0f%%, on the same fret as the hit before %.0f%%;%n"
+                            + "        %d notes inside %d sustained 808s, %d of them held%n",
+                    bass.size(), song.bassNotes.size(), 100 * hits, 100 * rehits, 100 * steadyFret, phantom, song.longBass.size(), held);
+            check(rehits >= 0.9, "hits on a still-ringing 808 are charted (" + rehits + ")");
+            check(steadyFret >= 0.9, "the same 808 note hit again stays on its fret (" + steadyFret + ")");
             check(hits >= 0.9, "bass covers the 808 notes (" + hits + ")");
             // The same 808 note gets the same fret (the song is tuned between two note names).
             java.util.Map<Integer, java.util.Map<Integer, Integer>> frets = new java.util.HashMap<>();
@@ -98,8 +120,8 @@ final class TrapTest {
             // Reported, not yet checked: a distorted 808 that drops onto its note reads as its
             // fourth, fifth or octave too often for this to be reliable (see PENDING.md).
             System.out.printf(Locale.US, "  same 808 note -> same fret: %.0f%% (known weak spot)%n", 100 * consistent);
-            check(phantom <= song.longBass.size() / 4, "no phantom notes inside long 808s (" + phantom + ")");
-            check(held >= song.longBass.size() * 0.75, "long 808s are held for most of their length (" + held + " of " + song.longBass.size() + ")");
+            check(phantom <= song.longBass.size() / 4, "a sustained 808 is one note (" + phantom + " notes inside)");
+            check(held >= song.longBass.size() * 0.75, "sustained 808s are held for most of their length (" + held + " of " + song.longBass.size() + ")");
         }
 
         // 5. Deep Music Mode bass adds the claps; the regular bass does not.
