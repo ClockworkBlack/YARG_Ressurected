@@ -1,0 +1,135 @@
+diff --git a/Assets/Plugins/Android/AndroidManifest.xml b/Assets/Plugins/Android/AndroidManifest.xml
+index f9c7b57..caa3064 100644
+--- a/Assets/Plugins/Android/AndroidManifest.xml
++++ b/Assets/Plugins/Android/AndroidManifest.xml
+@@ -27,8 +27,8 @@
+             android:exported="true"
+             android:hardwareAccelerated="false"
+             android:launchMode="singleTask"
+-            android:resizeableActivity="false"
+-            android:screenOrientation="landscape"
++            android:resizeableActivity="true"
++            android:screenOrientation="fullUser"
+             android:theme="@style/UnityThemeSelector">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+diff --git a/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab b/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab
+index e7f4da6..e865fcd 100644
+--- a/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab
++++ b/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab
+@@ -175,7 +175,7 @@ MonoBehaviour:
+   m_ReferencePixelsPerUnit: 100
+   m_ScaleFactor: 1
+   m_ReferenceResolution: {x: 1920, y: 1080}
+-  m_ScreenMatchMode: 0
++  m_ScreenMatchMode: 1
+   m_MatchWidthOrHeight: 0
+   m_PhysicalUnit: 3
+   m_FallbackScreenDPI: 96
+diff --git a/Assets/Scenes/CalibrationScene.unity b/Assets/Scenes/CalibrationScene.unity
+index 04d1dc1..2d7c711 100644
+--- a/Assets/Scenes/CalibrationScene.unity
++++ b/Assets/Scenes/CalibrationScene.unity
+@@ -818,7 +818,7 @@ MonoBehaviour:
+   m_ReferencePixelsPerUnit: 100
+   m_ScaleFactor: 1
+   m_ReferenceResolution: {x: 1920, y: 1080}
+-  m_ScreenMatchMode: 0
++  m_ScreenMatchMode: 1
+   m_MatchWidthOrHeight: 0
+   m_PhysicalUnit: 3
+   m_FallbackScreenDPI: 96
+diff --git a/Assets/Script/Helpers/ScreenHelper.cs b/Assets/Script/Helpers/ScreenHelper.cs
+index 98cb3f7..51e2bec 100644
+--- a/Assets/Script/Helpers/ScreenHelper.cs
++++ b/Assets/Script/Helpers/ScreenHelper.cs
+@@ -72,6 +72,15 @@ namespace YARG.Helpers
+         /// </summary>
+         public static void SetResolution(Resolution resolution)
+         {
++            // YARG Resurrected: on a phone the game always fills its window, and Android changes
++            // that window (folding or unfolding a Fold, turning the phone, split screen). Forcing
++            // a size here, the one saved from the other screen or the display's own size in the
++            // other orientation, left the picture stretched or squashed.
++            if (Application.isMobilePlatform)
++            {
++                return;
++            }
++
+             YargLogger.LogFormatDebug("Changing screen resolution to {0}", resolution);
+             var fullscreenMode = SettingsManager.Settings?.FullscreenMode.Value ?? FullScreenMode.FullScreenWindow;
+             Screen.SetResolution(resolution.width, resolution.height, fullscreenMode, resolution.refreshRateRatio);
+diff --git a/Assets/Script/Input/Touch/TouchControlsBootstrap.cs b/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
+index f488d39..fbffcc2 100644
+--- a/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
++++ b/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
+@@ -41,13 +41,11 @@ namespace YARG.Input.Touch
+ 
+         private static void ApplyAndroidOrientation()
+         {
+-            // Landscape lock + never sleep on Android (belt and braces next to
+-            // the PlayerSettings default orientation, which is already
+-            // LandscapeRight). Build #15 used LandscapeLeft here and the
+-            // phone showed the game upside-down (180° reversed).
++            // Never sleep on Android. (The orientation is left to OrientationUnlock: this used to
++            // pin landscape on every scene load, which fought it, and on a Fold turned the game
++            // sideways or upside-down depending on which of the two ran last.)
+             if (Application.platform == RuntimePlatform.Android)
+             {
+-                Screen.orientation = ScreenOrientation.LandscapeRight;
+                 Screen.sleepTimeout = SleepTimeout.NeverSleep;
+             }
+         }
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 4b90b44..9a3105c 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -162,8 +162,6 @@ namespace YARG.Settings
+                     YARG.Gameplay.VocalBattle.SingOffTurns.EightBars,
+                     YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars
+                 };
+-            // A picture and short bio of the artist when choosing whose part to sing (from Wikipedia)
+-            public ToggleSetting ShowArtistCards { get; } = new(true);
+             public ToggleSetting EnablePracticeSP { get; } = new(false);
+             public SliderSetting PracticeRestartDelay { get; } = new(2f, 0.5f, 5f);
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index b521298..1884d13 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -57,7 +57,6 @@ namespace YARG.Settings
+                 new HeaderMetadata("Vocals"),
+                 nameof(Settings.SingOff),
+                 nameof(Settings.SingOffTurnLength),
+-                nameof(Settings.ShowArtistCards),
+ 
+                 new HeaderMetadata("StatusBar"),
+                 nameof(Settings.ShowBattery),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 5fab337..959ac86 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1717,10 +1717,6 @@
+                 "Name": "Sing-Off",
+                 "Description": "Turns the vocals into a battle when two or more players sing. On the Vocals instrument the lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. On Harmonies (a song with a part for each artist) each player sings the artist they picked and the two artists' singers face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. A sing-off with turns leaves no high score, since each singer has only half the song. Can also be switched on the screen before a song."
+             },
+-            "ShowArtistCards": {
+-                "Name": "Artist Pictures and Bios",
+-                "Description": "When choosing whose part to sing or rap (Rap Mode, Harmonies, Sing-Off), shows the artist's picture and a short bio on the right. They come from Wikipedia the first time (the artist's name is looked up there) and are kept on the phone after that."
+-            },
+             "SingOffTurnLength": {
+                 "Name": "Sing-Off Turn Length",
+                 "Description": "In a sing-off on the Vocals instrument: how many lines a singer gets before the other takes over.",
+diff --git a/ProjectSettings/ProjectSettings.asset b/ProjectSettings/ProjectSettings.asset
+index 7b967a1..28bbf7e 100644
+--- a/ProjectSettings/ProjectSettings.asset
++++ b/ProjectSettings/ProjectSettings.asset
+@@ -72,7 +72,7 @@ PlayerSettings:
+   androidUseSwappy: 0
+   androidDisplayOptions: 1
+   androidBlitType: 0
+-  androidResizeableActivity: 0
++  androidResizeableActivity: 1
+   androidDefaultWindowWidth: 1920
+   androidDefaultWindowHeight: 1080
+   androidMinimumWindowWidth: 400

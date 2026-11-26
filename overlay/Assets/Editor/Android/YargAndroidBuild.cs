@@ -322,8 +322,36 @@ namespace YARG.Editor.Android
                 xml = Regex.Replace(xml, @"<application", "<application android:requestLegacyExternalStorage=\"true\"");
             }
 
+            // Foldables (Galaxy Z Fold): the game's window changes size when the phone is folded
+            // or unfolded, and the game redraws itself for the new size (the activity handles
+            // screenSize/smallestScreenSize/screenLayout/density changes, so it is not
+            // restarted). A non-resizeable activity is letterboxed instead, or Android offers to
+            // restart it. Any orientation the user allows (fullUser respects the rotation lock);
+            // no aspect-ratio cap, so the tall cover screen is filled too.
+            xml = Regex.Replace(xml, @"(<activity\b[^>]*android:name=""com\.unity3d\.player\.UnityPlayer[^""]*""[^>]*>)", match =>
+            {
+                string tag = match.Value;
+                tag = SetAttribute(tag, "android:resizeableActivity", "true");
+                tag = SetAttribute(tag, "android:screenOrientation", "fullUser");
+                tag = Regex.Replace(tag, @"\s+android:maxAspectRatio=""[^""]*""", string.Empty);
+                return tag;
+            }, RegexOptions.Singleline);
+            xml = Regex.Replace(xml, @"\s*<meta-data\s+android:name=""android\.max_aspect""[^>]*/>", string.Empty);
+
             File.WriteAllText(manifest, xml);
-            Debug.Log("[YARG Android] Patched AndroidManifest.xml with storage/gamepad entries");
+            Debug.Log("[YARG Android] Patched AndroidManifest.xml with storage/gamepad entries and a resizeable activity");
+        }
+
+        private static string SetAttribute(string tag, string name, string value)
+        {
+            string pattern = Regex.Escape(name) + @"=""[^""]*""";
+            if (Regex.IsMatch(tag, pattern))
+            {
+                return Regex.Replace(tag, pattern, name + "=\"" + value + "\"");
+            }
+
+            int end = tag.EndsWith("/>") ? tag.Length - 2 : tag.Length - 1;
+            return tag.Substring(0, end) + " " + name + "=\"" + value + "\"" + tag.Substring(end);
         }
     }
 }
