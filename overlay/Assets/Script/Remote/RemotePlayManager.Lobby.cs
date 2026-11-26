@@ -516,6 +516,18 @@ namespace YARG.Remote
             }
         }
 
+        /// <summary>True while PLAY WITH PHONES is showing.</summary>
+        public static bool PhonesOpen => Instance != null && Instance._lobby != null && Instance._lobby.activeSelf;
+
+        /// <summary>Closes PLAY WITH PHONES if it is showing.</summary>
+        public static void ClosePhones()
+        {
+            if (PhonesOpen)
+            {
+                Instance.CloseLobby();
+            }
+        }
+
         private void OpenLobby()
         {
             if (_lobby == null)
@@ -528,13 +540,18 @@ namespace YARG.Remote
             // The controller works this screen while it is open, not the menu hidden behind it
             if (YARG.Menu.Navigation.Navigator.Instance != null && !_lobbySchemeOn)
             {
+                var entries = new List<YARG.Menu.Navigation.NavigationScheme.Entry>
+                {
+                    new(YARG.Core.Input.MenuAction.Red, "Menu.Common.Close", CloseLobby),
+                };
+                if (!OnComputer)
+                {
+                    // (The game network is a phone's own Wi-Fi network: Android only)
+                    entries.Add(new(YARG.Core.Input.MenuAction.Green, "Menu.Common.GameNetwork", ToggleHotspot));
+                    entries.Add(new(YARG.Core.Input.MenuAction.Yellow, "Menu.Common.HotspotSettings", OpenHotspotSettings));
+                }
                 YARG.Menu.Navigation.Navigator.Instance.PushScheme(new YARG.Menu.Navigation.NavigationScheme(
-                    new List<YARG.Menu.Navigation.NavigationScheme.Entry>
-                    {
-                        new(YARG.Core.Input.MenuAction.Red, "Menu.Common.Close", CloseLobby),
-                        new(YARG.Core.Input.MenuAction.Green, "Menu.Common.GameNetwork", ToggleHotspot),
-                        new(YARG.Core.Input.MenuAction.Yellow, "Menu.Common.HotspotSettings", OpenHotspotSettings),
-                    }, false, () => _lobbySchemeOn = false));
+                    entries, false, () => _lobbySchemeOn = false));
                 _lobbySchemeOn = true;
             }
         }
@@ -586,6 +603,16 @@ namespace YARG.Remote
                 _wifiDetail.text = $"Network: <color=#FFD84D>{Escape(_hotspotSsid)}</color>\nPassword: <color=#FFD84D>{Escape(_hotspotPassword)}</color>";
                 SetQr(_wifiQrImage, ref _wifiQrContent, BuildWifiQr(_hotspotSsid, _hotspotPassword));
             }
+            else if (OnComputer)
+            {
+                _wifiCaption.text = "<b>1. Be on the same network</b>";
+                _wifiDetail.text = address != null
+                    ? "Phones on the same Wi-Fi (or router) as this computer only need the code on the right.\n\n" +
+                      "If the computer asks whether YARG may accept connections, allow it. " +
+                      "No shared Wi-Fi? Turn on this computer's hotspot and join the phones to it."
+                    : "This computer isn't on a network.\n\nConnect it to Wi-Fi or a router, or turn on its hotspot and join the phones to it.";
+                SetQr(_wifiQrImage, ref _wifiQrContent, null);
+            }
             else
             {
                 _wifiCaption.text = "<b>1. Be on the same Wi-Fi</b>";
@@ -602,20 +629,47 @@ namespace YARG.Remote
                     ? "<b>2. Then open this page</b>\n<size=70%>Scan again once connected</size>"
                     : "<b>2. Open this page</b>\n<size=70%>Scan with the phone's camera</size>";
                 string hint = _tlsState == -1
-                    ? "Controllers only on this phone (the secure link isn't working, so phone mics are off)."
+                    ? (OnComputer
+                        ? "Controllers only (the secure link isn't working, so phone mics are off)."
+                        : "Controllers only on this phone (the secure link isn't working, so phone mics are off).")
                     : "The browser will warn that it's not private. Tap <b>Advanced</b>, then <b>Proceed</b>.";
-                _urlDetail.text = $"<color=#FFD84D>{url}</color>\n<size=75%>{hint}</size>";
+                // A computer can be on several networks at once (cable, Wi-Fi, its own hotspot):
+                // the code is for the main one, and the others are listed in case a phone is on those
+                string others = "";
+                if (OnComputer && !hotspotOn)
+                {
+                    int listed = 0;
+                    foreach (string alternative in _addresses)
+                    {
+                        if (alternative == address || listed >= 2)
+                        {
+                            continue;
+                        }
+                        others += (listed == 0 ? "\n<size=65%>If that doesn't open, try " : " or ") + BuildUrl(alternative);
+                        listed++;
+                    }
+                    if (listed > 0)
+                    {
+                        others += "</size>";
+                    }
+                }
+                _urlDetail.text = $"<color=#FFD84D>{url}</color>\n<size=75%>{hint}</size>{others}";
                 SetQr(_urlQrImage, ref _urlQrContent, url);
             }
             else
             {
                 _urlCaption.text = "<b>2. Open the page</b>";
-                _urlDetail.text = hotspotOn ? "Waiting for the game network's address..." : "The address shows here once this phone is on a network.";
+                _urlDetail.text = hotspotOn ? "Waiting for the game network's address..."
+                    : OnComputer ? "The address shows here once this computer is on a network."
+                    : "The address shows here once this phone is on a network.";
                 SetQr(_urlQrImage, ref _urlQrContent, null);
             }
 
-            _hotspotButtonLabel.text = _hotspotState == HOTSPOT_ON ? "Stop game network"
-                : _hotspotState == HOTSPOT_STARTING ? "Starting..." : "Start game network";
+            if (_hotspotButtonLabel != null)
+            {
+                _hotspotButtonLabel.text = _hotspotState == HOTSPOT_ON ? "Stop game network"
+                    : _hotspotState == HOTSPOT_STARTING ? "Starting..." : "Start game network";
+            }
 
             // Status: who's here
             var status = new StringBuilder();
@@ -765,12 +819,21 @@ namespace YARG.Remote
             _lobbyStatus = MakeText(root, new Vector2(0.5f, 0.215f), new Vector2(1760f, 110f), 28, TextAlignmentOptions.Center);
             _lobbyStatus.color = new Color(0.75f, 0.8f, 0.9f);
 
-            _hotspotButtonLabel = MakeButton(root, new Vector2(0.22f, 0.085f), "Start game network",
-                new Color(1f, 0.85f, 0.3f), Color.black, ToggleHotspot);
-            MakeButton(root, new Vector2(0.5f, 0.085f), "Phone hotspot settings",
-                new Color(0.15f, 0.2f, 0.3f), Color.white, OpenHotspotSettings);
-            MakeButton(root, new Vector2(0.78f, 0.085f), "Close",
-                new Color(0.15f, 0.2f, 0.3f), Color.white, CloseLobby);
+            if (OnComputer)
+            {
+                // No game network on a computer (that is a phone's own Wi-Fi network): just Close
+                MakeButton(root, new Vector2(0.5f, 0.085f), "Close",
+                    new Color(1f, 0.85f, 0.3f), Color.black, CloseLobby);
+            }
+            else
+            {
+                _hotspotButtonLabel = MakeButton(root, new Vector2(0.22f, 0.085f), "Start game network",
+                    new Color(1f, 0.85f, 0.3f), Color.black, ToggleHotspot);
+                MakeButton(root, new Vector2(0.5f, 0.085f), "Phone hotspot settings",
+                    new Color(0.15f, 0.2f, 0.3f), Color.white, OpenHotspotSettings);
+                MakeButton(root, new Vector2(0.78f, 0.085f), "Close",
+                    new Color(0.15f, 0.2f, 0.3f), Color.white, CloseLobby);
+            }
 
             // With a QR code showing, the text under it moves below the code.
             _wifiDetailRect = _wifiDetail.rectTransform;

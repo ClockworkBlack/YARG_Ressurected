@@ -2,8 +2,11 @@
 
 A macOS build of the same game as the Android and Windows versions: YARG v0.15.0 (through
 [YARG-DROID](https://github.com/putudarma/YARG-DROID)) with everything this repo adds:
-guitar sound on notes, Song Setup, menu music playlists, PS5 / Xbox / Switch gamepad layouts,
-venues and crowd, vocal parts and sing-off, phones as guitars and mics, and the error log.
+guitar sound on notes, Song Setup (the SONG SETUP bar after picking a song), Deep Music Mode, vocals
+with Challenge Mode, vocal parts and sing-off, story mode, venues and crowd, menu music playlists,
+PS5 / Xbox / Switch gamepad layouts, phones as guitars and mics (the PHONES bar on the main menu),
+and the error log. Only phone things are left out: touch buttons, the phone's *Play Sound Through*
+choice and *Start game network*.
 
 It's built from the same `patches/`, `patches-core/` and `overlay/` as the other versions, so new
 features land everywhere. This folder only holds what is different for the Mac.
@@ -33,6 +36,12 @@ How it differs from the other builds:
 **From GitHub:** **Actions → Build Mac → Run workflow** (same Unity secrets as the other builds).
 It also runs on every push to `main` that changes the game. Open **Releases** and download
 `YARG-Resurrected-Mac-<n>.zip`.
+
+Each build is **play-tested on a Mac before it is published** (`tests/desktop-play-test.sh` and the
+game's own test mode): the game starts and reaches the menu, a phone joins over the network as a
+guitarist and leaves again, a test song is scanned, Song Setup opens, and a bot plays the song with
+the guitar sound generated for it. The screenshots and `result.txt` are attached to the release.
+To keep the Mac level with the phone version, run this workflow whenever the Android one is run.
 
 **On your own Mac:**
 1. Install Git (with Git LFS) and Unity Hub, then the Unity version in `ProjectSettings/ProjectVersion.txt`

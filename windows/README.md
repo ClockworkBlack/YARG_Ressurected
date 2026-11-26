@@ -4,12 +4,18 @@ A Windows (64-bit) build of the same game as the Android APK: YARG v0.15.0 (thro
 [YARG-DROID](https://github.com/putudarma/YARG-DROID)) with everything this repo adds:
 
 - **Guitar sound on your notes** for songs without a guitar track
-- **Song Setup**: speed, key, a section of the song, freestyle guitar
+- **Song Setup**: speed, key, a section of the song, freestyle guitar (the SONG SETUP bar after picking a song:
+  click it, or press the controller button named in the help bar)
+- **Deep Music Mode** (guitar and bass cover the whole song)
+- **Vocals**: fairer scoring, Challenge Mode, pick an artist's part, sing-off, lyrics that fill as they are sung, the mic test
+- **Story mode**, **venues and crowd**, finding songs by artist / genre / album / year
 - **Menu music**: startup song, playlists, shuffle
-- **Gamepad layouts**: PS5 / PS4 (default), Xbox, Switch, Japanese PlayStation, with button names in the help bar
-- **Phones as guitars and mics** over Wi-Fi (the PHONES bar on the main menu)
-- **Venues and crowd**, vocal parts and sing-off, sound output choice, fret button hints
+- **Gamepad layouts**: PS5 / PS4 (default), Xbox, Switch, Japanese PlayStation, with button names in the help bar and fret button hints
+- **Phones as guitars and mics** over Wi-Fi (the PHONES bar on the main menu: click it for the join code)
 - Song start errors shown in a dialog, and an error log you can find (see below)
+
+Only phone things are left out: touch buttons, the phone's *Play Sound Through* choice (on a PC the output
+device is under **Settings → Experimental**) and *Start game network* (the phone's own hotspot).
 
 The game is built from the same `patches/`, `patches-core/` and `overlay/` as the Android version,
 so every new feature lands in both. This folder only holds what is different for Windows.
@@ -40,6 +46,12 @@ Other differences from the Android build:
 Unity secrets as the Android build (see the main README's Setup). When it finishes, open
 **Releases**, download `YARG-Resurrected-Windows-<n>.zip`, unzip it anywhere and run `YARG.exe`.
 It also runs by itself on every push to `main` that changes the game.
+
+Each build is **play-tested on a Windows machine before it is published** (`tests/desktop-play-test.sh`
+and the game's own test mode): the game starts and reaches the menu, a phone joins over the network as
+a guitarist and leaves again, a test song is scanned, Song Setup opens, and a bot plays the song with
+the guitar sound generated for it. The screenshots and `result.txt` are attached to the release.
+To keep Windows level with the phone version, run this workflow whenever the Android one is run.
 
 **On your own PC:**
 1. Install **Git for Windows** (with Git LFS) and Unity Hub, then the Unity version in the project's

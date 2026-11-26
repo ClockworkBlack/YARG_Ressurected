@@ -1,0 +1,46 @@
+diff --git a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
+index 1e8e34c..34471ab 100644
+--- a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
++++ b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
+@@ -13,6 +13,11 @@ namespace YARG.Input
+             return device switch
+             {
+                 Keyboard keyboard => SetDefaultBindings(keyboard),
++                // A phone joined over Wi-Fi always sends the guitar layout (frets on A/B/Y/X/LB,
++                // strum on the D-pad), whichever layout is chosen for real gamepads. Without this,
++                // a phone added to a profile by hand on a computer got the gamepad's buttons.
++                Gamepad gamepad when YARG.Remote.RemotePlayManager.IsRemoteDevice(gamepad)
++                    => SetDefaultBindings(gamepad, GamepadBindingMode.RB4InstrumentMapper_Guitar),
+                 Gamepad gamepad => SetDefaultBindings(gamepad, ControllerLayout.GuitarBindingMode),
+ 
+                 FiveFretGuitar guitar => SetDefaultBindings(guitar),
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index bb97bf9..7f89a40 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -139,8 +139,9 @@ namespace YARG.Menu.DifficultySelect
+                 // Left / right (D-pad or a guitar's joystick): song speed, 5% at a time
+                 new NavigationScheme.Entry(MenuAction.Left, "Menu.Common.Left", () => NudgeSpeed(-0.05f), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Right, "Menu.Common.Right", () => NudgeSpeed(0.05f), hide: true),
+-#if UNITY_ANDROID && !UNITY_EDITOR
+-                // The two bars along the bottom (Song Setup, Venue) were for touch only
++#if (UNITY_ANDROID || UNITY_STANDALONE) && !UNITY_EDITOR
++                // The two bars along the bottom (Song Setup, Venue) were for touch only.
++                // (Song Setup is on the phone and on the Windows, Mac and Linux builds.)
+                 new NavigationScheme.Entry(MenuAction.Yellow, "Menu.Common.SongSetup",
+                     () => YARG.Menu.SongSetup.SongSetupPanel.OpenFromMenu()),
+ #endif
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index 23fd7f5..f575908 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -58,7 +58,8 @@ namespace YARG.Menu.ProfileList
+                 new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfile),
+                 // The MIC TEST and PHONES bars on this screen were for touch only
+                 new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.MicTest", () => YARG.Audio.MicTest.OpenFromMenu()),
+-#if UNITY_ANDROID && !UNITY_EDITOR
++#if (UNITY_ANDROID || UNITY_STANDALONE) && !UNITY_EDITOR
++                // (Phones join the Windows, Mac and Linux builds too)
+                 new NavigationScheme.Entry(MenuAction.Orange, "Menu.Common.Phones", () => YARG.Remote.RemotePlayManager.OpenPhones()),
+ #endif
+             }, true));

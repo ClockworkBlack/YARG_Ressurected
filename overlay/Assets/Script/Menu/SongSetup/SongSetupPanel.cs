@@ -1,8 +1,8 @@
 // The Song Setup screen.
 //
 // On the instrument / difficulty screen (after picking a song) a "SONG SETUP" bar appears at the
-// bottom. Tapping it, or the controller's Song Setup button (shown in the help bar), opens this
-// screen, where you can, while listening to the song:
+// bottom. Tapping it (clicking it on a computer), or the controller's Song Setup button (shown in
+// the help bar), opens this screen, where you can, while listening to the song:
 //
 //   - change its speed (50% to 200%) and its key (12 semitones down to 12 up);
 //   - pick a stretch of it on a bar of the whole song, by dragging the two yellow ends, and tap
@@ -71,7 +71,8 @@ namespace YARG.Menu.SongSetup
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
-#if UNITY_ANDROID && !UNITY_EDITOR
+            // The phone, and the Windows, Mac and Linux builds (not inside the Unity editor)
+#if (UNITY_ANDROID || UNITY_STANDALONE) && !UNITY_EDITOR
             var host = new GameObject("YARG Song Setup");
             DontDestroyOnLoad(host);
             host.AddComponent<SongSetupPanel>();
@@ -129,6 +130,18 @@ namespace YARG.Menu.SongSetup
             if (CanOpen)
             {
                 Safely(_instance.Open);
+            }
+        }
+
+        /// <summary>True while the setup screen is showing.</summary>
+        public static bool IsOpen => _instance != null && _instance._panel != null && _instance._panel.activeSelf;
+
+        /// <summary>Closes the setup screen if it is showing.</summary>
+        public static void CloseFromMenu()
+        {
+            if (IsOpen)
+            {
+                Safely(_instance.Close);
             }
         }
 
@@ -750,7 +763,9 @@ namespace YARG.Menu.SongSetup
             }
             var hint = Label(panel, 0.04f, 0.305f, 0.96f, 0.355f, 26, TextAlignmentOptions.Center);
             hint.color = new Color(0.72f, 0.77f, 0.86f);
-            hint.text = "Drag the yellow ends to choose a section. Tap anywhere on the bar to listen from there.";
+            hint.text = Application.isMobilePlatform
+                ? "Drag the yellow ends to choose a section. Tap anywhere on the bar to listen from there."
+                : "Drag the yellow ends to choose a section. Click anywhere on the bar to listen from there.";
 
             _previewButton = TextButton(panel, 0.04f, 0.185f, 0.34f, 0.285f, "Play preview", Yellow, Color.black,
                 TogglePreview);

@@ -1,9 +1,11 @@
 # YARG Resurrected for Linux and Chromebook
 
 A Linux (64-bit Intel/AMD, `x86_64`) build of the same game as the Android, Windows and Mac
-versions, with everything this repo adds: guitar sound on notes, Song Setup, menu music, gamepad
-layouts, venues and crowd, story mode, vocal parts, the mic test, phones as controllers and mics,
-and the error log.
+versions, with everything this repo adds: guitar sound on notes, Song Setup (the SONG SETUP bar
+after picking a song), Deep Music Mode, vocals with Challenge Mode, vocal parts and sing-off, the mic
+test, story mode, venues and crowd, menu music, gamepad layouts, phones as controllers and mics (the
+PHONES bar on the main menu), and the error log. Only phone things are left out: touch buttons, the
+phone's *Play Sound Through* choice and *Start game network*.
 
 It runs on desktop Linux (Ubuntu, Debian, Mint, Fedora, SteamOS desktop mode…) and on
 **Chromebooks with an Intel or AMD processor**, through ChromeOS's *Linux development environment*.
@@ -138,6 +140,13 @@ user may need permission for `/dev/hidraw*` (a udev rule, as for Clone Hero).
 **From GitHub:** **Actions → Build Linux (and Chromebook) → Run workflow** (same Unity secrets as the
 other builds). It also runs on every push to `main` that changes the game, and publishes
 `YARG-Resurrected-Linux-<n>.tar.gz` under Releases.
+
+Each build is **play-tested on a Linux machine before it is published** (`tests/desktop-play-test.sh`
+and the game's own test mode): it is installed with `install.sh`, the game starts and reaches the menu,
+a phone joins over the network as a guitarist and leaves again, a test song is scanned, Song Setup
+opens, and a bot plays the song with the guitar sound generated for it. The screenshots and
+`result.txt` are attached to the release. To keep Linux level with the phone version, run this
+workflow whenever the Android one is run.
 
 **On your own Linux machine:** `bash linux/prepare-project.sh`, then
 `dotnet tool install --global NuGetForUnity.Cli && nugetforunity restore project`, open `project/` in

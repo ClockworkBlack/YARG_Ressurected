@@ -4,8 +4,9 @@
 #   bash tests/desktop-play-test.sh <game> <out-dir>
 #
 # <game> is YARG.exe (Windows), the .app folder (Mac) or YARG.x86_64 (Linux). The game's own
-# play test (overlay/Assets/Script/Testing/SmokeTest.cs) waits for the main menu, scans
-# tests/smoke-song, plays it with a bot guitarist and quits with 0 (pass) or 1 (fail).
+# play test (overlay/Assets/Script/Testing/SmokeTest.cs) waits for the main menu, joins a phone
+# over the network (the phone remote), scans tests/smoke-song, opens Song Setup, plays the song
+# with a bot guitarist and a generated guitar track, and quits with 0 (pass) or 1 (fail).
 # This script adds a watchdog, prints what happened, and fails on native library errors
 # (a missing or wrong-architecture .dll / .so / .dylib) even if the game itself carried on.
 # On Linux without a display it runs the game inside Xvfb.

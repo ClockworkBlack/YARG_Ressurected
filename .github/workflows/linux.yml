@@ -30,7 +30,7 @@ env:
 
 jobs:
   tests:
-    name: Automated tests (phone remote, guitar sound, play-test song)
+    name: Automated tests (phone remote, guitar sound, singing, story, play-test song)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,14 +41,30 @@ jobs:
         run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
       - name: Run tests
         run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes" "$RUNNER_TEMP/demo"
-      - name: Check the play-test song with the game's own song scanner
+
+      # The same checks the Android build runs before it builds, so a desktop build is never
+      # made from code those tests reject. The singing tests and the song check use the game's
+      # own source with this repo's patches applied (no art assets).
+      - name: Get YARG source and its scoring engine
         run: |
           git init "$RUNNER_TEMP/up"
           git -C "$RUNNER_TEMP/up" remote add origin "https://github.com/$UPSTREAM_REPO"
           GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" fetch -q --depth 1 origin "$UPSTREAM_REF"
           GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" checkout -q FETCH_HEAD
           GIT_LFS_SKIP_SMUDGE=1 git -C "$RUNNER_TEMP/up" submodule update -q --init --depth 1 YARG.Core
-          for p in patches-core/*.patch; do git -C "$RUNNER_TEMP/up/YARG.Core" apply --whitespace=nowarn "$GITHUB_WORKSPACE/$p"; done
+          for p in patches/*.patch; do echo "Applying $p"; git -C "$RUNNER_TEMP/up" apply --whitespace=nowarn "$GITHUB_WORKSPACE/$p"; done
+          for p in patches-core/*.patch; do echo "Applying $p to YARG.Core"; git -C "$RUNNER_TEMP/up/YARG.Core" apply --whitespace=nowarn "$GITHUB_WORKSPACE/$p"; done
+      # Unity compiles these files as C# 9 against .NET Standard 2.1: catch anything newer here
+      - name: Singing and story code only use what Unity has
+        run: |
+          dotnet build tests/VocalsApiCheck -c Release
+          dotnet build tests/StoryApiCheck -c Release
+      - name: Run singing tests (pitch detection, microphone timing, scoring, Challenge Mode)
+        run: dotnet run --project tests/VocalsTests -c Release -p:YargProjectDir="$RUNNER_TEMP/up"
+      - name: Run story mode tests
+        run: dotnet run --project tests/StoryTests -c Release -- overlay/Assets/Resources/YargStory
+      - name: Check the play-test song with the game's own song scanner
+        run: |
           dotnet run --project tests/SmokeSongCheck -c Release -p:YargCore="$RUNNER_TEMP/up/YARG.Core" \
             -- "tests/smoke-song/Smoke Test - YARG Resurrected"
 
@@ -221,17 +237,26 @@ jobs:
         with:
           tag_name: linux-build-${{ github.run_number }}
           name: YARG Resurrected for Linux and Chromebook, build ${{ github.run_number }}
+          # The tag marks the commit this build was made from (not whatever main is at)
+          target_commitish: ${{ github.sha }}
           prerelease: true
           files: |
             dist/*
             play-test/menu.png
+            play-test/phones.png
+            play-test/song-setup.png
             play-test/gameplay.png
+            play-test/result.txt
           body: |
-            Play-tested on a GitHub Linux machine before publishing: the game started, reached the menu,
-            scanned a test song and played it with a bot (screenshots attached).
-            Linux (x86_64) build of YARG Resurrected (upstream `${{ env.UPSTREAM_REF }}`), with the same
-            features as the Android, Windows and Mac builds. Also runs on Intel/AMD Chromebooks in the
-            Linux development environment.
+            Play-tested on a GitHub Linux machine before publishing (screenshots and result.txt attached):
+            the game was installed with install.sh, started and reached the menu, a phone joined over the
+            network as a guitarist and left again, a test song was scanned, Song Setup opened, and the song
+            was played by a bot with the guitar sound generated for it.
+            Linux (x86_64) build of YARG Resurrected from commit `${{ github.sha }}` (upstream
+            `${{ env.UPSTREAM_REF }}`), with the same game as the Android, Windows and Mac builds: guitar
+            sound on notes, Song Setup, Deep Music Mode, vocals with Challenge Mode and sing-off, venues and
+            crowd, story mode, menu music playlists, gamepad layouts and phones as controllers and mics.
+            Also runs on Intel/AMD Chromebooks in the Linux development environment.
             Install: put the .tar.gz in "Linux files", open Terminal and run
             `tar xzf YARG-Resurrected-Linux-${{ github.run_number }}.tar.gz && bash YARG-Resurrected/install.sh`.
             Step-by-step Chromebook instructions: linux/README.md.
