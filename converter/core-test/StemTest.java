@@ -234,6 +234,13 @@ final class StemTest {
         System.out.printf(java.util.Locale.US, "  %d Expert notes; %.0f%% of the %d sung notes are charted%n", expert.size(), 100 * coverage, song.sungNotes.size());
         check(coverage >= 0.8, "sung notes are charted (" + coverage + ")");
         check(r.bassChart != null, "the bass chart is still written");
+        // Only the verses are sung; the intro, choruses and outro follow the instruments (plus
+        // the part-measure before the first full measure and the tail after the last one).
+        int unsung = 0;
+        for (char c : song.sectionOf) if (c != 'V') unsung++;
+        System.out.println("  " + r.instrumentalMeasures + " measure(s) without vocals charted from the instruments (" + unsung + " unsung in the song)");
+        check(r.instrumentalMeasures >= unsung * 0.8 && r.instrumentalMeasures <= unsung + 2,
+                "measures without vocals follow the instruments (" + r.instrumentalMeasures + " of " + unsung + ")");
     }
 
     private static void charting(String name, SynthBand song) throws Exception {

@@ -13,7 +13,7 @@ Saved for later, roughly in the order they would help most.
 - [ ] Keys chart from the piano stem.
 - [ ] A faster, lighter model as a "quick" option (Spleeter 4-stem, about 79 MB).
 - [ ] Let the user pick which instrument the "guitar" chart follows when a song has no guitar (the automatic vocals choice below covers rap and other voice-led songs).
-- [ ] Play-test vocal-led charts (rap, R&B) in YARG; adjust the 25% cut-off if songs with a quiet guitar get switched, or rap songs with loud synths don't.
+- [ ] Play-test vocal-led charts (rap, R&B) in YARG; adjust the 35% cut-off if songs with a quiet guitar get switched, or rap songs with loud synths don't.
 
 ## Would improve what is there
 - [ ] **Play-test on real songs** in YARG on the Z Fold 7. The engine is now scored against synthetic band recordings with known answers, but only one real record has been through it (in the automated build, with nobody listening). Things to listen for: are there too many or too few notes (try the Fewer / More setting), do frets change where the music changes, do drum hits pull the chart away from the guitar.
@@ -37,3 +37,4 @@ Saved for later, roughly in the order they would help most.
 - [x] Instrument separation on the phone (HT-Demucs 6-stem); guitar charted from the guitar stem.
 - [x] Bass charts on all four difficulties, from the bass stem.
 - [x] Songs carried by the vocals: guitar chart from the instruments and vocals together, single notes only.
+- [x] In those songs, measures without vocals (piano intro, breaks) charted from the instruments with a lower note threshold.

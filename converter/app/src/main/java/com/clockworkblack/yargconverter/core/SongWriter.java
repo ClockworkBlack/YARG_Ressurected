@@ -8,6 +8,7 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -26,6 +27,11 @@ public final class SongWriter {
         public GuitarCharter.Chart bassChart;
         /** What the guitar chart was made from, in words for the user. */
         public String guitarSource = "the full mix";
+        /**
+         * In a song carried by the vocals: measures without vocals (intro, breaks, outro) whose
+         * guitar chart follows the instruments on their own. 0 otherwise.
+         */
+        public int instrumentalMeasures;
         public int bassTier = -1;
         public List<LyricsCharter.Event> lyrics = new ArrayList<>();
         public double bpm;
@@ -64,10 +70,21 @@ public final class SongWriter {
 
     /**
      * Below this share of (pitched instruments + vocals), the instruments are too thin to chart on
-     * their own and the guitar chart follows the vocals with them. A hip-hop track measured 18%;
-     * band recordings with a real guitar part sit far above it.
+     * their own and the guitar chart follows the vocals with them. Two hip-hop tracks measured 18%
+     * and 29% (the second has a quiet piano loop); band recordings with a real guitar part sit
+     * far above it.
      */
-    static final double VOCAL_LED_SHARE = 0.25;
+    static final double VOCAL_LED_SHARE = 0.35;
+
+    /** A measure whose vocals are under this share of the song's usual vocal level has none. */
+    static final double NO_VOCALS_LEVEL = 0.1;
+
+    /**
+     * Note threshold for the instruments in measures without vocals, against 1 for standard. An
+     * intro is usually quieter than the rest of the song, and at the standard threshold a soft
+     * piano intro loses a third of its notes.
+     */
+    static final double INSTRUMENTAL_THRESHOLD = 0.5;
 
     /** True when the separated instruments are a small part of the song next to the vocals. */
     static boolean vocalLed(Stems stems) {
@@ -145,6 +162,7 @@ public final class SongWriter {
             if (notes >= 24 && notes >= 0.2 * mixNotes) {
                 r.chart = chart;
                 r.guitarSource = names[i];
+                if (sources[i] == stems.voiced) chartInstrumentalMeasures(r, stems, options);
                 break;
             }
         }
@@ -160,6 +178,82 @@ public final class SongWriter {
                 r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
             }
         }
+    }
+
+    /**
+     * Which measures have no vocals, indexed by measure + 1 (so the pickup before the first full
+     * measure is entry 0). The vocal level of each frame is what the vocals add on top of the
+     * instruments; a measure has no vocals when its level is a small part of the song's usual
+     * level (the level that a quarter of the measures reach).
+     */
+    static boolean[] measuresWithoutVocals(Stems stems, TempoMap tempo, double duration) {
+        Features v = stems.voiced, m = stems.melodic;
+        int count = Math.max(0, tempo.measureOf(tempo.timeToTick(duration))) + 2;
+        double[] sum = new double[count];
+        int[] frames = new int[count];
+        int n = Math.min(v.frames(), m.frames());
+        for (int i = 0; i < n; i++) {
+            double power = (double) v.rms[i] * v.rms[i] - (double) m.rms[i] * m.rms[i];
+            int at = tempo.measureOf(tempo.timeToTick(v.timeOf(i))) + 1;
+            if (at < 0 || at >= count) continue;
+            sum[at] += Math.max(0, power);
+            frames[at]++;
+        }
+        double[] level = new double[count];
+        int used = 0;
+        for (int k = 0; k < count; k++) if (frames[k] > 0) level[used++] = sum[k] / frames[k];
+        boolean[] quiet = new boolean[count];
+        if (used == 0) return quiet;
+        double[] sorted = Arrays.copyOf(level, used);
+        Arrays.sort(sorted);
+        double usual = sorted[(int) (used * 0.75)];
+        if (usual <= 0) return quiet;
+        for (int k = 0; k < count; k++) quiet[k] = frames[k] > 0 && sum[k] / frames[k] < NO_VOCALS_LEVEL * usual;
+        return quiet;
+    }
+
+    /**
+     * In a chart that follows the vocals, the measures without vocals (an intro played on the
+     * piano, say) follow the instruments instead, with a lower bar for how strong a note must be.
+     * Single notes, like the rest of the chart.
+     */
+    private static void chartInstrumentalMeasures(Result r, Stems stems, GuitarCharter.Options options) {
+        if (stems.melodic == null) return;
+        boolean[] quiet = measuresWithoutVocals(stems, r.tempo, r.duration);
+        int quietCount = 0;
+        for (boolean q : quiet) if (q) quietCount++;
+        if (quietCount == 0) return;
+        GuitarCharter.Options o = options == null ? new GuitarCharter.Options() : options.copy();
+        o.chords = false;
+        o.threshold *= INSTRUMENTAL_THRESHOLD;
+        GuitarCharter.Chart instruments = GuitarCharter.build(stems.melodic, GuitarCharter.detectOnsets(stems.melodic), r.tempo, r.bpm, o);
+        for (int d = 0; d < r.chart.notes.size(); d++) {
+            List<GuitarCharter.Note> merged = new ArrayList<>();
+            for (GuitarCharter.Note n : r.chart.notes.get(d)) if (!isQuiet(quiet, r.tempo, n.tick)) merged.add(n);
+            for (GuitarCharter.Note n : instruments.notes.get(d)) if (isQuiet(quiet, r.tempo, n.tick)) merged.add(n);
+            Collections.sort(merged, new Comparator<GuitarCharter.Note>() {
+                @Override
+                public int compare(GuitarCharter.Note a, GuitarCharter.Note b) {
+                    return Long.compare(a.tick, b.tick);
+                }
+            });
+            // Where the two meet, a held note must let go before the next note.
+            for (int i = 0; i + 1 < merged.size(); i++) {
+                GuitarCharter.Note n = merged.get(i);
+                long room = merged.get(i + 1).tick - n.tick - TempoMap.RESOLUTION / 2;
+                if (n.sustain > 0 && n.sustain > room) {
+                    long sustain = room >= TempoMap.RESOLUTION / 2 ? room : 0;
+                    merged.set(i, new GuitarCharter.Note(n.tick, n.lane, n.lane2, sustain));
+                }
+            }
+            r.chart.notes.set(d, merged);
+        }
+        r.instrumentalMeasures = quietCount;
+    }
+
+    private static boolean isQuiet(boolean[] quiet, TempoMap tempo, long tick) {
+        int at = tempo.measureOf(tick) + 1;
+        return at >= 0 && at < quiet.length && quiet[at];
     }
 
     /** Start of the loudest 30 seconds, used as the song preview in the menu. */

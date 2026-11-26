@@ -854,6 +854,10 @@ public final class MainActivity extends Activity {
             sb.append(String.format(Locale.US, "Split into instruments in %d min %02d s\n", separationMs / 60000, (separationMs / 1000) % 60));
         }
         sb.append("Guitar chart made from ").append(result.guitarSource).append("\n");
+        if (result.instrumentalMeasures > 0) {
+            sb.append(result.instrumentalMeasures).append(result.instrumentalMeasures == 1 ? " measure" : " measures")
+                    .append(" without vocals (intro, breaks) charted from the instruments\n");
+        }
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 result.noteCount(GuitarCharter.EASY), result.noteCount(GuitarCharter.MEDIUM),
                 result.noteCount(GuitarCharter.HARD), result.noteCount(GuitarCharter.EXPERT)));

@@ -86,14 +86,20 @@ bass. Without it, everything below is done on the full mix and there is no bass 
 
 **Songs carried by the vocals** (rap over a beat, for example) have little or nothing for a
 guitar chart to follow once the drums and bass are taken out. When the pitched instruments
-are under 25% of the pitched instruments and vocals together, the guitar chart follows the
+are under 35% of the pitched instruments and vocals together, the guitar chart follows the
 **instruments and the vocals together**, and uses **single notes only**: a voice sings one
 note at a time, and its breathy sound would otherwise turn into chords. The converter's Done
 message then says "Guitar chart made from the separated instruments and vocals, as single
 notes". On a hip-hop test track (88% of the sound in the bass/808s, 8% vocals, 1% other
 instruments, no guitar) this raised the share of guitar notes that land on a rapped syllable
-from 35% to 67%. Songs with a real guitar part don't reach the 25% cut-off and are charted as
+from 35% to 67%. Songs with a real guitar part don't reach the cut-off and are charted as
 before.
+
+In those songs, **measures without vocals** (a piano intro, a beat break, the outro) follow the
+instruments on their own, with half the usual bar for how strong a note must be, because an
+intro is usually softer than the rest of the song. On a rap track with a soft piano intro this
+charted 15 of the intro's 18 piano notes instead of 11. The Done message says how many
+measures were charted this way.
 
 The app listens about 86 times a second and works in five steps.
 
@@ -163,8 +169,9 @@ For separation, four things are checked on every build:
    move the right way 93-96% of the time, 0% the wrong way).
 3. **A song carried by the vocals**: the busy test song's drums, bass and singing with only a
    trace of guitar. The guitar chart must follow the vocals, with no chords on any difficulty,
-   and chart at least 80% of the sung notes (it charts all of them). The full band songs, which
-   have singing too, must still chart guitar from the guitar.
+   and chart at least 80% of the sung notes (it charts all of them); the unsung intro, choruses
+   and outro must follow the instruments instead. The full band songs, which have singing too,
+   must still chart guitar from the guitar.
 4. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their

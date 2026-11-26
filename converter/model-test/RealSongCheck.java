@@ -115,6 +115,7 @@ public final class RealSongCheck {
         System.out.printf(Locale.US, "Tempo %.1f BPM, %d beats to the measure, %d tempo marker(s)%n", split.bpm, split.beatsPerMeasure, split.tempo.tick.length);
         describe("Guitar from the full mix", plain.chart, seconds);
         describe("Guitar from " + split.guitarSource, split.chart, seconds);
+        if (split.instrumentalMeasures > 0) System.out.println("  " + split.instrumentalMeasures + " measure(s) without vocals charted from the instruments");
         if (split.bassChart != null) describe("Bass from the separated bass", split.bassChart, seconds);
         else System.out.println("No bass chart.");
 
