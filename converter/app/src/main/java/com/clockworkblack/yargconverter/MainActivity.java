@@ -858,8 +858,10 @@ public final class MainActivity extends Activity {
             sb.append(result.instrumentalMeasures).append(result.instrumentalMeasures == 1 ? " measure" : " measures")
                     .append(" without vocals (intro, breaks) charted from the instruments\n");
         }
-        if (result.drumNotesInBass > 0) {
-            sb.append("Bass also covers the drums: ").append(result.drumNotesInBass).append(" drum hits added on Expert\n");
+        if (result.deepChart != null || result.deepBassChart != null) {
+            sb.append("Deep Music Mode charts included (turn on the Deep Music Mode modifier in YARG): guitar +")
+                    .append(result.deepGuitarNotesAdded).append(" notes from the vocals and other instruments, bass +")
+                    .append(result.drumNotesInBass).append(" drum hits on Expert\n");
         }
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 result.noteCount(GuitarCharter.EASY), result.noteCount(GuitarCharter.MEDIUM),

@@ -117,7 +117,8 @@ public final class RealSongCheck {
         describe("Guitar from " + split.guitarSource, split.chart, seconds);
         if (split.instrumentalMeasures > 0) System.out.println("  " + split.instrumentalMeasures + " measure(s) without vocals charted from the instruments");
         if (split.bassChart != null) describe("Bass from the separated bass", split.bassChart, seconds);
-        if (split.drumNotesInBass > 0) System.out.println("  " + split.drumNotesInBass + " drum hits added to the Expert bass");
+        if (split.deepChart != null) describe("Deep Music Mode guitar", split.deepChart, seconds);
+        if (split.deepBassChart != null) describe("Deep Music Mode bass (" + split.drumNotesInBass + " drum hits added)", split.deepBassChart, seconds);
         else System.out.println("No bass chart.");
 
         Set<Long> mixTicks = new HashSet<>();

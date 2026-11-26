@@ -189,6 +189,21 @@ final class StemTest {
         return s;
     }
 
+    /** Share of {@code times} with a note of the chart's Expert part within 60 ms. */
+    private static double covered(GuitarCharter.Chart chart, SongWriter.Result r, List<Double> times) {
+        List<GuitarCharter.Note> notes = chart.notes.get(GuitarCharter.EXPERT);
+        double[] at = new double[notes.size()];
+        for (int i = 0; i < at.length; i++) at[i] = r.tempo.tickToTime(notes.get(i).tick);
+        java.util.Arrays.sort(at);
+        int hit = 0;
+        for (double t : times) {
+            int k = java.util.Arrays.binarySearch(at, t);
+            if (k < 0) k = -k - 1;
+            if ((k < at.length && Math.abs(at[k] - t) < 0.06) || (k > 0 && Math.abs(at[k - 1] - t) < 0.06)) hit++;
+        }
+        return times.isEmpty() ? 0 : (double) hit / times.size();
+    }
+
     /** Adds the vocals and drums measurements, the way the app does. */
     static void addVocals(SongWriter.Stems s, float[] vocals, float[] drums, int sr) {
         s.vocals = analyze(vocals, sr);
@@ -236,27 +251,24 @@ final class StemTest {
         System.out.printf(java.util.Locale.US, "  %d Expert notes; %.0f%% of the %d sung notes are charted%n", expert.size(), 100 * coverage, song.sungNotes.size());
         check(coverage >= 0.8, "sung notes are charted (" + coverage + ")");
         check(r.bassChart != null, "the bass chart is still written");
-        if (r.bassChart != null) {
-            // No drum chart is played, so the bass covers the kick and snare as well.
-            List<GuitarCharter.Note> bass = r.bassChart.notes.get(GuitarCharter.EXPERT);
-            double[] bt = new double[bass.size()];
-            for (int i = 0; i < bt.length; i++) bt[i] = r.tempo.tickToTime(bass.get(i).tick);
-            java.util.Arrays.sort(bt);
-            int covered = 0;
-            for (double t : song.drumHits) {
-                int k = java.util.Arrays.binarySearch(bt, t);
-                if (k < 0) k = -k - 1;
-                if ((k < bt.length && Math.abs(bt[k] - t) < 0.06) || (k > 0 && Math.abs(bt[k - 1] - t) < 0.06)) covered++;
-            }
-            double share = song.drumHits.isEmpty() ? 0 : (double) covered / song.drumHits.size();
-            System.out.printf(java.util.Locale.US, "  bass: %d Expert notes, %d of them drum hits; %.0f%% of the %d kick and snare hits covered%n",
-                    bass.size(), r.drumNotesInBass, 100 * share, song.drumHits.size());
-            check(r.drumNotesInBass > 0, "drum hits are added to the bass");
-            check(share >= 0.8, "the bass covers the kick and snare (" + share + ")");
+        check(r.bassChart != null && r.drumNotesInBass > 0 && r.deepBassChart != null, "Deep Music Mode bass is written");
+        if (r.deepBassChart != null && r.bassChart != null) {
+            // Deep Music Mode: no drum chart is played, so the bass covers the kick and snare too;
+            // the normal bass stays the bass alone.
+            double share = covered(r.deepBassChart, r, song.drumHits), plain = covered(r.bassChart, r, song.drumHits);
+            System.out.printf(java.util.Locale.US, "  Deep Music Mode bass: %d Expert notes (normal bass %d), %d drum hits added; kick and snare covered %.0f%% (normal bass %.0f%%)%n",
+                    r.deepBassChart.notes.get(GuitarCharter.EXPERT).size(), r.bassChart.notes.get(GuitarCharter.EXPERT).size(), r.drumNotesInBass, 100 * share, 100 * plain);
+            check(share >= 0.8, "Deep Music Mode bass covers the kick and snare (" + share + ")");
+            check(r.deepBassChart.notes.get(GuitarCharter.EXPERT).size() > r.bassChart.notes.get(GuitarCharter.EXPERT).size(), "the normal bass has no drum hits added");
             for (int d = 0; d < 4; d++) {
-                for (GuitarCharter.Note b : r.bassChart.notes.get(d)) check(b.lane < GuitarCharter.lanes(d) && b.lane2 < 0, "bass notes fit the difficulty's frets");
+                for (GuitarCharter.Note b : r.deepBassChart.notes.get(d)) check(b.lane < GuitarCharter.lanes(d) && b.lane2 < 0, "bass notes fit the difficulty's frets");
             }
         }
+        check(r.deepChart != null && r.deepChart.notes.get(GuitarCharter.EXPERT).size() >= r.chart.notes.get(GuitarCharter.EXPERT).size(),
+                "Deep Music Mode guitar is written and keeps every normal guitar note's place");
+        java.io.StringWriter file = new java.io.StringWriter();
+        SongWriter.writeChart(file, new com.clockworkblack.yargconverter.core.SongMeta(), r, "song.ogg");
+        check(file.toString().contains("[ExpertDoubleGuitar]") && file.toString().contains("[ExpertDoubleRhythm]"), "Deep Music Mode parts are in the chart file");
         // Only the verses are sung; the intro, choruses and outro follow the instruments (plus
         // the part-measure before the first full measure and the tail after the last one).
         int unsung = 0;
@@ -285,6 +297,10 @@ final class StemTest {
         check(Math.abs(after.beatAvgMs - before.beatAvgMs) < 1e-6, "beats still come from the full mix");
 
         check(split.bassChart != null, "a bass chart is written");
+        check(split.deepChart != null && split.deepBassChart != null, "Deep Music Mode guitar and bass are written");
+        if (split.deepBassChart != null) {
+            check(covered(split.deepBassChart, split, song.drumHits) >= 0.8, "Deep Music Mode bass covers the kick and snare");
+        }
         if (split.bassChart != null) {
             ChartEval bass = ChartEval.score(song, split, song.bassNotes, split.bassChart);
             System.out.println("  bass from the separated bass:");

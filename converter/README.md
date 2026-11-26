@@ -86,24 +86,29 @@ bass. Without it, everything below is done on the full mix and there is no bass 
 
 **Songs carried by the vocals** (rap over a beat, for example) have little or nothing for a
 guitar chart to follow once the drums and bass are taken out. When the pitched instruments
-are under 35% of the pitched instruments and vocals together, the converter charts the song
-the way a band without a drummer would cover it:
+are under 35% of the pitched instruments and vocals together, the **guitar chart follows the
+vocals**, as single notes (a voice sings one note at a time, and its breathy sound would
+otherwise turn into chords). In measures without vocals (intro, breaks, outro) it follows the
+instruments instead, with half the usual bar for how strong a note must be, since an intro
+is usually softer than the rest of the song. Songs with a real guitar part don't reach the
+cut-off and are charted as before.
 
-- **Guitar covers the vocals and the beat's melody** (a chime, a keys loop). The vocals and
-  the instruments are charted separately and merged: every vocal note, plus every instrument
-  note that does not fall right next to one. The instruments get half the usual bar for how
-  strong a note must be, since a chime under a rap is quiet. Single notes only: a voice sings
-  one note at a time, and its breathy sound would otherwise turn into chords. In measures
-  without vocals (intro, breaks, outro) only the instruments are charted.
-- **Bass covers the 808s and the drums.** Drum hits between the bass notes join the bass chart;
-  a hit takes the fret of the bass note that is sounding, and a bright hit (snare, clap, hat)
-  takes the fret next to it. A held note ends where a drum hit comes in.
+**Deep Music Mode parts.** Every song split into instruments also gets a second guitar and bass
+part that cover the whole song, for playing with no drum or vocal chart. They are written as
+the co-op guitar (`DoubleGuitar`) and rhythm (`DoubleRhythm`) parts, which the game's **Deep
+Music Mode** modifier plays in place of guitar and bass:
 
-The Done message says when this happens. On two rap tracks, the guitar now covers 85-92% of
-the chime/keys notes (from 64-71%) and 84-87% of the rapped syllables (from 68-71%), at about
-4-5 notes a second on Expert; the bass covers 81% of the main drum hits on one (from 28%),
-and every other trap hi-hat on the other. Songs with a real guitar part don't reach the
-cut-off and are charted as before, without drums in the bass.
+- **Guitar** adds the vocals and the other instruments' melody (a chime, a keys loop), charted
+  separately and merged in wherever they don't fall right next to a guitar note. In a song
+  carried by the vocals that is the vocals plus the beat's melody all the way through.
+- **Bass** adds the drum hits between its notes. A hit takes the fret of the bass note that is
+  sounding, and a bright hit (snare, clap, hat) the fret next to it; a held note ends where a
+  drum hit comes in.
+
+On two rap tracks, Deep Music Mode guitar covers 85-92% of the chime/keys notes (normal guitar:
+64-71%) and 84-87% of the rapped syllables, at about 4-5 notes a second on Expert; Deep Music
+Mode bass covers 81% of the main drum hits on one, and every other trap hi-hat on the other.
+The Done message gives how many notes each part adds.
 
 **Bass charts** (from the separated bass) read each note's name allowing for the song's own
 tuning, which is often not A = 440 Hz. A long note (a trap 808, a held synth bass) pumps and

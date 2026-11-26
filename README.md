@@ -14,6 +14,7 @@ BASS callbacks, `/storage/emulated/0/YARG/songs`, touch controls, the all-files-
   so language files never unpacked and menus showed raw keys like `MENU.MAIN.OPTIONS.QUICKPLAY`,
 - the **phone's own mic** for vocals, plus **other phones as controllers and mics** over Wi-Fi (see below),
 - a controller-type prompt on Android (gamepad / CRKD guitar / other guitar),
+- a **Deep Music Mode** modifier: guitar and bass cover the whole song (see below),
 - CI that publishes the APK as a GitHub Release.
 
 GitHub Actions downloads YARG-DROID at a pinned commit (`UPSTREAM_REF`), applies `patches/*.patch`,
@@ -124,6 +125,26 @@ Notes:
 - Each build makes a new self-signed certificate, so guests see the warning again after an update.
 - Anyone on the same Wi-Fi can open the page, so use it on networks you trust.
 - Wi-Fi adds a little delay. Run YARG's calibration with a phone if timing feels off.
+
+## Deep Music Mode: guitar and bass cover the whole song
+
+For playing without a drum kit or a singer, songs made with the YARG Converter carry a second
+guitar part and a second bass part that cover everything:
+
+- **Guitar** adds the vocals and the beat's melody (a chime, a keys loop) to the guitar notes.
+  In a rap song that means the rapped syllables plus the chime or piano loop under them.
+- **Bass** adds the drum hits between its notes: a kick plays the bass note that is sounding,
+  a snare, clap or hat the fret next to it.
+
+To play them, turn on **Deep Music Mode** in the **Modifiers** list when choosing your
+difficulty (it is offered on guitar and bass). Each player chooses for themselves, so one person
+can play the normal guitar while another plays Deep Music Mode bass. Songs without these parts
+(anything not made by the converter) play as normal with the modifier on.
+
+The parts sit in the song's co-op guitar and rhythm slots, so the song list also shows those
+instruments for converted songs: picking **Co-op Guitar** or **Rhythm** plays the Deep Music
+Mode guitar or bass directly. Convert a song again with the latest converter to add the parts
+to songs converted earlier.
 
 ## Guitar sound on your notes
 

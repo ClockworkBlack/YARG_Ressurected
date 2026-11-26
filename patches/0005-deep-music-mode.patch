@@ -1,0 +1,129 @@
+diff --git a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+index 72ab0b9..25ee2f2 100644
+--- a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
++++ b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+@@ -171,8 +171,10 @@ namespace YARG.Gameplay.Player
+ 
+         protected override InstrumentDifficulty<GuitarNote> GetNotes(SongChart chart)
+         {
+-            var track = chart.GetFiveFretTrack(Player.Profile.CurrentInstrument).Clone();
+-            return track.GetDifficulty(Player.Profile.CurrentDifficulty);
++            // YARG Resurrected: the Deep Music Mode modifier plays the song's whole-song cover parts.
++            var profile = Player.Profile;
++            var track = chart.GetFiveFretTrack(profile.CurrentInstrument, profile.CurrentModifiers, profile.CurrentDifficulty).Clone();
++            return track.GetDifficulty(profile.CurrentDifficulty);
+         }
+ 
+         protected override GuitarEngine CreateEngine()
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index c4c3d8a..5494bc6 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "No Dynamics",
+             "NoVocalPercussion" : "No Percussion",
+             "RangeCompress": "No Range Shifts",
+-            "OpensToGreens": "Opens To Greens"
++            "OpensToGreens": "Opens To Greens",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "Album",
+diff --git a/Assets/StreamingAssets/lang/es-ES.json b/Assets/StreamingAssets/lang/es-ES.json
+index be3c24b..67c5cf0 100644
+--- a/Assets/StreamingAssets/lang/es-ES.json
++++ b/Assets/StreamingAssets/lang/es-ES.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "Sin Dinámicas",
+             "NoVocalPercussion": "Sin Percusión",
+             "RangeCompress": "Sin Cambio de Rangos",
+-            "OpensToGreens": "Abiertos a Verdes"
++            "OpensToGreens": "Abiertos a Verdes",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "Álbum",
+diff --git a/Assets/StreamingAssets/lang/fr-FR.json b/Assets/StreamingAssets/lang/fr-FR.json
+index 1d82a42..2793e84 100644
+--- a/Assets/StreamingAssets/lang/fr-FR.json
++++ b/Assets/StreamingAssets/lang/fr-FR.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "Sans dynamiques",
+             "NoVocalPercussion": "Sans percussion",
+             "RangeCompress": "Sans gamme",
+-            "OpensToGreens": "Toutes Notes ouvertes"
++            "OpensToGreens": "Toutes Notes ouvertes",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "Album",
+diff --git a/Assets/StreamingAssets/lang/it-IT.json b/Assets/StreamingAssets/lang/it-IT.json
+index ae8eb37..a335924 100644
+--- a/Assets/StreamingAssets/lang/it-IT.json
++++ b/Assets/StreamingAssets/lang/it-IT.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "Nessuna Dinamica",
+             "NoVocalPercussion": "Nessuna Percussione",
+             "RangeCompress": "Senza cambi di posizione",
+-            "OpensToGreens": "Apre ai Verdi"
++            "OpensToGreens": "Apre ai Verdi",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "Album",
+diff --git a/Assets/StreamingAssets/lang/ja-JP.json b/Assets/StreamingAssets/lang/ja-JP.json
+index 677001d..9407700 100644
+--- a/Assets/StreamingAssets/lang/ja-JP.json
++++ b/Assets/StreamingAssets/lang/ja-JP.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "強弱法なし",
+             "NoVocalPercussion": "打楽器なし",
+             "RangeCompress": "範囲の変動なし",
+-            "OpensToGreens": "オプンをグリンに交換する"
++            "OpensToGreens": "オプンをグリンに交換する",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "アルバム",
+diff --git a/Assets/StreamingAssets/lang/pl-PL.json b/Assets/StreamingAssets/lang/pl-PL.json
+index a676c30..9c69f49 100644
+--- a/Assets/StreamingAssets/lang/pl-PL.json
++++ b/Assets/StreamingAssets/lang/pl-PL.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "Bez dynamiki",
+             "NoVocalPercussion": "Bez nut perkusyjnych",
+             "RangeCompress": "Bez zmian pozycji",
+-            "OpensToGreens": "Puste struny na zielone nuty"
++            "OpensToGreens": "Puste struny na zielone nuty",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "Album",
+diff --git a/Assets/StreamingAssets/lang/pt-BR.json b/Assets/StreamingAssets/lang/pt-BR.json
+index ca502ae..f1edd69 100644
+--- a/Assets/StreamingAssets/lang/pt-BR.json
++++ b/Assets/StreamingAssets/lang/pt-BR.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "Sem Dinâmicas",
+             "NoVocalPercussion": "Sem Percussão",
+             "RangeCompress": "Sem Mudança de Alcance",
+-            "OpensToGreens": "Abertas para Verdes"
++            "OpensToGreens": "Abertas para Verdes",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "Álbum",
+diff --git a/Assets/StreamingAssets/lang/pt-PT.json b/Assets/StreamingAssets/lang/pt-PT.json
+index 5fb7eb6..fa25816 100644
+--- a/Assets/StreamingAssets/lang/pt-PT.json
++++ b/Assets/StreamingAssets/lang/pt-PT.json
+@@ -65,7 +65,8 @@
+             "NoDynamics": "No Dynamics",
+             "NoVocalPercussion": "No Percussion",
+             "RangeCompress": "No Range Shifts",
+-            "OpensToGreens": "Opens To Greens"
++            "OpensToGreens": "Opens To Greens",
++            "DeepMusicMode": "Deep Music Mode"
+         },
+         "SortAttribute": {
+             "Album": "Álbum",

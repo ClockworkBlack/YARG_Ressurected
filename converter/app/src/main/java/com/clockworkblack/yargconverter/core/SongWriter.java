@@ -32,8 +32,18 @@ public final class SongWriter {
          * guitar chart follows the instruments on their own. 0 otherwise.
          */
         public int instrumentalMeasures;
-        /** In a song carried by the vocals: drum hits added to the Expert bass chart. 0 otherwise. */
-        public int drumNotesInBass;
+        /**
+         * Deep Music Mode guitar (written as the co-op guitar part, which the game's Deep Music
+         * Mode modifier plays in place of the guitar): the guitar chart plus the vocals and the
+         * other instruments' melody, so that with no drum or vocal chart in use the song is still
+         * all there. Null when the song was not split into instruments.
+         */
+        public GuitarCharter.Chart deepChart;
+        /** Deep Music Mode bass (written as the rhythm part): the bass chart plus the drum hits. */
+        public GuitarCharter.Chart deepBassChart;
+        /** Notes Deep Music Mode adds on Expert, to the guitar and to the bass (drum hits). */
+        public int deepGuitarNotesAdded, drumNotesInBass;
+        public int deepGuitarTier = -1, deepBassTier = -1;
         public int bassTier = -1;
         public List<LyricsCharter.Event> lyrics = new ArrayList<>();
         public double bpm;
@@ -167,11 +177,55 @@ public final class SongWriter {
             int notes = chart.notes.get(GuitarCharter.EXPERT).size();
             if (notes >= 16) r.bassChart = chart;
         }
-        if (vocalLed) addDrumsToBass(r, stems, options);
-        if (r.bassChart != null) {
-            double nps = r.duration > 1 ? r.bassChart.notes.get(GuitarCharter.EXPERT).size() / r.duration : 0;
-            r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
+        if (r.bassChart != null) r.bassTier = tier(r.bassChart, r.duration);
+        chartDeep(r, stems, options);
+    }
+
+    private static int tier(GuitarCharter.Chart chart, double duration) {
+        double nps = duration > 1 ? chart.notes.get(GuitarCharter.EXPERT).size() / duration : 0;
+        return (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
+    }
+
+    /**
+     * Deep Music Mode: with no drum or vocal chart in use, guitar and bass cover the whole song.
+     * Guitar adds the vocals and the other instruments' melody (a chime, a keys loop) wherever
+     * they do not fall right next to a guitar note; bass adds the drum hits between its notes.
+     */
+    private static void chartDeep(Result r, Stems stems, GuitarCharter.Options options) {
+        if (r.deepChart == null && r.chart != null) {
+            GuitarCharter.Options single = options == null ? new GuitarCharter.Options() : options.copy();
+            single.chords = false;
+            GuitarCharter.Options soft = single.copy();
+            soft.threshold *= INSTRUMENTAL_THRESHOLD;
+            GuitarCharter.Chart vocals = stems.vocals == null || stems.vocalsEnergy < 0.003 * Math.max(1e-12, stems.mixEnergy) ? null
+                    : GuitarCharter.build(stems.vocals, GuitarCharter.detectOnsets(stems.vocals), r.tempo, r.bpm, single);
+            boolean[] quiet = vocals == null ? null : measuresWithoutVocals(stems.vocals, r.tempo, r.duration);
+            GuitarCharter.Chart melody = stems.melodic == null || r.guitarSource.startsWith("the separated guitar and keys") ? null
+                    : GuitarCharter.build(stems.melodic, GuitarCharter.detectOnsets(stems.melodic), r.tempo, r.bpm, soft);
+            GuitarCharter.Chart deep = copy(r.chart);
+            for (int d = 0; d < deep.notes.size(); d++) {
+                List<GuitarCharter.Note> extra = new ArrayList<>();
+                if (vocals != null) for (GuitarCharter.Note n : vocals.notes.get(d)) if (!isQuiet(quiet, r.tempo, n.tick)) extra.add(n);
+                if (melody != null) extra = merge(extra, melody.notes.get(d), MERGE_GAP[d]);
+                deep.notes.set(d, merge(deep.notes.get(d), extra, MERGE_GAP[d]));
+            }
+            r.deepChart = deep;
         }
+        r.deepGuitarNotesAdded = r.deepChart.notes.get(GuitarCharter.EXPERT).size() - r.chart.notes.get(GuitarCharter.EXPERT).size();
+        r.deepGuitarTier = tier(r.deepChart, r.duration);
+        addDrumsToBass(r, stems, options);
+        if (r.deepBassChart == null && r.bassChart != null) r.deepBassChart = copy(r.bassChart);
+        if (r.deepBassChart != null) r.deepBassTier = tier(r.deepBassChart, r.duration);
+    }
+
+    private static GuitarCharter.Chart copy(GuitarCharter.Chart c) {
+        GuitarCharter.Chart out = new GuitarCharter.Chart();
+        for (List<GuitarCharter.Note> l : c.notes) out.notes.add(new ArrayList<>(l));
+        out.starPower.addAll(c.starPower);
+        out.onsetCount = c.onsetCount;
+        out.soundGroups = c.soundGroups;
+        out.repeatedMeasures = c.repeatedMeasures;
+        return out;
     }
 
     /**
@@ -181,11 +235,11 @@ public final class SongWriter {
     private static final long[] MERGE_GAP = {192, 96, 96, 48};
 
     /**
-     * Guitar for a song carried by the vocals: the vocals charted on their own, plus every note of
-     * the instruments (with a lower bar, since a chime or keys loop under a rap is quiet) that
-     * does not fall right next to a vocal note. Single notes throughout: a voice sings one note at
-     * a time, and its breathy sound would otherwise read as chords. In measures without vocals the
-     * vocal part holds only leakage, so only the instruments are charted there.
+     * Guitar for a song carried by the vocals: the vocals charted on their own, and the
+     * instruments (with a lower bar, since a chime or keys loop under a rap is quiet) in the
+     * measures without vocals, where the vocal part holds only leakage. Deep Music Mode adds every
+     * instrument note that does not fall right next to a vocal note. Single notes throughout: a
+     * voice sings one note at a time, and its breathy sound would otherwise read as chords.
      *
      * @return false if there is too little to chart, leaving the normal sources to be tried
      */
@@ -198,20 +252,28 @@ public final class SongWriter {
         GuitarCharter.Chart instruments = stems.melodic == null ? null
                 : GuitarCharter.build(stems.melodic, GuitarCharter.detectOnsets(stems.melodic), r.tempo, r.bpm, soft);
         boolean[] quiet = measuresWithoutVocals(stems.vocals, r.tempo, r.duration);
-        GuitarCharter.Chart out = new GuitarCharter.Chart();
+        GuitarCharter.Chart out = new GuitarCharter.Chart(), deep = new GuitarCharter.Chart();
         for (int d = 0; d < vocals.notes.size(); d++) {
             List<GuitarCharter.Note> sung = new ArrayList<>();
             for (GuitarCharter.Note n : vocals.notes.get(d)) if (!isQuiet(quiet, r.tempo, n.tick)) sung.add(n);
             List<GuitarCharter.Note> played = instruments == null ? new ArrayList<GuitarCharter.Note>() : instruments.notes.get(d);
-            out.notes.add(merge(sung, played, MERGE_GAP[d]));
+            List<GuitarCharter.Note> between = new ArrayList<>();
+            for (GuitarCharter.Note n : played) if (isQuiet(quiet, r.tempo, n.tick)) between.add(n);
+            // Normal guitar: the vocals, and the instruments where nobody sings. Deep Music Mode:
+            // the instruments' melody all the way through as well.
+            out.notes.add(merge(sung, between, MERGE_GAP[d]));
+            deep.notes.add(merge(sung, played, MERGE_GAP[d]));
         }
         int notes = out.notes.get(GuitarCharter.EXPERT).size();
         if (notes < 24 || notes < 0.2 * mixNotes) return false;
-        out.starPower.addAll(vocals.starPower);
-        out.onsetCount = vocals.onsetCount + (instruments == null ? 0 : instruments.onsetCount);
-        out.soundGroups = vocals.soundGroups + (instruments == null ? 0 : instruments.soundGroups);
-        out.repeatedMeasures = instruments == null ? vocals.repeatedMeasures : Math.max(vocals.repeatedMeasures, instruments.repeatedMeasures);
+        for (GuitarCharter.Chart c : new GuitarCharter.Chart[] {out, deep}) {
+            c.starPower.addAll(vocals.starPower);
+            c.onsetCount = vocals.onsetCount + (instruments == null ? 0 : instruments.onsetCount);
+            c.soundGroups = vocals.soundGroups + (instruments == null ? 0 : instruments.soundGroups);
+            c.repeatedMeasures = instruments == null ? vocals.repeatedMeasures : Math.max(vocals.repeatedMeasures, instruments.repeatedMeasures);
+        }
         r.chart = out;
+        r.deepChart = deep;
         r.guitarSource = "the separated instruments and vocals, as single notes";
         int quietCount = 0;
         for (boolean q : quiet) if (q) quietCount++;
@@ -220,8 +282,7 @@ public final class SongWriter {
     }
 
     /**
-     * Bass for a song carried by the vocals, where no drum chart is played: the drum hits between
-     * the bass notes join the bass chart. A hit takes the fret of the bass note that is sounding
+     * Deep Music Mode bass: the drum hits between the bass notes join a copy of the bass chart. A hit takes the fret of the bass note that is sounding
      * (a kick under an 808 plays its note); a bright hit (snare, clap, hat) takes the fret next to
      * it, so the two feel different. A held note ends where a drum hit comes in.
      */
@@ -241,7 +302,7 @@ public final class SongWriter {
         float[] sorted = bright.clone();
         Arrays.sort(sorted);
         float brightLine = sorted[sorted.length / 2];
-        GuitarCharter.Chart bass = r.bassChart != null ? r.bassChart : new GuitarCharter.Chart();
+        GuitarCharter.Chart bass = r.bassChart != null ? copy(r.bassChart) : new GuitarCharter.Chart();
         int added = 0;
         for (int d = 0; d < drums.notes.size(); d++) {
             List<GuitarCharter.Note> base = d < bass.notes.size() ? bass.notes.get(d) : new ArrayList<GuitarCharter.Note>();
@@ -260,7 +321,7 @@ public final class SongWriter {
             else bass.notes.add(merged);
         }
         if (bass.notes.get(GuitarCharter.EXPERT).size() < 16) return;
-        r.bassChart = bass;
+        r.deepBassChart = bass;
         r.drumNotesInBass = added;
     }
 
@@ -440,9 +501,15 @@ public final class SongWriter {
 
         writeInstrument(w, r.chart, GuitarCharter.SECTION_NAMES);
         if (r.bassChart != null) writeInstrument(w, r.bassChart, BASS_SECTION_NAMES);
+        // Deep Music Mode parts, in the co-op guitar and rhythm slots that YARG Resurrected's
+        // Deep Music Mode modifier plays in place of guitar and bass.
+        if (r.deepChart != null) writeInstrument(w, r.deepChart, DEEP_GUITAR_SECTION_NAMES);
+        if (r.deepBassChart != null) writeInstrument(w, r.deepBassChart, DEEP_BASS_SECTION_NAMES);
     }
 
     private static final String[] BASS_SECTION_NAMES = {"EasyDoubleBass", "MediumDoubleBass", "HardDoubleBass", "ExpertDoubleBass"};
+    private static final String[] DEEP_GUITAR_SECTION_NAMES = {"EasyDoubleGuitar", "MediumDoubleGuitar", "HardDoubleGuitar", "ExpertDoubleGuitar"};
+    private static final String[] DEEP_BASS_SECTION_NAMES = {"EasyDoubleRhythm", "MediumDoubleRhythm", "HardDoubleRhythm", "ExpertDoubleRhythm"};
 
     private static void writeInstrument(Writer w, GuitarCharter.Chart chart, String[] sectionNames) throws IOException {
         for (int d = GuitarCharter.EXPERT; d >= GuitarCharter.EASY; d--) {
@@ -484,7 +551,8 @@ public final class SongWriter {
         w.write("preview_start_time = " + r.previewMs + "\n");
         w.write("diff_guitar = " + r.guitarTier + "\n");
         w.write("diff_bass = " + r.bassTier + "\n");
-        w.write("diff_rhythm = -1\n");
+        w.write("diff_rhythm = " + (r.deepBassChart != null ? r.deepBassTier : -1) + "\n");
+        w.write("diff_guitar_coop = " + (r.deepChart != null ? r.deepGuitarTier : -1) + "\n");
         w.write("diff_drums = -1\n");
         w.write("diff_keys = -1\n");
         w.write("diff_vocals = -1\n");
