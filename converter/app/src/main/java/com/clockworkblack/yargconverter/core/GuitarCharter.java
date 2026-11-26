@@ -618,13 +618,21 @@ public final class GuitarCharter {
         for (int g = 0; g < cx.familySize.length; g++) cx.familySize[g] = sizes.get(g);
         // Loops are a guitar or keys thing: a bass line or a sung melody can share a loop's
         // rhythm and key and still play other notes, which the lock would then chart wrongly
-        if (LOOP_PRESENCE > 0 && cx.chords) lockLoops(cx, motion, measures, steps);
+        // A bass line gets the lock too, on stricter terms (see lockLoops): it can share a loop's
+        // rhythm and key and still play other notes
+        if (LOOP_PRESENCE > 0 && (cx.chords || BASS_LOCK)) lockLoops(cx, motion, measures, steps);
     }
 
     /** A loop: a family that plays at least this many measures in a row. */
     static final int LOOP_RUN = 4;
     /** Share of a loop's notes that must still be heard (among the loudest) for a measure to be that loop. */
     static double LOOP_PRESENCE = Double.parseDouble(System.getProperty("yarg.loopPresence", "0.6"));
+
+    static int[] LOOP_LENGTHS = java.util.Arrays.stream(System.getProperty("yarg.loopLengths", "1,2,4").split(",")).mapToInt(Integer::parseInt).toArray();
+    static int LOOP_CYCLES = Integer.getInteger("yarg.loopCycles", 5);
+    static double BASS_TOLERANT = Double.parseDouble(System.getProperty("yarg.bassTolerant", "0.6"));
+    static boolean BASS_LOCK = !Boolean.getBoolean("yarg.noBassLock");
+    static double BASS_PRESENCE = Double.parseDouble(System.getProperty("yarg.bassPresence", "0.6"));
 
     /**
      * Loop lock. A riff that loops through a song (an R&amp;B guitar or keys figure under the
@@ -637,12 +645,34 @@ public final class GuitarCharter {
     private static void lockLoops(Context cx, float[][] motion, int measures, int steps) {
         int families = cx.familySize.length;
         // Families that play a run of measures in a row
+        // A loop may be one, two or four measures long (A A A A, A B A B, A B C D A B C D): each
+        // measure the same as the one a loop-length before it, for a run of measures
         boolean[] loop = new boolean[families];
-        int run = 0;
-        for (int m = 0; m < measures; m++) {
-            run = m > 0 && cx.family[m] >= 0 && cx.family[m] == cx.family[m - 1] ? run + 1 : 1;
-            if (cx.family[m] >= 0 && run >= LOOP_RUN) loop[cx.family[m]] = true;
+        for (int length : LOOP_LENGTHS) {
+            int run = 0;
+            for (int m = length; m < measures; m++) {
+                run = cx.family[m] >= 0 && cx.family[m] == cx.family[m - length] ? run + 1 : 0;
+                // Longer loops must come round at least four times: a verse's chord sequence heard twice is not a loop
+                if (run >= (length == 1 ? LOOP_RUN - 1 : LOOP_CYCLES * length)) {
+                    for (int k = 0; k < length; k++) if (cx.family[m - k] >= 0) loop[cx.family[m - k]] = true;
+                }
+            }
         }
+        // A bass line varies its loop with fills, so runs keep breaking. For one-note parts a loop
+        // also counts when, over 16 measures, most are the same as the one a loop-length before.
+        if (!cx.chords && BASS_TOLERANT > 0) {
+            for (int length : new int[] {1, 2}) {
+                for (int from = length; from + 16 <= measures; from++) {
+                    int same = 0;
+                    for (int m = from; m < from + 16; m++) if (cx.family[m] >= 0 && cx.family[m] == cx.family[m - length]) same++;
+                    if (same < BASS_TOLERANT * 16) continue;
+                    for (int m = from; m < from + 16; m++) if (cx.family[m] >= 0 && cx.family[m] == cx.family[m - length]) loop[cx.family[m]] = true;
+                }
+            }
+        }
+        // One note at a time (bass): the loop's note must be the loudest thing there, in more of the measure
+        int allowed = cx.chords ? 2 : 0;
+        double need = cx.chords ? LOOP_PRESENCE : Math.max(LOOP_PRESENCE, BASS_PRESENCE);
         // Each loop's note in each sixteenth: the pitch class that stands out most across its measures
         int[][] note = new int[families][];
         boolean[][] strong = new boolean[families][];
@@ -669,7 +699,7 @@ public final class GuitarCharter {
             int own = cx.family[m];
             if (own >= 0 && loop[own]) continue;
             int best = -1;
-            double bestShare = LOOP_PRESENCE;
+            double bestShare = need;
             for (int g = 0; g < families; g++) {
                 if (!loop[g]) continue;
                 int heard = 0, count = 0;
@@ -679,7 +709,7 @@ public final class GuitarCharter {
                     float riff = motion[m][q * 12 + note[g][q]];
                     int louder = 0;
                     for (int k = 0; k < 12; k++) if (motion[m][q * 12 + k] > riff) louder++;
-                    if (louder <= 2 && riff > 0) heard++;
+                    if (louder <= allowed && riff > 0) heard++;
                 }
                 double share = count == 0 ? 0 : (double) heard / count;
                 if (count >= steps / 4 && share >= bestShare) {

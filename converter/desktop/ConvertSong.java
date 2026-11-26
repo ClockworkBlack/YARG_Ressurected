@@ -92,6 +92,16 @@ public final class ConvertSong {
                 meta.title = base;
             }
         }
+        // File names that lost their brackets: "Title Official 4K Video", "Title Lyric Video", "Title MV"
+        if (!a.containsKey("title")) {
+            String t = meta.title;
+            String before;
+            do {
+                before = t;
+                t = t.replaceAll("(?i)\\s+(official|lyrics?|music|video|audio|visuali[sz]er|4k|hd|hq|mv|remaster(ed)?|explicit|clean)$", "");
+            } while (!t.equals(before) && t.contains(" "));
+            if (!t.trim().isEmpty()) meta.title = t.trim();
+        }
         // "Title (feat. X)", "Title with X": X is a featured artist, not part of the title
         java.util.regex.Matcher feat = java.util.regex.Pattern.compile("(?i)^(.*?)\\s*[(\\[]?\\s*\\b(?:feat\\.?|ft\\.?|featuring|with)\\s+([^)\\]]+?)[)\\]]?\\s*(?:[(\\[].*)?$")
                 .matcher(meta.title);
