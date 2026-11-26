@@ -11,7 +11,8 @@ import java.util.Random;
  * and a soft flute-like loop that glides from note to note without attacks, quieter than the
  * vocals. Like the real songs it is built after, the 808 dominates and the drums are faint
  * (which is what lets the dotted 808 pass for the beat), every 808 hit has a kick click and
- * drops from above onto its note, and the whole song is tuned 30 cents flat. With {@code beatOnly}, just the 808s and the faint drums: the case that fooled the
+ * drops from above onto its note, the whole song is tuned 30 cents flat, and every other
+ * measure ends in an 808 double hit a 32nd note apart. With {@code beatOnly}, just the 808s and the faint drums: the case that fooled the
  * tempo finder.
  */
 final class TrapSong {
@@ -27,6 +28,8 @@ final class TrapSong {
     final List<Double> breakNotes = new ArrayList<>();
     /** Sustained 808 notes (not hit again while they ring): start and how long they ring. */
     final List<double[]> longBass = new ArrayList<>();
+    /** 808 double hits a 32nd note apart: the time of each hit of each pair. */
+    final List<Double> doubleHits = new ArrayList<>();
     /** 808 hits on a note that is still ringing, and the measure each is in. */
     final List<Double> ringingHits = new ArrayList<>();
     final List<Integer> ringingMeasure = new ArrayList<>();
@@ -37,6 +40,14 @@ final class TrapSong {
     }
 
     TrapSong(double bpm, int measures, long seed, boolean beatOnly) {
+        this(bpm, measures, seed, beatOnly, false);
+    }
+
+    /**
+     * @param busyHats hi-hats on every sixteenth instead of every eighth: the busy top line
+     *     that makes a slow rap beat read at twice its tempo
+     */
+    TrapSong(double bpm, int measures, long seed, boolean beatOnly, boolean busyHats) {
         this.bpm = bpm;
         this.measures = measures;
         Random rnd = new Random(seed);
@@ -84,7 +95,13 @@ final class TrapSong {
                 for (int k = 0; k < at.length; k++) note808(bar + at[k] * six, root, (k == 4 ? 4 : 3) * six * 0.95, 0);
             } else if (m % 2 == 0) {
                 int[] at = {0, 3, 6, 8, 11, 14};
-                for (int s : at) note808(bar + s * six, root, (s == 6 || s == 14 ? 2 : 3) * six * 0.95, 0);
+                for (int s : at) note808(bar + s * six, root, (s == 6 ? 2 : s == 14 ? 1.5 : 3) * six * 0.95, 0);
+                // A double hit: one more a 32nd note before the next measure's first hit.
+                if (m + 1 < measures) {
+                    note808(bar + 15.5 * six, root, 0.5 * six * 0.9, 0);
+                    doubleHits.add(bar + 15.5 * six);
+                    doubleHits.add(bar + 16 * six);
+                }
             } else if (m % 4 == 1) {
                 // The same pattern on an 808 that keeps ringing: each hit lands on the last
                 // note at 70% of its strength, so the sound only gets 3 dB louder.
@@ -103,7 +120,7 @@ final class TrapSong {
                 note808(bar + 6 * six, root, 10 * six * 0.95, 1);
             }
             for (int b = 1; b < 4; b += 2) clap(bar + b * beat);
-            for (int s = 0; s < 16; s += 2) hat(bar + s * six, rnd);
+            for (int s = 0; s < 16; s += busyHats ? 1 : 2) hat(bar + s * six, rnd);
             // Vocals: a sung / rapped line over the second half of the song, louder than the loop.
             if (m >= 2) {
                 // On offbeat sixteenths, so the loop's eighth notes are not hidden behind vocal notes.

@@ -20,10 +20,11 @@ Saved for later, roughly in the order they would help most.
 - [ ] Flute / pipe / synth lines that glide between notes: their notes are found from the change in sound (spectral flux); a pitch-based legato detector was tried and added nothing measurable, so it was left out.
 - [ ] Play-test Deep Music Mode on band songs (it is written for every song now; tuned on rap songs).
 - [ ] Trap hi-hat rolls: the bass takes about every other hat; a setting could take all of them on Expert, or none.
-- [ ] Double time: two rap songs are charted at twice the tempo a musician would count (158 for 79, 190 for 95). The grid is the same and the notes are on time; beat lines and measures are twice as close. Nothing in the music says which is right, so it is left.
-- [ ] 808 double hits a 32nd note apart ("Haw Thorne"): the chart's finest step is a sixteenth and Expert notes are at least 85 ms apart, so one of each pair is charted. Charting such songs in double time was tried: no more hits on time, a third more notes.
-- [ ] Bass on played (not 808) bass lines: about half to two thirds of the hits are charted ("It Happens" 52%, "Get Throwed" 69%), against 83-99% on 808s.
-- [ ] Bass frets follow the pitch poorly on 808s (on real songs the fret moves the way the pitch does in only a third of the changes; repeated notes stay on their fret 46-90% of the time). Needs a pitch reading that knows a distorted 808's overtones.
+- [ ] Bass on played (not 808) bass lines: about two thirds to four fifths of the hits are charted ("It Happens" 65%, "Get Throwed" 81%), against 74-100% on 808s. Notes that begin with a smooth change of pitch and no attack are the ones missed; adding a note at every such change was tried and put a third more notes into 808 songs (an 808 drops in pitch after every hit), with their frets no longer following the note.
+- [ ] "Get Throwed" in Deep Music Mode: its busy bass leaves room for half of the drum hits (50%, from 60% before bass notes could sit on 32nd positions).
+- [ ] Bass frets on two songs still follow the pitch only partly ("Haw Thorne": the fret moves the right way in 63% of the changes; "Get Throwed" 53%).
+- [ ] The tempo count by the backbeat (half / twice) is only applied to songs carried by the vocals. A rap song with a clap on every beat and a tempo under 80 BPM would be counted at twice its tempo; none of the nine test songs is like that.
+- [ ] Not guarded by a check: the 3 dB rule for a hit within 0.1 s of the last. Without it "Haw Thorne" gets 19 more bass notes and its frets follow the pitch in 53% of the changes instead of 63%.
 - [ ] Bass on rock songs: the 808 rules cost a few real notes on a rock bass ("Sax, Rock, and Roll": 74% -> 69% of bass notes charted, while frets moving the right way went 61% -> 82%). Smooth note changes (walking lines, hammer-ons) need a surer pitch reading to count; a better tell between a slide and a misread would win them back.
 - [ ] **Play-test on real songs** in YARG on the Z Fold 7. The engine is now scored against synthetic band recordings with known answers, but only one real record has been through it (in the automated build, with nobody listening). Things to listen for: are there too many or too few notes (try the Fewer / More setting), do frets change where the music changes, do drum hits pull the chart away from the guitar.
 - [ ] Confirm in-game that YARG's lyric bar shows `.chart` lyrics the way this app writes them; if not, switch lyrics to a `notes.mid` vocals track.
@@ -52,3 +53,7 @@ Saved for later, roughly in the order they would help most.
 - [x] Bass: song tuning, hits on a still-ringing 808 kept (1.5 dB rule) and held on their fret, settled pitch after a click, held notes by loudness, leakage left out. (An earlier "no phantom notes inside long 808s" rule with a 4 dB cut-off was wrong: it removed real hits.)
 - [x] Tempo from the song's loop length; one steady tempo for music made on a grid.
 - [x] Real-song check (real-songs/): nine rap and R&B recordings with expected tempo, coverage and timing.
+- [x] Tempo counted by the backbeat: four songs that read in double time are charted at 95, 79, 69 and 62 BPM (were 190, 158, 138 and 124), with the same notes.
+- [x] Bass pitch from the waveform: frets follow an 808's notes.
+- [x] Bass notes on 32nd positions on a steady grid: both hits of an 808 double hit.
+- [x] Bass notes strong enough on their own, and confirmed re-hits, kept whatever the other repeats of the measure have.

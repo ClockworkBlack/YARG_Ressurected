@@ -11,8 +11,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /** Writes the notes.chart and song.ini files of a YARG song folder. */
 public final class SongWriter {
@@ -34,6 +36,11 @@ public final class SongWriter {
         public int instrumentalMeasures;
         /** True when the song was charted at one steady tempo (music made on a grid). */
         public boolean steadyTempo;
+        /**
+         * 0.5 or 2 when a song carried by the vocals was counted at half or twice the tempo first
+         * found, going by its backbeat (see {@link BeatTracker#recount}); 1 otherwise.
+         */
+        public double recount = 1;
         /**
          * Deep Music Mode guitar (written as the co-op guitar part, which the game's Deep Music
          * Mode modifier plays in place of the guitar): the guitar chart plus the vocals and the
@@ -130,6 +137,14 @@ public final class SongWriter {
     public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options, Stems stems) {
         Result r = new Result();
         BeatTracker.Result beats = BeatTracker.track(f);
+        // Rap and R&B beats often read at twice or half the tempo anyone would count (190 for
+        // 95): the beat lines and measures then come twice as close, or half as close, as the
+        // song feels. In a song carried by the vocals the drums' backbeat settles it, and the
+        // beats are placed again at that tempo. The notes stay where they are either way.
+        if (stems != null && stems.drums != null && beats.beatsPerMeasure == 4 && vocalLed(stems)) {
+            r.recount = BeatTracker.recount(stems.drums, beats.bpm);
+            if (r.recount != 1) beats = BeatTracker.track(f, r.recount);
+        }
         r.bpm = beats.bpm;
         r.duration = f.duration;
         r.beatsPerMeasure = beats.beatsPerMeasure;
@@ -165,9 +180,25 @@ public final class SongWriter {
                 r.steadyTempo = true;
             }
         }
-        r.tempo = TempoMap.fromBeats(aligned, firstDownbeat, beats.beatsPerMeasure);
+        // A song counted at half the tempo found is still charted on the fast count, so that
+        // which notes it gets does not depend on how it is counted: only the beat lines and
+        // measures change. The fast count's ticks are exactly twice the slow one's.
+        TempoMap counted = TempoMap.fromBeats(aligned, firstDownbeat, beats.beatsPerMeasure);
+        boolean fastCount = r.recount == 0.5;
+        r.tempo = fastCount ? counted.doubled() : counted;
+        if (fastCount) r.bpm *= 2;
+        options = options == null ? new GuitarCharter.Options() : options.copy();
+        options.fine = r.steadyTempo;
         r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm, options);
         if (stems != null) chartFromStems(r, stems, options);
+        if (fastCount) {
+            r.tempo = counted;
+            r.bpm /= 2;
+            r.instrumentalMeasures = (r.instrumentalMeasures + 1) / 2;
+            // The charts share Star Power phrases (and may share note lists): each is halved once.
+            Set<Object> done = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
+            for (GuitarCharter.Chart c : new GuitarCharter.Chart[] {r.chart, r.bassChart, r.deepChart, r.deepBassChart}) halveTicks(c, done);
+        }
         if (lyrics != null && !lyrics.isEmpty()) {
             r.lyrics = LyricsCharter.build(lyrics, r.tempo, f.duration);
             for (LyricsCharter.Event e : r.lyrics) if (e.text.equals("phrase_start")) r.lyricLines++;
@@ -176,6 +207,27 @@ public final class SongWriter {
         r.guitarTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
         r.previewMs = previewStart(f);
         return r;
+    }
+
+    /**
+     * Moves a chart made on a count twice as fast onto the slow count: every tick halves.
+     *
+     * @param done note lists and Star Power phrases already halved (charts share them)
+     */
+    private static void halveTicks(GuitarCharter.Chart c, Set<Object> done) {
+        if (c == null) return;
+        for (List<GuitarCharter.Note> level : c.notes) {
+            if (!done.add(level)) continue;
+            for (int i = 0; i < level.size(); i++) {
+                GuitarCharter.Note n = level.get(i);
+                level.set(i, new GuitarCharter.Note(n.tick / 2, n.lane, n.lane2, n.sustain / 2));
+            }
+        }
+        for (long[] phrase : c.starPower) {
+            if (!done.add(phrase)) continue;
+            phrase[0] /= 2;
+            phrase[1] /= 2;
+        }
     }
 
     /**

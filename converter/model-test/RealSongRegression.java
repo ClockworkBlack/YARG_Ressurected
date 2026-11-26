@@ -258,26 +258,31 @@ public final class RealSongRegression {
 
     /**
      * Bass / 808 hits, found without any of the charting code. A hit is a clear jump in level
-     * (2.4 dB or more within 25 ms; level over 30 ms, every 5 ms), or a click (a burst in the high
-     * frequencies 10 dB over their usual level) together with a jump of 1.5 dB, within 30 dB of
-     * the part's loudest moments. An 808's own flutter (ripples of 1-1.6 dB) is neither, and a
-     * click with no jump is a hi-hat leaking into the bass. Hits closer than 90 ms count once.
+     * (2.4 dB or more within 25 ms; the wave's highest point over 30 ms, every 5 ms), or a click (a burst in the high
+     * frequencies 10 dB over their usual level) together with a jump of 1.5 dB, within 20 dB of
+     * the part's loudest moments (quieter than that are ghost notes and rumble). An 808's own
+     * flutter (ripples of 1-1.6 dB) is neither, and a click with no jump is a hi-hat leaking into
+     * the bass. Hits closer than 120 ms count once, so of a double hit only the first is counted.
      * (An 808 hit again while it still rings only gets a few dB louder; a cruder test misses those.)
      */
     static double[] bassHits(float[] x) {
         final int hop = (int) (0.005 * SR), win = (int) (0.03 * SR), clickWin = (int) (0.012 * SR);
         int n = x.length, frames = Math.max(0, (n - win) / hop + 1);
         if (frames < 16) return new double[0];
-        double[] sq = new double[n + 1], hsq = new double[n + 1];
+        double[] hsq = new double[n + 1];
         for (int i = 0; i < n; i++) {
-            sq[i + 1] = sq[i] + (double) x[i] * x[i];
             double d = i >= 2 ? x[i] - 2.0 * x[i - 1] + x[i - 2] : 0;
             hsq[i + 1] = hsq[i] + d * d;
         }
         double[] db = new double[frames], hf = new double[frames];
         for (int f = 0; f < frames; f++) {
             int a = f * hop;
-            db[f] = 20 * Math.log10(Math.sqrt((sq[a + win] - sq[a]) / win) + 1e-9);
+            // The level is the highest point of the wave in the window, not its average power:
+            // 30 ms is barely one cycle of a 41 Hz note, and the average wobbles by a dB or two
+            // from one window to the next, which looks like hits inside a held note.
+            float peak = 0;
+            for (int i = a; i < a + win; i++) peak = Math.max(peak, Math.abs(x[i]));
+            db[f] = 20 * Math.log10(peak + 1e-9);
             hf[f] = 20 * Math.log10(Math.sqrt((hsq[Math.min(n, a + clickWin)] - hsq[a]) / clickWin) + 1e-9);
         }
         double[] sorted = db.clone();
@@ -285,17 +290,17 @@ public final class RealSongRegression {
         double top = sorted[(int) (frames * 0.99)];
         double[] loud = new double[frames];
         int loudCount = 0;
-        for (int f = 0; f < frames; f++) if (db[f] > top - 30) loud[loudCount++] = hf[f];
+        for (int f = 0; f < frames; f++) if (db[f] > top - 20) loud[loudCount++] = hf[f];
         Arrays.sort(loud, 0, loudCount);
         double usualClick = loudCount > 0 ? loud[loudCount / 2] : -200;
-        final int span = 5, skip = 18;
+        final int span = 5, skip = 24;
         List<Double> out = new ArrayList<>();
-        for (int i = span; i < frames - 4; ) {
+        for (int i = span; i < frames - 6; ) {
             double low = db[i - 1];
             for (int k = i - span; k < i; k++) low = Math.min(low, db[k]);
             double rise = db[i] - low;
             boolean click = hf[i] > usualClick + 10 && Math.max(rise, db[i + 3] - low) >= 1.5;
-            if ((rise >= 2.4 || click) && db[i + 4] > top - 30) {
+            if ((rise >= 2.4 || click) && db[i + 6] > top - 20) {
                 out.add((double) i * hop / SR + 0.02); // the 30 ms window sees a hit about 20 ms early
                 i += skip;
             } else {

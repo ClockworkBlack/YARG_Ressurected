@@ -11,7 +11,8 @@ import java.util.Locale;
  * answers (TrapSong), so that later changes to the converter keep every fix:
  * dotted-808 tempo, hits on a still-ringing 808 charted and kept on their fret, a sustained 808
  * as one held note, guitar following the vocals (and the instruments where they lead), the soft
- * loop in Deep Music Mode guitar, and drums in Deep Music Mode bass.
+ * loop in Deep Music Mode guitar, drums in Deep Music Mode bass, frets that follow the 808's
+ * pitch, 808 double hits a 32nd note apart, and half tempo for a fast-reading vocal-led song.
  */
 final class TrapTest {
     private static int failures;
@@ -93,6 +94,19 @@ final class TrapTest {
                             + "        %d notes inside %d sustained 808s, %d of them held%n",
                     bass.size(), song.bassNotes.size(), 100 * hits, 100 * rehits, 100 * steadyFret, phantom, song.longBass.size(), held);
             check(rehits >= 0.9, "hits on a still-ringing 808 are charted (" + rehits + ")");
+            // 808 double hits a 32nd note apart: both hits charted, each within 35 ms of its hit.
+            int both = 0;
+            for (double t : song.doubleHits) {
+                for (GuitarCharter.Note b : bass) {
+                    if (Math.abs(r.tempo.tickToTime(b.tick) - t) < 0.035) {
+                        both++;
+                        break;
+                    }
+                }
+            }
+            double doubles = song.doubleHits.isEmpty() ? 0 : (double) both / song.doubleHits.size();
+            System.out.printf(Locale.US, "  808 double hits a 32nd apart: %.0f%% of the %d hits charted within 35 ms%n", 100 * doubles, song.doubleHits.size());
+            check(doubles >= 0.9, "both hits of an 808 double hit are charted on time (" + doubles + ")");
             check(steadyFret >= 0.9, "the same 808 note hit again stays on its fret (" + steadyFret + ")");
             check(hits >= 0.9, "bass covers the 808 notes (" + hits + ")");
             // The same 808 note gets the same fret (the song is tuned between two note names).
@@ -117,9 +131,27 @@ final class TrapTest {
                 all += sum;
             }
             double consistent = all == 0 ? 0 : (double) same / all;
-            // Reported, not yet checked: a distorted 808 that drops onto its note reads as its
-            // fourth, fifth or octave too often for this to be reliable (see PENDING.md).
-            System.out.printf(Locale.US, "  same 808 note -> same fret: %.0f%% (known weak spot)%n", 100 * consistent);
+            // And the frets go the way the 808's pitch goes (its four notes are in four measures).
+            int right = 0, moves = 0, lastPitch = -1, lastLane = -1;
+            for (int i = 0; i < song.bassNotes.size(); i++) {
+                double t = song.bassNotes.get(i);
+                for (GuitarCharter.Note b : bass) {
+                    if (Math.abs(r.tempo.tickToTime(b.tick) - t) >= 0.07) continue;
+                    int pitch = song.bassPitch.get(i);
+                    if (lastPitch >= 0 && pitch != lastPitch) {
+                        moves++;
+                        if (Integer.signum(b.lane - lastLane) == Integer.signum(pitch - lastPitch)) right++;
+                    }
+                    lastPitch = pitch;
+                    lastLane = b.lane;
+                    break;
+                }
+            }
+            double direction = moves == 0 ? 0 : (double) right / moves;
+            System.out.printf(Locale.US, "  same 808 note -> same fret: %.0f%%; when the 808 changes note the fret moves the same way: %.0f%% of %d changes%n",
+                    100 * consistent, 100 * direction, moves);
+            check(consistent >= 0.9, "the same 808 note gets the same fret (" + consistent + ")");
+            check(direction >= 0.9, "frets move the way the 808's pitch moves (" + direction + ")");
             check(phantom <= song.longBass.size() / 4, "a sustained 808 is one note (" + phantom + " notes inside)");
             check(held >= song.longBass.size() * 0.75, "sustained 808s are held for most of their length (" + held + " of " + song.longBass.size() + ")");
         }
@@ -139,6 +171,43 @@ final class TrapTest {
         SongWriter.Result br = SongWriter.analyze(StemTest.analyze(beat.audio, sr), null, null);
         System.out.printf(Locale.US, "  the beat alone: tempo %.1f BPM%n", br.bpm);
         check(Math.abs(br.bpm / beat.bpm - 1) < 0.02, "the beat alone: tempo is the beat's, not the dotted 808's (" + br.bpm + ")");
+        // 7. The tempo found is often twice or half the one anyone would count: this beat reads
+        // 140 BPM at 70 and 55 at 110. The backbeat (claps on two and four) settles it, and the
+        // measure lines are on the ones.
+        for (double bpm : new double[] {70.0, 110.0}) {
+            TrapSong other = new TrapSong(bpm, 24, 13);
+            SongWriter.Stems os = StemTest.stems(new float[other.audio.length], other.loop, other.vocals, other.drums, other.bass, other.audio, sr);
+            SongWriter.Result or = SongWriter.analyze(StemTest.analyze(other.audio, sr), null, null, os);
+            double otherBass = or.bassChart == null ? 0 : covered(or.bassChart, or, other.bassNotes);
+            int ones = 0, onLine = 0;
+            if (or.bassChart != null) {
+                double measureSec = 4 * 60.0 / other.bpm;
+                for (GuitarCharter.Note note : or.bassChart.notes.get(GuitarCharter.EXPERT)) {
+                    double into = (or.tempo.tickToTime(note.tick) - 0.5) / measureSec;
+                    if (Math.abs(into - Math.round(into)) * measureSec > 0.035) continue;
+                    ones++;
+                    if ((note.tick - or.tempo.pickupBeats * 192L) % (4 * 192) == 0) onLine++;
+                }
+            }
+            System.out.printf(Locale.US, "  the same beat at %.0f BPM: charted at %.1f BPM%s; 808s covered %.0f%%; %d of %d first-beat notes on a measure line%n",
+                    bpm, or.bpm, or.recount == 0.5 ? " (halved)" : or.recount == 2 ? " (doubled)" : "", 100 * otherBass, onLine, ones);
+            check(Math.abs(or.bpm / bpm - 1) < 0.02, "the beat at " + bpm + " BPM is charted at that tempo, not twice or half (" + or.bpm + ")");
+            check(otherBass >= 0.9, "at " + bpm + " BPM its 808 notes are charted (" + otherBass + ")");
+            check(ones > 0 && onLine >= 0.9 * ones, "at " + bpm + " BPM its measure lines are on the ones (" + onLine + " of " + ones + ")");
+            // Star Power phrases are as long and as far into the song as at any other tempo
+            // (a chart made on the fast count is moved onto the slow one exactly once).
+            double measureTicks = 4 * 192;
+            for (GuitarCharter.Chart c : new GuitarCharter.Chart[] {or.chart, or.bassChart, or.deepChart, or.deepBassChart}) {
+                if (c == null) continue;
+                long shortest = Long.MAX_VALUE, latest = 0, lastNote = c.notes.get(GuitarCharter.EXPERT).get(c.notes.get(GuitarCharter.EXPERT).size() - 1).tick;
+                for (long[] phrase : c.starPower) {
+                    shortest = Math.min(shortest, phrase[1]);
+                    latest = Math.max(latest, phrase[0]);
+                }
+                check(!c.starPower.isEmpty() && shortest >= measureTicks && latest >= 0.5 * lastNote,
+                        "at " + bpm + " BPM Star Power phrases last a measure or more and run through the song (shortest " + shortest + " ticks, last at " + latest + " of " + lastNote + ")");
+            }
+        }
         return failures;
     }
 

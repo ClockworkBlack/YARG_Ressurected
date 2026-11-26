@@ -36,6 +36,75 @@ public final class BeatTracker {
     }
 
     public static Result track(Features f) {
+        return track(f, 1.0);
+    }
+
+    /** The slowest and fastest tempo a recount by the backbeat may arrive at. */
+    static final double RECOUNT_MIN_BPM = 60.0, RECOUNT_MAX_BPM = 160.0;
+
+    /** From this tempo up, a song carried by the vocals is counted at half unless its backbeat says otherwise. */
+    static final double FAST_BPM = 150.0;
+
+    /** The big drum hits repeat at a length when they line up this well against the best length tried. */
+    static final double BACKBEAT_CLEAR = 0.6;
+
+    /** Under this, the drums do not repeat clearly enough at any length to count by. */
+    static final double BACKBEAT_MIN = 0.3;
+
+    /**
+     * Whether a tempo should be counted at half or at twice what was found, going by the drums.
+     * A beat found from the onsets can as well be twice or half the one anyone would count: a
+     * busy hi-hat or an 808 on every eighth reads fast, a sparse beat reads slow. What settles
+     * it in rap and R&B is the backbeat: the clap or snare falls on two and four, so the big
+     * drum hits repeat every two beats. If they only repeat every four, the tempo found is
+     * double; if they repeat every beat, it is half.
+     *
+     * @param drums the separated drums
+     * @param bpm the tempo found
+     * @return 0.5 to count at half the tempo, 2 at twice, 1 to leave it
+     */
+    static double recount(Features drums, double bpm) {
+        int n = drums.frames();
+        double beat = 60.0 / bpm * drums.fps;
+        if (n < 12 * beat) return 1;
+        // Claps and snares, not kicks: what is hit outside the low end, squared so that the big
+        // hits count and the hi-hats between them do not.
+        double[] e = new double[n];
+        double total = 0;
+        for (int i = 0; i < n; i++) {
+            double v = Math.max(0, drums.flux[i] - 2 * drums.lowFlux[i]);
+            e[i] = v * v;
+            total += e[i] * e[i];
+        }
+        if (total <= 0) return 1;
+        // How well the big hits line up with themselves half a beat, 1, 2, 4 and 8 beats on.
+        double[] fit = new double[5];
+        double top = 0;
+        for (int k = 0; k < fit.length; k++) {
+            int centre = (int) Math.round(beat * 0.5 * (1 << k));
+            int slack = 1 + centre / 200;
+            for (int lag = Math.max(1, centre - slack); lag <= centre + slack && lag < n; lag++) {
+                double sum = 0;
+                for (int i = 0; i + lag < n; i++) sum += e[i] * e[i + lag];
+                fit[k] = Math.max(fit[k], sum / total);
+            }
+            top = Math.max(top, fit[k]);
+        }
+        int every = -1; // the shortest length they clearly repeat at: index 2 is two beats
+        if (top >= BACKBEAT_MIN) {
+            for (int k = 0; k < fit.length && every < 0; k++) if (fit[k] >= BACKBEAT_CLEAR * top) every = k;
+        }
+        if (bpm >= FAST_BPM) return every == 2 ? 1 : 0.5;
+        if (every > 2 && bpm / 2 >= RECOUNT_MIN_BPM) return 0.5;
+        if (every >= 0 && every < 2 && bpm * 2 < RECOUNT_MAX_BPM) return 2;
+        return 1;
+    }
+
+    /**
+     * @param recount 1, or what to multiply the tempo found by before the beats are placed (see
+     *     {@link #recount})
+     */
+    public static Result track(Features f, double recount) {
         int n = f.frames();
         double fps = f.fps;
         if (n < fps * 2) return fallback(f.duration);
@@ -51,6 +120,7 @@ public final class BeatTracker {
         if (activity < 1e-3) return fallback(f.duration);
         double global = estimatePeriod(env, fps);
         if (global <= 0) return fallback(f.duration);
+        global /= recount;
         double[] period = localPeriods(env, fps, global);
 
         // Dynamic programming: best chain of beats that sit on strong onsets and stay near the
@@ -539,15 +609,22 @@ public final class BeatTracker {
      *
      * @return {beats per measure, index of the first downbeat}
      */
-    private static int[] findMeter(Features f, int[] chain, double[] period) {
-        int count = chain.length;
+    /**
+     * How much each beat sounds like the first of a measure: a low note starting, the harmony
+     * changing, something being hit.
+     *
+     * @param frames each beat's frame
+     * @param next the frame each beat's stretch of music ends at
+     */
+    private static double[] accents(Features f, int[] frames, int[] next) {
+        int count = frames.length;
         int n = f.frames();
         double[] low = new double[count];
         double[] hit = new double[count];
         double[] change = new double[count];
         float[] prev = null;
         for (int i = 0; i < count; i++) {
-            int fr = chain[i];
+            int fr = frames[i];
             float l = 0, h = 0;
             for (int k = Math.max(0, fr - 2); k <= Math.min(n - 1, fr + 2); k++) {
                 l = Math.max(l, f.lowFlux[k]);
@@ -555,8 +632,7 @@ public final class BeatTracker {
             }
             low[i] = l;
             hit[i] = h;
-            int next = i + 1 < count ? chain[i + 1] : (int) Math.min(n, fr + Math.round(period[fr]));
-            float[] c = f.chromaBetween(fr + 1, next);
+            float[] c = f.chromaBetween(fr + 1, next[i]);
             change[i] = prev == null ? 0 : 1 - Features.cosine(c, prev);
             prev = c;
         }
@@ -565,6 +641,15 @@ public final class BeatTracker {
         zscore(change);
         double[] feat = new double[count];
         for (int i = 0; i < count; i++) feat[i] = low[i] + change[i] + 0.3 * hit[i];
+        return feat;
+    }
+
+    private static int[] findMeter(Features f, int[] chain, double[] period) {
+        int count = chain.length;
+        int n = f.frames();
+        int[] next = new int[count];
+        for (int i = 0; i < count; i++) next[i] = i + 1 < count ? chain[i + 1] : (int) Math.min(n, chain[i] + Math.round(period[chain[i]]));
+        double[] feat = accents(f, chain, next);
 
         double best4 = -1e9, best3 = -1e9;
         int phase4 = 0, phase3 = 0;

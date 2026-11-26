@@ -116,7 +116,7 @@ The app listens about 86 times a second and works in five steps.
 1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
    seconds so songs that speed up or slow down stay locked. Each beat is nudged onto the nearest
    note start, bass hits and chord changes say which beat is the "one", and it tells 4/4 from
-   3/4. Two things are then checked, because rap and other loop-based music fooled the first
+   3/4. Three things are then checked, because rap and other loop-based music fooled the first
    version:
    - **The tempo against the song's own loop.** A dotted rhythm can pass for the beat (trap 808s
      in dotted eighths made 95 BPM songs read as 127, and a 79 BPM one as 110). Tempos at 3/4,
@@ -130,6 +130,16 @@ The app listens about 86 times a second and works in five steps.
      to sixteenth notes are found, and where that steady grid fits about as well as the beats
      found, it is used: one tempo marker for the whole song. A band that speeds up and slows
      down fits a steady tempo far worse and keeps the beats found.
+   - **Twice or half the tempo, by the backbeat.** A beat found from note starts can as well be
+     twice or half the one anyone would count: a busy hi-hat reads fast, a sparse beat slow (two
+     95 and 79 BPM songs read as 190 and 158; a test beat at 110 read as 55). The notes are on
+     time either way, but the beat lines and measures come twice as close, or half as close, as
+     the song feels. In a song carried by the vocals the drums settle it: the clap or snare
+     falls on two and four, so the big drum hits repeat every two beats. If they only repeat
+     every four, the tempo is counted at half; if every beat, at twice (staying between 60 and
+     160 BPM); a song reading 150 or more is halved unless its backbeat says otherwise. The
+     beats are then placed again at that tempo. A song counted at half is still charted on the
+     fast count, so it gets the same notes as before: only the lines and measures change.
 2. **Note starts.** Every moment where new sound arrives is split into *pitched* sound (guitar,
    bass, voice, keys) and *noisy bursts* (drums). Pitched starts count fully; bare drum hits
    count less, so the chart leans towards the instruments rather than the drum kit.
@@ -146,15 +156,25 @@ The app listens about 86 times a second and works in five steps.
    Easy are thinned-out versions of it (eighths, quarters, half notes, adapting to the song's
    speed) on 5, 4 and 3 frets.
 
-**Bass charts** (from the separated bass) read each note's name allowing for the song's own
+**Bass charts** (from the separated bass) read each note's pitch from the waveform itself: how
+long the wave takes to repeat, measured from 0.1 s after the hit, once an 808 has dropped onto
+its note. (The reading used for other parts looks at which frequencies are loud, and a
+distorted 808's overtones are louder than its note: on real songs the fret then moved the way
+the pitch did in under half of the changes; with the waveform reading in about 80%, and a note
+played again stays on its fret over 80% of the time, from about 60%.) Note names allow for the song's own
 tuning, which is often not A = 440 Hz. A trap 808 is often hit again while its last note is
 still ringing at full strength. Each hit is a note, even though a heavily compressed 808 only
 gets 2-3 dB louder at it; so on a note that is still ringing, a start counts when the sound
 rises at least 1.5 dB from the dip just before it. (Right after a hit, while the 808 drops
 onto its pitch, a second "start" turns up that rises less than that and is not a note.) The
 pitch at such a hit is read again once it has settled, and unless that reading is sure of a
-different note, the hit is the same note again and gets the same fret. A note that starts with
-a click also has its pitch read a little later. Notes are held for as long as they stay loud
+different note, the hit is the same note again and gets the same fret. Such a hit is a note
+on its rise in level alone, however little the sound itself changes. In a song with one steady
+tempo, bass notes may also sit on 32nd-note positions, down to 70 ms apart: 808s are played
+with double hits a 32nd apart (one song has over 200), and within a tenth of a second of a hit
+the next one counts when it rises 3 dB (the ripple after a single hit rises less). A bass note
+that is strong enough on its own is kept even where the other repeats of its measure do not
+have it (a fill, a pickup), since everything in a separated bass is the bass. Notes are held for as long as they stay loud
 (until 15 dB down, or the next hit). Sounds far below the song's usual bass level (-24 dB) are
 other instruments leaking into the bass and are left out.
 
@@ -219,7 +239,10 @@ For separation, five things are checked on every build (and real recordings by h
    fix); hits on a ringing 808 are charted and stay on their fret (none are charted with the
    earlier 4 dB rule); a sustained 808 is one held note; the regular guitar follows the vocals,
    and the instruments where they lead; Deep Music Mode guitar adds the loop and Deep Music
-   Mode bass the claps. Each of these checks was seen to fail with its fix taken out.
+   Mode bass the claps; both hits of an 808 double hit a 32nd apart are charted on time; the
+   same 808 note gets the same fret and the fret moves the way the pitch does; the same beat at
+   70 and at 110 BPM (which read as 140 and 55) is charted at its own tempo with the measure
+   lines on the ones. Each of these checks was seen to fail with its fix taken out.
 5. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their

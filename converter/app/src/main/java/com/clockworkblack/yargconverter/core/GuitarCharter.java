@@ -33,12 +33,23 @@ public final class GuitarCharter {
         public boolean chords = true;
         /** True for a separated bass part: notes are held for as long as they stay loud. */
         public boolean bass;
+        /**
+         * True when the song keeps one steady tempo (music made on a grid): a bass part's Expert
+         * notes may then sit on 32nd-note positions, because what falls between sixteenths there
+         * is played that way (a swung bass line, an 808 hit a 32nd before the beat) and not loose
+         * timing. Other parts keep to sixteenths: on 32nd positions the same note lands now on
+         * one, now on the next from one repeat of a measure to another, and is then taken for a
+         * one-off and left out (Deep Music Mode guitar lost 10-19 points of the instruments' notes
+         * on six real songs).
+         */
+        public boolean fine;
 
         public Options copy() {
             Options o = new Options();
             o.threshold = threshold;
             o.chords = chords;
             o.bass = bass;
+            o.fine = fine;
             return o;
         }
     }
@@ -62,10 +73,16 @@ public final class GuitarCharter {
     // is not a constant stream.
     private static final float[] LEVEL_NEED = {0.10f, 0.10f, 0.20f, 0.45f};
     private static final float MIN_STRENGTH = 0.10f;
+    /** On a steady grid: the shortest a 32nd note may be for 32nd positions to be used. */
+    private static final double FINE_SLOT_MIN_SEC = 0.045;
+    /** On a steady grid: the closest two Expert notes may come (a fast double hit). */
+    private static final double FINE_MIN_GAP_SEC = 0.07;
     /** How much a bare drum hit counts next to a pitched note. */
     private static final float PERC_WEIGHT = 0.4f;
     private static final float TONAL_SHARE = 0.20f;
     private static final float TONAL_CONF = 0.30f;
+    /** How well a bass waveform must line up with itself (0..1) for its pitch reading to count. */
+    private static final float BASS_PITCH_CONF = 0.8f;
     /** Pitch confidence needed, once a hit on a ringing bass note has settled, to take its reading. */
     private static final float SURE_PITCH = 0.6f;
     /** Pitch confidence needed to trust the reading at the hit itself when no settled one is to be had. */
@@ -79,6 +96,10 @@ public final class GuitarCharter {
     private static final float BASS_HOLD = 0.178f;
     /** A bass note still within this of its own start (-6 dB) is still ringing at full strength. */
     private static final float STILL_FULL = 0.5f;
+    /** A start this soon after the last hit on a ringing bass note is a double hit or a ripple. */
+    private static final double CLOSE_HIT_SEC = 0.1;
+    /** How much louder such a start must get to be a second hit: 3 dB. */
+    private static final float CLOSE_HIT_RISE = 1.413f;
     /** How much louder a start on a still-ringing bass note must get to be a new hit: 1.5 dB. */
     private static final float RETRIGGER_RISE = 1.189f;
     /** MIDI pitch above which sounds are charted as single notes (B3). */
@@ -96,6 +117,16 @@ public final class GuitarCharter {
         public float conf;
         /** Pitch-class fingerprint of the new sound, unit length. */
         public float[] print;
+        /** Bass parts: the note before was still ringing at full strength when this one started. */
+        boolean ringing;
+        /** Bass parts: the pitch was read surely once the note had settled. */
+        boolean sure;
+        /**
+         * Bass parts: a hit on a note that was still ringing, which got louder by as much as a
+         * real hit does. Its {@link #strength} says little (the sound hardly changes when an 808
+         * is hit again), so it is a note on the rise in level alone.
+         */
+        boolean rehit;
         /** Group of onsets that sound alike (same note or chord), or -1. */
         public int group = -1;
         /** 0..1: how much of the new energy arrived as distinct pitched tones. */
@@ -184,7 +215,6 @@ public final class GuitarCharter {
             while (rise > 0 && i - rise < 2 && env[rise - 1] >= 0.3f * v) rise--;
             Onset o = new Onset(f.timeOf(rise), i, (float) (v - threshold));
             describe(f, o, tMean, pMean);
-            if (groupByPitch && !o.tonal) settledPitch(f, o, n - 1, TONAL_CONF);
             found.add(o);
         }
         if (found.isEmpty()) return found;
@@ -217,15 +247,34 @@ public final class GuitarCharter {
             out.add(o);
         }
         if (groupByPitch) {
-            // By note name (C, C sharp, ...): pitch readings of a bass are often an octave out,
-            // but rarely the wrong note. Clear octave jumps are told apart again when frets
-            // are handed out.
-            // Songs are not always tuned to A = 440 Hz; a bass that sits between two note names
-            // would otherwise be read as one and then the other. The song's own tuning comes from
-            // where its bass notes fall between the note names.
+            // Which starts are notes, then each note's pitch (read up to the next note), then
+            // its name (C, C sharp, ...) allowing for the song's own tuning: songs are not always
+            // tuned to A = 440 Hz, and a bass that sits between two note names would otherwise
+            // be read as one and then the other.
+            out = bassHits(f, out);
+            for (int i = 0; i < out.size(); i++) {
+                Onset o = out.get(i);
+                int next = i + 1 < out.size() ? out.get(i + 1).frame - 1 : n - 1;
+                if (f.lowPitch != null) o.sure = readBassPitch(f, o, next);
+                else if (o.ringing) o.sure = settledPitch(f, o, next, SURE_PITCH);
+                else if (!o.tonal) settledPitch(f, o, next, TONAL_CONF);
+            }
             double tuning = tuning(out);
-            for (Onset o : out) if (o.tonal) o.group = Math.floorMod(Math.round(o.height - tuning), 12);
-            out = dropRetriggers(f, out, tuning);
+            Onset last = null;
+            for (Onset o : out) {
+                // A hit on a note that is still ringing reads unclearly at the hit itself (two
+                // notes sound at once, and an 808 starts above its note). Unless its pitch was
+                // read surely afterwards, it is the same note again and gets the same fret.
+                if (o.ringing && last != null && !o.sure && (!o.tonal || o.conf < SURE_EARLY_PITCH)) {
+                    o.tonal = last.tonal;
+                    o.height = last.height;
+                    o.print = last.print;
+                    o.group = last.group;
+                } else if (o.tonal) {
+                    o.group = Math.floorMod(Math.round(o.height - tuning), 12);
+                }
+                last = o;
+            }
         } else {
             groupBySound(out);
         }
@@ -233,23 +282,20 @@ public final class GuitarCharter {
     }
 
     /**
-     * Sorts out the note starts of a bass that plays one note at a time (a trap 808 above all).
+     * Which note starts of a bass that plays one note at a time (a trap 808 above all) are notes.
      *
      * An 808 is often hit again while its last note is still ringing at full strength. Each hit
      * is a real note, though a heavily compressed 808 only gets 2-3 dB louder at it; right after
      * a hit, while the 808 drops onto its pitch, a second "start" shows up that gets less than
      * 1.5 dB louder and is not a note. So on a note that is still ringing, a start counts when
-     * the sound rises at least {@link #RETRIGGER_RISE} from the dip just before it. (Measured on
-     * eight rap and R&amp;B songs: real hits rose 2 dB or more, the after-ripples 0.4-1.4 dB. An
-     * earlier cut-off of 4 dB threw away most of the real hits.)
-     *
-     * The pitch read at the moment of such a hit is unreliable (two notes sound at once, and the
-     * 808 starts above its note), so it is read again once the hit has settled; unless that
-     * reading is sure of a different note, the hit is the same note again and gets the same fret.
+     * the sound rises at least {@link #RETRIGGER_RISE} from the dip just before it, and
+     * {@link #CLOSE_HIT_RISE} when it comes within {@link #CLOSE_HIT_SEC} of the last hit (a
+     * true double hit, a 32nd note apart, rises that much; a ripple does not). Measured on nine
+     * rap and R&amp;B songs; an earlier cut-off of 4 dB for all threw away most of the real hits.
      *
      * Starts far below the song's usual bass level are leakage from other instruments.
      */
-    private static List<Onset> dropRetriggers(Features f, List<Onset> onsets, double tuning) {
+    private static List<Onset> bassHits(Features f, List<Onset> onsets) {
         int n = f.frames();
         int before = Math.max(2, (int) Math.round(f.fps * 0.08));
         int after = Math.max(2, (int) Math.round(f.fps * 0.06));
@@ -259,39 +305,67 @@ public final class GuitarCharter {
         Arrays.sort(levels, 0, sounding);
         float usual = sounding > 0 ? levels[(int) (sounding * 0.9)] : 0;
         List<Onset> kept = new ArrayList<>(onsets.size());
-        Onset last = null;
         float lastPeak = 0;
-        for (int idx = 0; idx < onsets.size(); idx++) {
-            Onset o = onsets.get(idx);
+        double lastTime = -10;
+        for (Onset o : onsets) {
             int p = Math.min(n - 1, Math.max(0, o.frame));
             float loudest = 0;
             for (int k = p; k <= Math.min(n - 1, p + after); k++) loudest = Math.max(loudest, f.rms[k]);
             if (loudest < BASS_FLOOR * usual) continue;
-            if (last != null) {
+            o.ringing = false;
+            if (!kept.isEmpty()) {
                 float dip = Float.MAX_VALUE;
                 for (int k = Math.max(0, p - before); k <= p; k++) dip = Math.min(dip, f.rms[k]);
                 // A plucked string has already faded by its next pick; this is about a note that
                 // is still at full strength (an 808, a held synth bass).
-                boolean ringing = dip >= STILL_FULL * lastPeak;
-                if (ringing) {
-                    if (loudest < RETRIGGER_RISE * dip) continue;
-                    int nextStart = idx + 1 < onsets.size() ? onsets.get(idx + 1).frame - 1 : n - 1;
-                    boolean settled = settledPitch(f, o, nextStart, SURE_PITCH);
-                    if (settled) {
-                        o.group = Math.floorMod(Math.round(o.height - tuning), 12);
-                    } else if (!o.tonal || o.conf < SURE_EARLY_PITCH) {
-                        o.tonal = last.tonal;
-                        o.height = last.height;
-                        o.print = last.print;
-                        o.group = last.group;
-                    }
-                }
+                o.ringing = dip >= STILL_FULL * lastPeak;
+                // Right after a hit the bar is higher: a true double hit rises 4 dB at its second
+                // hit (2.6 at the least), the ripple after a single hit 0.6 (2.7 at the most).
+                boolean close = o.time - lastTime < CLOSE_HIT_SEC;
+                if (o.ringing && loudest < (close ? CLOSE_HIT_RISE : RETRIGGER_RISE) * dip) continue;
+                o.rehit = o.ringing;
             }
             kept.add(o);
-            last = o;
             lastPeak = loudest;
+            lastTime = o.time;
         }
         return kept;
+    }
+
+    /**
+     * A bass note's pitch from the waveform reading ({@link Features#lowPitch}), taken once the
+     * note has settled (a trap 808 starts with a click and drops onto its note over some 80 ms):
+     * the middle of the sure readings from about 0.1 s to a quarter of a second in, stopping at
+     * {@code lastFrame} (the next note). With less room than that, from 50 ms in.
+     *
+     * @return true if the pitch was set from such a reading
+     */
+    private static boolean readBassPitch(Features f, Onset o, int lastFrame) {
+        int n = f.frames();
+        int to = Math.min(Math.min(n - 1, lastFrame), o.frame + (int) Math.round(f.fps * 0.26));
+        float[] heights = new float[32];
+        float[] confs = new float[32];
+        int count = 0;
+        for (int from : new int[] {o.frame + (int) Math.round(f.fps * 0.1), o.frame + (int) Math.round(f.fps * 0.05)}) {
+            count = 0;
+            for (int k = Math.max(0, from); k <= to && count < heights.length; k++) {
+                if (Float.isNaN(f.lowPitch[k]) || f.lowPitchConf[k] < BASS_PITCH_CONF) continue;
+                heights[count] = f.lowPitch[k];
+                confs[count++] = f.lowPitchConf[k];
+            }
+            if (count >= 2) break;
+        }
+        if (count < 2) return false;
+        Arrays.sort(heights, 0, count);
+        Arrays.sort(confs, 0, count);
+        o.height = heights[count / 2];
+        o.conf = confs[count / 2];
+        o.tonal = true;
+        if (o.print == null) {
+            o.print = new float[12];
+            o.print[Math.floorMod(Math.round(o.height), 12)] = 1f;
+        }
+        return true;
     }
 
     /**
@@ -486,6 +560,7 @@ public final class GuitarCharter {
         double threshold;
         boolean chords = true;
         boolean bass;
+        boolean fine;
     }
 
     public static Chart build(Features f, List<Onset> onsets, TempoMap map, double bpm, Options options) {
@@ -500,6 +575,7 @@ public final class GuitarCharter {
         cx.threshold = options == null ? 1.0 : Math.max(0.3, Math.min(3.0, options.threshold));
         cx.chords = options == null || options.chords;
         cx.bass = options != null && options.bass;
+        cx.fine = options != null && options.fine;
         summariseGroups(cx, onsets);
         chart.soundGroups = cx.groups;
 
@@ -573,6 +649,42 @@ public final class GuitarCharter {
         return medianConf(members) < cx.chordLine;
     }
 
+    /**
+     * How strong a sound must be for a note at this position. A 32nd-note position (only used on
+     * a steady grid) asks no more than the easier of the two sixteenths either side of it: the
+     * note there is one of those played late or early, and would have been moved onto it.
+     */
+    private static float need(Context cx, long tick, int level) {
+        if (Math.floorMod(tick - cx.origin, 48L) == 0) return LEVEL_NEED[level];
+        return Math.min(LEVEL_NEED[Math.max(1, levelOf(cx, tick - 24))], LEVEL_NEED[Math.max(1, levelOf(cx, tick + 24))]);
+    }
+
+    /**
+     * Keeps notes at least {@code minTicks} apart: where two are closer, the one on the stronger
+     * part of the measure stays (measure start, beat, eighth, sixteenth, 32nd), and between two
+     * of a kind the stronger sound.
+     */
+    private static List<Pick> apart(List<Pick> picks, long minTicks) {
+        List<Pick> order = new ArrayList<>(picks);
+        Collections.sort(order, new Comparator<Pick>() {
+            @Override
+            public int compare(Pick a, Pick b) {
+                int c = Integer.compare(a.tick % 48 != 0 ? 4 : a.level, b.tick % 48 != 0 ? 4 : b.level);
+                if (c != 0) return c;
+                c = Float.compare(b.strength, a.strength);
+                return c != 0 ? c : Long.compare(a.tick, b.tick);
+            }
+        });
+        TreeMap<Long, Pick> kept = new TreeMap<>();
+        for (Pick p : order) {
+            Long before = kept.floorKey(p.tick), after = kept.ceilingKey(p.tick);
+            if (before != null && p.tick - before < minTicks) continue;
+            if (after != null && after - p.tick < minTicks) continue;
+            kept.put(p.tick, p);
+        }
+        return new ArrayList<>(kept.values());
+    }
+
     /** Smallest musical grid (in ticks) whose notes are at least {@code minSec} apart. */
     private static int gridFor(double beatSec, double minSec) {
         int grid = 48;
@@ -596,6 +708,10 @@ public final class GuitarCharter {
     private static List<Pick> pickExpert(Context cx, List<Onset> onsets, Chart chart) {
         TempoMap map = cx.map;
         int grid = Math.min(TempoMap.RESOLUTION, gridFor(cx.beatSec, BASE_MIN_SEC[EXPERT]));
+        // On a steady grid, 32nd-note positions too (down to 45 ms apart); how close two notes
+        // may come is then settled in time, below, and not by the grid.
+        boolean fine = cx.fine && cx.bass && grid == 48 && cx.beatSec / 8 >= FINE_SLOT_MIN_SEC;
+        if (fine) grid = 24;
         int slots = (int) (cx.measureTicks / grid);
 
         TreeMap<Long, Onset> bySlot = new TreeMap<>();
@@ -638,7 +754,7 @@ public final class GuitarCharter {
         // Pickup notes before the first full measure stand on their own.
         for (Map.Entry<Long, Onset> e : bySlot.headMap(cx.origin).entrySet()) {
             int level = levelOf(cx, e.getKey());
-            if (e.getValue().strength >= LEVEL_NEED[Math.max(1, level)] * cx.threshold) {
+            if (e.getValue().strength >= need(cx, e.getKey(), Math.max(1, level)) * cx.threshold) {
                 picks.add(new Pick(e.getKey(), e.getValue(), e.getValue().strength, Math.max(1, level)));
             }
         }
@@ -651,10 +767,22 @@ public final class GuitarCharter {
                 long tick = map.measureStart(m) + (long) s * grid;
                 int level = levelOf(cx, tick);
                 float strength = pooled[fam][s] / size;
-                if (strength < LEVEL_NEED[level] * cx.threshold) continue;
-                if (size > 1 && present[fam][s] * 2 < size) continue;
-                picks.add(new Pick(tick, grids[m][s], strength, level));
+                // In a separated bass every note found is the bass, so one that is strong enough
+                // on its own stays even when the other hearings of its measure do not have it
+                // (a fill, a pickup into the next section). In a mix, a note that most repeats
+                // lack is more likely something else bleeding through.
+                Onset own = grids[m][s];
+                float need = (float) (need(cx, tick, level) * cx.threshold);
+                boolean ownNote = cx.bass && own != null && (own.strength >= need || own.rehit);
+                if (!ownNote) {
+                    if (strength < need) continue;
+                    if (size > 1 && present[fam][s] * 2 < size) continue;
+                }
+                picks.add(new Pick(tick, own, ownNote ? Math.max(strength, own.strength) : strength, level));
             }
+        }
+        if (fine) {
+            picks = apart(picks, (long) Math.ceil(FINE_MIN_GAP_SEC / cx.beatSec * TempoMap.RESOLUTION));
         }
         return picks;
     }
