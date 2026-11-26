@@ -244,6 +244,8 @@ public final class ConvertSong {
         sb.append(String.format(Locale.US, "Tempo: about %.0f BPM, %d beats to the measure\n", r.bpm, r.beatsPerMeasure));
         sb.append("Guitar chart made from ").append(r.guitarSource).append('\n');
         if (r.rnbNote != null) sb.append(r.rnbNote).append('\n');
+        sb.append("Recognised ").append(r.chart.soundGroups).append(" different notes and chords, and ")
+                .append(r.chart.repeatedMeasures).append(" measures that repeat\n");
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 r.noteCount(GuitarCharter.EASY), r.noteCount(GuitarCharter.MEDIUM), r.noteCount(GuitarCharter.HARD), r.noteCount(GuitarCharter.EXPERT)));
         if (r.bassChart != null) {
@@ -321,6 +323,16 @@ public final class ConvertSong {
         final float[] g = new float[StemSplitter.SEGMENT], m = new float[StemSplitter.SEGMENT], b = new float[StemSplitter.SEGMENT];
         final double[] energy = new double[4];
         final WavOut wav = vocalsOut == null ? null : new WavOut(new File(vocalsOut), StemSplitter.SAMPLE_RATE);
+        // For looking at what the separation did: the guitar, keys (piano) and "other" stems as WAV files
+        final String stemsDir = System.getProperty("yarg.stemsOut");
+        final WavOut[] stemWav = stemsDir == null ? null : new WavOut[] {
+                new WavOut(new File(stemsDir, "guitar.wav"), StemSplitter.SAMPLE_RATE),
+                new WavOut(new File(stemsDir, "piano.wav"), StemSplitter.SAMPLE_RATE),
+                new WavOut(new File(stemsDir, "other.wav"), StemSplitter.SAMPLE_RATE),
+                new WavOut(new File(stemsDir, "bass.wav"), StemSplitter.SAMPLE_RATE),
+                new WavOut(new File(stemsDir, "drums.wav"), StemSplitter.SAMPLE_RATE),
+                new WavOut(new File(stemsDir, "vocals.wav"), StemSplitter.SAMPLE_RATE)};
+        final float[] tmpStem = stemsDir == null ? null : new float[StemSplitter.SEGMENT];
 
         // Decoded once to 44.1 kHz stereo, 16 bit, as the app parks it for the model
         File pcm = File.createTempFile("mix44k", ".pcm");
@@ -378,6 +390,17 @@ public final class ConvertSong {
                     System.arraycopy(rsL, 0, voice16k[0], voice16kLength[0], made);
                     voice16kLength[0] += made;
                 }
+                if (stemWav != null) {
+                    try {
+                        float[][][] which = {gt, pn, ot, bs, st[StemSplitter.DRUMS], vc};
+                        for (int k = 0; k < which.length; k++) {
+                            for (int i = 0; i < count; i++) tmpStem[i] = (which[k][0][i] + which[k][1][i]) * 0.5f;
+                            stemWav[k].write(tmpStem, count);
+                        }
+                    } catch (IOException e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
                 if (wav != null) {
                     try {
                         wav.write(vox, count);
@@ -394,6 +417,7 @@ public final class ConvertSong {
             StemSplitter.split(source, frames, model, sink, report);
         } finally {
             if (wav != null) wav.close();
+            if (stemWav != null) for (WavOut w : stemWav) w.close();
             pcm.delete();
         }
         SongWriter.Stems out = new SongWriter.Stems();

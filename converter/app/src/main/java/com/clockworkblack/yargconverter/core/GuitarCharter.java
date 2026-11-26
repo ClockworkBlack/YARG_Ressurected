@@ -112,6 +112,10 @@ public final class GuitarCharter {
         public int soundGroups;
         /** How many measures were recognised as repeats of an earlier measure. */
         public int repeatedMeasures;
+        /** Measures charted as a loop heard under other parts (see lockLoops). */
+        public int loopMeasures;
+        /** Repeat family of each measure (-1 for none), for checking how a song was understood. */
+        public int[] measureFamily = new int[0];
     }
 
     // ------------------------------------------------------------------ onsets
@@ -326,6 +330,8 @@ public final class GuitarCharter {
         double beatSec;
         long origin;
         long measureTicks;
+        /** Measures given to a loop by {@link #lockLoops}. */
+        int loopMeasures;
         /** Repeat family of each measure (index = measure number), -1 for none. */
         int[] family;
         int[] familySize;
@@ -467,6 +473,8 @@ public final class GuitarCharter {
         int repeated = 0;
         for (int m = 0; m < measures; m++) if (cx.family[m] >= 0 && cx.familySize[cx.family[m]] > 1) repeated++;
         chart.repeatedMeasures = repeated;
+        chart.measureFamily = cx.family.clone();
+        chart.loopMeasures = cx.loopMeasures;
 
         // Pooled strength of every slot of every family.
         int families = cx.familySize.length;
@@ -515,6 +523,9 @@ public final class GuitarCharter {
         return w;
     }
 
+    /** Same note motion through the bar (cosine of the sixteenth-by-sixteenth pitch classes) that makes two measures repeats. */
+    static double MOTION_MIN = Double.parseDouble(System.getProperty("yarg.motionMin", "0.80"));
+
     /**
      * Sorts measures into families that share a rhythm and a harmony. Each measure is compared
      * with the first measure of every family so far.
@@ -525,6 +536,11 @@ public final class GuitarCharter {
         int beats = map.beatsPerMeasure;
         float[][] rhythm = new float[measures][slots];
         float[][] harmony = new float[measures][beats * 12];
+        // How the notes move through the measure: the pitch classes of each sixteenth. A riff
+        // looping under the singing keeps this the same bar after bar even when other sounds
+        // leaking into the separated track add stray note starts that change the rhythm grid.
+        int steps = beats * 4;
+        float[][] motion = new float[measures][steps * 12];
         boolean[] empty = new boolean[measures];
         for (int m = 0; m < measures; m++) {
             boolean any = false;
@@ -535,6 +551,15 @@ public final class GuitarCharter {
                 }
             }
             empty[m] = !any;
+            for (int q = 0; q < steps; q++) {
+                long tick = map.measureStart(m) + (long) q * TempoMap.RESOLUTION / 4;
+                int from = f.frameAt(map.tickToTime(tick));
+                int to = f.frameAt(map.tickToTime(tick + TempoMap.RESOLUTION / 4));
+                float[] c = f.chromaBetween(from, Math.max(from + 1, to));
+                float mean = 0;
+                for (float v : c) mean += v / 12f;
+                for (int k = 0; k < 12; k++) motion[m][q * 12 + k] = c[k] - mean;
+            }
             for (int b = 0; b < beats; b++) {
                 long tick = map.measureStart(m) + (long) b * TempoMap.RESOLUTION;
                 int from = f.frameAt(map.tickToTime(tick));
@@ -569,8 +594,14 @@ public final class GuitarCharter {
                     if (a.group == b.group) same++;
                 }
                 boolean sameNotes = shared >= 2 ? same >= 0.75 * shared : h >= 0.92;
-                if (r >= 0.80 && h >= 0.80 && sameNotes && r + h > bestScore) {
-                    bestScore = r + h;
+                double mo = Features.cosine(motion[m], motion[rep]);
+                boolean byOnsets = r >= 0.80 && h >= 0.80 && sameNotes;
+                // Or: the notes move through the bar the same way, sixteenth by sixteenth
+                // (Not for one note at a time: a bass line can move like another and play other notes)
+                boolean byMotion = cx.chords && MOTION_MIN > 0 && mo >= MOTION_MIN && h >= 0.85 && r >= 0.55;
+                double score = r + h + mo;
+                if ((byOnsets || byMotion) && score > bestScore) {
+                    bestScore = score;
                     best = g;
                 }
             }
@@ -585,6 +616,84 @@ public final class GuitarCharter {
         }
         cx.familySize = new int[sizes.size()];
         for (int g = 0; g < cx.familySize.length; g++) cx.familySize[g] = sizes.get(g);
+        // Loops are a guitar or keys thing: a bass line or a sung melody can share a loop's
+        // rhythm and key and still play other notes, which the lock would then chart wrongly
+        if (LOOP_PRESENCE > 0 && cx.chords) lockLoops(cx, motion, measures, steps);
+    }
+
+    /** A loop: a family that plays at least this many measures in a row. */
+    static final int LOOP_RUN = 4;
+    /** Share of a loop's notes that must still be heard (among the loudest) for a measure to be that loop. */
+    static double LOOP_PRESENCE = Double.parseDouble(System.getProperty("yarg.loopPresence", "0.6"));
+
+    /**
+     * Loop lock. A riff that loops through a song (an R&amp;B guitar or keys figure under the
+     * singing) is heard alone at first, then with other parts on top: the singing leaking into
+     * the separated track, pads, a second guitar. Its measures then stop looking alike and the
+     * chart would turn the one riff into a different pattern every measure. Once a family has
+     * played {@link #LOOP_RUN} measures in a row, any later or earlier measure in which the
+     * riff's notes can still be heard, sixteenth by sixteenth, is counted as that riff.
+     */
+    private static void lockLoops(Context cx, float[][] motion, int measures, int steps) {
+        int families = cx.familySize.length;
+        // Families that play a run of measures in a row
+        boolean[] loop = new boolean[families];
+        int run = 0;
+        for (int m = 0; m < measures; m++) {
+            run = m > 0 && cx.family[m] >= 0 && cx.family[m] == cx.family[m - 1] ? run + 1 : 1;
+            if (cx.family[m] >= 0 && run >= LOOP_RUN) loop[cx.family[m]] = true;
+        }
+        // Each loop's note in each sixteenth: the pitch class that stands out most across its measures
+        int[][] note = new int[families][];
+        boolean[][] strong = new boolean[families][];
+        for (int g = 0; g < families; g++) {
+            if (!loop[g]) continue;
+            float[] sum = new float[steps * 12];
+            for (int m = 0; m < measures; m++) if (cx.family[m] == g) for (int k = 0; k < sum.length; k++) sum[k] += motion[m][k];
+            note[g] = new int[steps];
+            strong[g] = new boolean[steps];
+            float[] peak = new float[steps];
+            for (int q = 0; q < steps; q++) {
+                int best = 0;
+                for (int k = 1; k < 12; k++) if (sum[q * 12 + k] > sum[q * 12 + best]) best = k;
+                note[g][q] = best;
+                peak[q] = sum[q * 12 + best];
+            }
+            float[] sorted = peak.clone();
+            Arrays.sort(sorted);
+            float median = sorted[steps / 2];
+            for (int q = 0; q < steps; q++) strong[g][q] = peak[q] > 0 && peak[q] >= 0.5f * median;
+        }
+        int moved = 0;
+        for (int m = 0; m < measures; m++) {
+            int own = cx.family[m];
+            if (own >= 0 && loop[own]) continue;
+            int best = -1;
+            double bestShare = LOOP_PRESENCE;
+            for (int g = 0; g < families; g++) {
+                if (!loop[g]) continue;
+                int heard = 0, count = 0;
+                for (int q = 0; q < steps; q++) {
+                    if (!strong[g][q]) continue;
+                    count++;
+                    float riff = motion[m][q * 12 + note[g][q]];
+                    int louder = 0;
+                    for (int k = 0; k < 12; k++) if (motion[m][q * 12 + k] > riff) louder++;
+                    if (louder <= 2 && riff > 0) heard++;
+                }
+                double share = count == 0 ? 0 : (double) heard / count;
+                if (count >= steps / 4 && share >= bestShare) {
+                    bestShare = share;
+                    best = g;
+                }
+            }
+            if (best < 0) continue;
+            if (own >= 0) cx.familySize[own]--;
+            cx.family[m] = best;
+            cx.familySize[best]++;
+            moved++;
+        }
+        cx.loopMeasures = moved;
     }
 
     /**
@@ -722,7 +831,46 @@ public final class GuitarCharter {
             if (p.lane >= 0) next = p;
         }
         for (Pick p : picks) if (p.lane < 0) p.lane = lanes / 2;
+        agreeOnFrets(cx, picks, d);
     }
+
+    /**
+     * Measures of one repeat family play the same riff, so they get the same frets: at each
+     * position in the measure, the fret (and chord) most of the family's measures were given.
+     * Without this, each pass of a loop is fretted from its own hearing, and small differences in
+     * how its notes were heard make the same riff look different every time it comes round.
+     */
+    private static void agreeOnFrets(Context cx, List<Pick> picks, int d) {
+        if (!AGREE_ON_FRETS || cx.family == null) return;
+        Map<Long, Map<Long, Integer>> votes = new HashMap<>();
+        for (Pick p : picks) {
+            int m = cx.map.measureOf(p.tick);
+            if (m < 0 || m >= cx.family.length || cx.family[m] < 0 || cx.familySize[cx.family[m]] < 2) continue;
+            long key = ((long) cx.family[m] << 32) | (p.tick - cx.map.measureStart(m));
+            long fret = ((long) (p.lane + 1) << 8) | (p.lane2 + 1);
+            votes.computeIfAbsent(key, k -> new HashMap<>()).merge(fret, 1, Integer::sum);
+        }
+        for (Pick p : picks) {
+            int m = cx.map.measureOf(p.tick);
+            if (m < 0 || m >= cx.family.length || cx.family[m] < 0 || cx.familySize[cx.family[m]] < 2) continue;
+            Map<Long, Integer> v = votes.get(((long) cx.family[m] << 32) | (p.tick - cx.map.measureStart(m)));
+            if (v == null) continue;
+            long best = -1;
+            int bestCount = 0;
+            for (Map.Entry<Long, Integer> e : v.entrySet()) {
+                if (e.getValue() > bestCount || (e.getValue() == bestCount && e.getKey() < best)) {
+                    best = e.getKey();
+                    bestCount = e.getValue();
+                }
+            }
+            if (best < 0) continue;
+            p.lane = (int) (best >> 8) - 1;
+            int second = (int) (best & 0xFF) - 1;
+            p.lane2 = chordAllowed(d, p) ? second : -1;
+        }
+    }
+
+    static boolean AGREE_ON_FRETS = !Boolean.getBoolean("yarg.noFretVote");
 
     private static void copyFret(Pick from, Pick to, int d) {
         to.lane = from.lane;

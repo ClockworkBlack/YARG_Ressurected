@@ -39,6 +39,8 @@ public final class SongWriter {
         public LyricAligner.Result wordTiming;
         /** Lines the song's repeats corrected, for the user; null when none. */
         public List<String> repeatNotes;
+        /** True when the lyrics found turned out to be another song's and were not used. */
+        public boolean lyricsWrong;
         /** True when the lyrics were timed word by word with the speech model. */
         public boolean lyricsByWord;
         /** What was done to the lyrics' timing, for the user; null when nothing. */
@@ -154,7 +156,13 @@ public final class SongWriter {
                     r.wordTiming = byWord;
                 }
             }
-            if (stems != null && stems.lyricTimesUnknown && (byWord == null || !byWord.moved())) {
+            if (byWord != null && byWord.wrongLyrics) {
+                // Words of another song that shares the title (and often the length): no vocals
+                // part rather than someone else's lyrics
+                lyrics = new ArrayList<>();
+                r.lyricsWrong = true;
+                r.lyricTimingNote = "The lyrics found do not match the singing in this recording (another song of the same name?), so there is no vocals part. Check the artist and convert again.";
+            } else if (stems != null && stems.lyricTimesUnknown && (byWord == null || !byWord.moved())) {
                 // Words without times that could not be matched to the voice: no vocals part,
                 // rather than one with every line in the wrong place
                 lyrics = new ArrayList<>();
