@@ -82,6 +82,13 @@ public final class AudioAnalyzer {
     private float[] perc = new float[4096];
     private float[] pitch = new float[4096];
     private float[] pitchConf = new float[4096];
+    // The pitch of what is sounding, read from the waveform (bass parts only; see lowPitch()).
+    private final boolean bassRange;
+    private float[] lowPitch = new float[4096];
+    private float[] lowPitchConf = new float[4096];
+    private final int lowStep;
+    private final float[] lowBuf;
+    private final double[] lowScore;
     private float[] rich = new float[4096];
     private float[] rms = new float[4096];
     private float[] bright = new float[4096];
@@ -101,6 +108,7 @@ public final class AudioAnalyzer {
      *                  octaves lower than for a full mix or a guitar
      */
     public AudioAnalyzer(int sampleRate, boolean bassRange) {
+        this.bassRange = bassRange;
         f0Min = bassRange ? BASS_F0_MIN_HZ : F0_MIN_HZ;
         // Index of the guitar's low E among the pitch candidates; a bass has no such floor.
         lowestRoot = bassRange ? 0 : 4;
@@ -129,6 +137,10 @@ public final class AudioAnalyzer {
         longIm = new float[longSize];
         longFft = new Fft(longSize);
         longGain = 400f / longSize;
+        // About 5.5 kHz is plenty for fundamentals up to 250 Hz.
+        lowStep = Math.max(1, sampleRate / 5500);
+        lowBuf = new float[longSize / lowStep];
+        lowScore = new double[lowBuf.length];
         logMag = new float[size];
         history = new float[RISE_FRAMES][size];
         newTone = new float[size];
@@ -280,12 +292,15 @@ public final class AudioAnalyzer {
                 logMag[k] = (float) Math.log1p(Math.sqrt(longRe[k] * longRe[k] + longIm[k] * longIm[k]) * longGain);
             }
             estimateNewPitch();
+            if (bassRange) estimateLowPitch();
             System.arraycopy(logMag, 0, history[longFrames % RISE_FRAMES], 0, frameSize);
             if (historyCount < RISE_FRAMES) historyCount++;
             longFrames++;
         } else {
             pitch[frames] = pitch[frames - 1];
             pitchConf[frames] = pitchConf[frames - 1];
+            lowPitch[frames] = lowPitch[frames - 1];
+            lowPitchConf[frames] = lowPitchConf[frames - 1];
             rich[frames] = rich[frames - 1];
             System.arraycopy(toneChroma, (frames - 1) * 12, toneChroma, frames * 12, 12);
         }
@@ -308,6 +323,53 @@ public final class AudioAnalyzer {
             scratch[j + 1] = v;
         }
         return scratch[n / 2];
+    }
+
+    /**
+     * Pitch of what is sounding in a bass part, from the waveform itself: the shortest shift at
+     * which the last 90 ms of sound line up with themselves again. The spectrum cannot do this
+     * for a bass: its bins are 10 Hz apart, and two 808 notes a whole tone apart (37 and 41 Hz)
+     * differ by 4 Hz, with hardly any overtones to tell them by.
+     */
+    private void estimateLowPitch() {
+        lowPitch[frames] = Float.NaN;
+        lowPitchConf[frames] = 0f;
+        int n = lowBuf.length;
+        double energy = 0;
+        for (int i = 0; i < n; i++) {
+            float sum = 0;
+            for (int k = 0; k < lowStep; k++) sum += longBuf[i * lowStep + k];
+            lowBuf[i] = sum / lowStep;
+            energy += lowBuf[i] * lowBuf[i];
+        }
+        if (energy / n < 1e-9) return;
+        double rate = (double) sampleRate / lowStep;
+        int minLag = (int) Math.floor(rate / 250.0), maxLag = Math.min(n / 2, (int) Math.ceil(rate / 27.0));
+        // Normalised so that 1 means "identical one shift later" whatever the loudness.
+        double top = 0;
+        for (int lag = minLag; lag <= maxLag; lag++) {
+            double cross = 0, power = 0;
+            for (int i = 0; i + lag < n; i++) {
+                cross += lowBuf[i] * lowBuf[i + lag];
+                power += lowBuf[i] * lowBuf[i] + lowBuf[i + lag] * lowBuf[i + lag];
+            }
+            lowScore[lag] = power > 0 ? 2 * cross / power : 0;
+            if (lag > minLag && lag < maxLag) top = Math.max(top, lowScore[lag]);
+        }
+        if (top < 0.3) return;
+        // The first clear peak, not the highest: the sound also lines up with itself at twice
+        // and three times its period, and those would read an octave or more too low.
+        for (int lag = minLag + 1; lag < maxLag; lag++) {
+            if (lowScore[lag] < 0.9 * top || lowScore[lag] < lowScore[lag - 1] || lowScore[lag] < lowScore[lag + 1]) continue;
+            double a = lowScore[lag - 1], b = lowScore[lag], c = lowScore[lag + 1];
+            double denom = a - 2 * b + c;
+            double shift = Math.abs(denom) > 1e-12 ? 0.5 * (a - c) / denom : 0;
+            if (Math.abs(shift) > 1) shift = 0;
+            double hz = rate / (lag + shift);
+            lowPitch[frames] = (float) (69 + 12 * Math.log(hz / 440.0) / Math.log(2));
+            lowPitchConf[frames] = (float) Math.max(0, Math.min(1, b));
+            return;
+        }
     }
 
     /**
@@ -466,6 +528,8 @@ public final class AudioAnalyzer {
         perc = Arrays.copyOf(perc, n);
         pitch = Arrays.copyOf(pitch, n);
         pitchConf = Arrays.copyOf(pitchConf, n);
+        lowPitch = Arrays.copyOf(lowPitch, n);
+        lowPitchConf = Arrays.copyOf(lowPitchConf, n);
         rich = Arrays.copyOf(rich, n);
         rms = Arrays.copyOf(rms, n);
         bright = Arrays.copyOf(bright, n);
@@ -485,6 +549,10 @@ public final class AudioAnalyzer {
         f.perc = Arrays.copyOf(perc, frames);
         f.pitch = Arrays.copyOf(pitch, frames);
         f.pitchConf = Arrays.copyOf(pitchConf, frames);
+        if (bassRange) {
+            f.lowPitch = Arrays.copyOf(lowPitch, frames);
+            f.lowPitchConf = Arrays.copyOf(lowPitchConf, frames);
+        }
         f.rich = Arrays.copyOf(rich, frames);
         f.rms = Arrays.copyOf(rms, frames);
         f.bright = Arrays.copyOf(bright, frames);

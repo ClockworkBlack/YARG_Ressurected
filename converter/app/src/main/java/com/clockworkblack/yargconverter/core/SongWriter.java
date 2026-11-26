@@ -11,7 +11,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /** Runs the analysis and writes the notes.mid and song.ini files of a YARG song folder. */
 public final class SongWriter {
@@ -35,6 +38,13 @@ public final class SongWriter {
          * guitar chart follows the instruments on their own. 0 otherwise.
          */
         public int instrumentalMeasures;
+        /** True when the song was charted at one steady tempo (music made on a grid). */
+        public boolean steadyTempo;
+        /**
+         * 0.5 or 2 when a song carried by the vocals was counted at half or twice the tempo first
+         * found, going by its backbeat (see {@link BeatTracker#recount}); 1 otherwise.
+         */
+        public double recount = 1;
         /**
          * Deep Music Mode guitar (written as the co-op guitar part, which the game's Deep Music
          * Mode modifier plays in place of the guitar): the guitar chart plus the vocals and the
@@ -53,8 +63,6 @@ public final class SongWriter {
         public int vocalTier = -1;
         /** The lyric lines as charted, carrying who sings each (including a guess made from the voices). */
         public List<Lrc.Line> lyricsOut = new ArrayList<>();
-        /** True when the song was found to keep one tempo throughout and is charted at it. */
-        public boolean steadyTempo;
         /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
         public boolean lyricsMoved;
         /** The word-by-word timing in full (for reports and checks); null when it was not used. */
@@ -131,6 +139,19 @@ public final class SongWriter {
      */
     static final double VOCAL_LED_SHARE = 0.35;
 
+    /**
+     * In a song carried by the vocals, a measure where the instruments reach this share of the
+     * vocals' power (half, -3 dB) is led by the instruments: the guitar chart follows them there.
+     */
+    static final double INSTRUMENTS_LEAD = 0.5;
+
+    /**
+     * How much worse one steady tempo may fit the note starts than the beats found (which bend
+     * towards the notes, so always fit a little better) and still be used. On ten real songs
+     * with programmed beats it fit 0.06 worse at most; songs that drift fit 0.4-0.6 worse.
+     */
+    static final double STEADY_TOLERANCE = 0.12;
+
     /** A measure whose vocals are under this share of the song's usual vocal level has none. */
     static final double NO_VOCALS_LEVEL = 0.1;
 
@@ -169,6 +190,14 @@ public final class SongWriter {
                                  boolean keepLyricTimes) {
         Result r = new Result();
         BeatTracker.Result beats = BeatTracker.track(f);
+        // Rap and R&B beats often read at twice or half the tempo anyone would count (190 for
+        // 95): the beat lines and measures then come twice as close, or half as close, as the
+        // song feels. In a song carried by the vocals the drums' backbeat settles it, and the
+        // beats are placed again at that tempo. The notes stay where they are either way.
+        if (stems != null && stems.drums != null && beats.beatsPerMeasure == 4 && vocalLed(stems)) {
+            r.recount = BeatTracker.recount(stems.drums, beats.bpm);
+            if (r.recount != 1) beats = BeatTracker.track(f, r.recount);
+        }
         r.bpm = beats.bpm;
         r.duration = f.duration;
         r.beatsPerMeasure = beats.beatsPerMeasure;
@@ -180,18 +209,61 @@ public final class SongWriter {
             strengths[i] = onsets.get(i).strength;
         }
         double[] aligned = BeatTracker.alignToOnsets(beats.beats, times, strengths);
-        // A song played to one tempo throughout is charted at that tempo, not at every wobble of the beats found
-        BeatTracker.Steady steady = BeatTracker.steady(aligned, beats.firstDownbeat, f.duration);
-        if (steady == null) steady = BeatTracker.steadyFromRhythm(f, 60.0 / Math.max(30, beats.bpm), aligned, beats.firstDownbeat);
-        if (steady != null) {
-            r.tempo = TempoMap.fromBeats(steady.beats, steady.firstDownbeat, beats.beatsPerMeasure);
-            r.bpm = steady.bpm;
-            r.steadyTempo = true;
-        } else {
-            r.tempo = TempoMap.fromBeats(aligned, beats.firstDownbeat, beats.beatsPerMeasure);
+        // Music made on a grid keeps perfect time: where one steady tempo puts the song's note
+        // starts on its sixteenths about as well as the beats found do, it is used, so the grid
+        // cannot wander with the accents. A band that speeds up and slows down fits a steady
+        // tempo far worse and keeps the beats found.
+        int firstDownbeat = beats.firstDownbeat;
+        double[] grid = BeatTracker.steady(aligned, times, strengths);
+        if (grid != null) {
+            // Beats the steady grid puts at or before the start of the song are left out, and the
+            // count to the first downbeat moves with them.
+            int early = 0;
+            while (1 + early < grid.length - 4 && grid[1 + early] < grid[0] + 0.02) early++;
+            if (early > 0) {
+                double[] kept = new double[grid.length - early];
+                kept[0] = grid[0];
+                System.arraycopy(grid, 1 + early, kept, 1, kept.length - 1);
+                grid = kept;
+            }
+            if (BeatTracker.gridFit(grid, times, strengths) >= BeatTracker.gridFit(aligned, times, strengths) - STEADY_TOLERANCE) {
+                aligned = grid;
+                firstDownbeat -= early;
+                r.bpm = 60.0 / (grid[grid.length - 1] - grid[grid.length - 2]);
+                r.steadyTempo = true;
+            }
         }
+        if (!r.steadyTempo) {
+            // Otherwise a song played to one tempo throughout (beats found that wobble around one
+            // tempo) is charted at that tempo, not at every wobble of the beats found.
+            BeatTracker.Steady steady = BeatTracker.steady(aligned, firstDownbeat, f.duration);
+            if (steady == null) steady = BeatTracker.steadyFromRhythm(f, 60.0 / Math.max(30, beats.bpm), aligned, firstDownbeat);
+            if (steady != null) {
+                aligned = steady.beats;
+                firstDownbeat = steady.firstDownbeat;
+                r.bpm = steady.bpm;
+                r.steadyTempo = true;
+            }
+        }
+        // A song counted at half the tempo found is still charted on the fast count, so that
+        // which notes it gets does not depend on how it is counted: only the beat lines and
+        // measures change. The fast count's ticks are exactly twice the slow one's.
+        TempoMap counted = TempoMap.fromBeats(aligned, firstDownbeat, beats.beatsPerMeasure);
+        boolean fastCount = r.recount == 0.5;
+        r.tempo = fastCount ? counted.doubled() : counted;
+        if (fastCount) r.bpm *= 2;
+        options = options == null ? new GuitarCharter.Options() : options.copy();
+        options.fine = r.steadyTempo;
         r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm, options);
         if (stems != null) chartFromStems(r, stems, options);
+        if (fastCount) {
+            r.tempo = counted;
+            r.bpm /= 2;
+            r.instrumentalMeasures = (r.instrumentalMeasures + 1) / 2;
+            // The charts share Star Power phrases (and may share note lists): each is halved once.
+            Set<Object> done = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
+            for (GuitarCharter.Chart c : new GuitarCharter.Chart[] {r.chart, r.bassChart, r.deepChart, r.deepBassChart}) halveTicks(c, done);
+        }
         if (lyrics != null && !lyrics.isEmpty()) {
             VocalAnalyzer.Voice voice = stems == null ? null : stems.voice;
             // Best of all: the letters of the lyrics matched to the voice by a speech model
@@ -276,6 +348,27 @@ public final class SongWriter {
         r.guitarTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
         r.previewMs = previewStart(f);
         return r;
+    }
+
+    /**
+     * Moves a chart made on a count twice as fast onto the slow count: every tick halves.
+     *
+     * @param done note lists and Star Power phrases already halved (charts share them)
+     */
+    private static void halveTicks(GuitarCharter.Chart c, Set<Object> done) {
+        if (c == null) return;
+        for (List<GuitarCharter.Note> level : c.notes) {
+            if (!done.add(level)) continue;
+            for (int i = 0; i < level.size(); i++) {
+                GuitarCharter.Note n = level.get(i);
+                level.set(i, new GuitarCharter.Note(n.tick / 2, n.lane, n.lane2, n.sustain / 2));
+            }
+        }
+        for (long[] phrase : c.starPower) {
+            if (!done.add(phrase)) continue;
+            phrase[0] /= 2;
+            phrase[1] /= 2;
+        }
     }
 
     /**
@@ -391,18 +484,33 @@ public final class SongWriter {
         GuitarCharter.Chart vocals = GuitarCharter.build(stems.vocals, GuitarCharter.detectOnsets(stems.vocals), r.tempo, r.bpm, single);
         GuitarCharter.Chart instruments = stems.melodic == null ? null
                 : GuitarCharter.build(stems.melodic, GuitarCharter.detectOnsets(stems.melodic), r.tempo, r.bpm, soft);
-        boolean[] quiet = measuresWithoutVocals(stems.vocals, r.tempo, r.duration);
+        // Measures where the instruments lead: nobody sings, or the instruments are about as loud
+        // as the vocals (a guitar intro, a guitar break, the ending of a rap song with a band).
+        boolean[] noVocals = measuresWithoutVocals(stems.vocals, r.tempo, r.duration);
+        boolean[] lead = noVocals.clone();
+        if (stems.melodic != null) {
+            double[] played = measureLevels(stems.melodic, r.tempo, r.duration);
+            double[] sung = measureLevels(stems.vocals, r.tempo, r.duration);
+            for (int k = 0; k < lead.length && k < played.length && k < sung.length; k++) {
+                if (played[k] > 0 && played[k] >= INSTRUMENTS_LEAD * sung[k]) lead[k] = true;
+            }
+        }
         GuitarCharter.Chart out = new GuitarCharter.Chart(), deep = new GuitarCharter.Chart();
         for (int d = 0; d < vocals.notes.size(); d++) {
-            List<GuitarCharter.Note> sung = new ArrayList<>();
-            for (GuitarCharter.Note n : vocals.notes.get(d)) if (!isQuiet(quiet, r.tempo, n.tick)) sung.add(n);
+            List<GuitarCharter.Note> sung = new ArrayList<>(), sungUnder = new ArrayList<>();
+            for (GuitarCharter.Note n : vocals.notes.get(d)) (isQuiet(lead, r.tempo, n.tick) ? sungUnder : sung).add(n);
             List<GuitarCharter.Note> played = instruments == null ? new ArrayList<GuitarCharter.Note>() : instruments.notes.get(d);
-            List<GuitarCharter.Note> between = new ArrayList<>();
-            for (GuitarCharter.Note n : played) if (isQuiet(quiet, r.tempo, n.tick)) between.add(n);
-            // Normal guitar: the vocals, and the instruments where nobody sings. Deep Music Mode:
-            // the instruments' melody all the way through as well.
-            out.notes.add(merge(sung, between, MERGE_GAP[d]));
-            deep.notes.add(merge(sung, played, MERGE_GAP[d]));
+            List<GuitarCharter.Note> leading = new ArrayList<>(), under = new ArrayList<>();
+            for (GuitarCharter.Note n : played) (isQuiet(lead, r.tempo, n.tick) ? leading : under).add(n);
+            // Normal guitar: the vocals, and the instruments where they lead. Deep Music Mode: the
+            // instruments' melody all the way through as well, and first where they lead.
+            List<GuitarCharter.Note> main = merge(sung, leading, MERGE_GAP[d]);
+            out.notes.add(main);
+            // Under the instruments, the vocals still come in where they are really sung (not in
+            // measures without vocals, where the vocal part holds only leakage).
+            List<GuitarCharter.Note> rest = new ArrayList<>(under);
+            for (GuitarCharter.Note n : sungUnder) if (!isQuiet(noVocals, r.tempo, n.tick)) rest.add(n);
+            deep.notes.add(merge(main, rest, MERGE_GAP[d]));
         }
         int notes = out.notes.get(GuitarCharter.EXPERT).size();
         if (notes < 24 || notes < 0.2 * mixNotes) return false;
@@ -415,9 +523,9 @@ public final class SongWriter {
         r.chart = out;
         r.deepChart = deep;
         r.guitarSource = "the separated instruments and vocals, as single notes";
-        int quietCount = 0;
-        for (boolean q : quiet) if (q) quietCount++;
-        r.instrumentalMeasures = quietCount;
+        int leadCount = 0;
+        for (boolean q : lead) if (q) leadCount++;
+        r.instrumentalMeasures = leadCount;
         return true;
     }
 
@@ -535,6 +643,21 @@ public final class SongWriter {
         if (usual <= 0) return quiet;
         for (int k = 0; k < count; k++) quiet[k] = frames[k] > 0 && sum[k] / frames[k] < NO_VOCALS_LEVEL * usual;
         return quiet;
+    }
+
+    /** Mean power of each measure (index = measure + 1, as for measuresWithoutVocals). */
+    static double[] measureLevels(Features f, TempoMap tempo, double duration) {
+        int count = Math.max(0, tempo.measureOf(tempo.timeToTick(duration))) + 2;
+        double[] sum = new double[count];
+        int[] frames = new int[count];
+        for (int i = 0; i < f.frames(); i++) {
+            int at = tempo.measureOf(tempo.timeToTick(f.timeOf(i))) + 1;
+            if (at < 0 || at >= count) continue;
+            sum[at] += (double) f.rms[i] * f.rms[i];
+            frames[at]++;
+        }
+        for (int k = 0; k < count; k++) sum[k] = frames[k] > 0 ? sum[k] / frames[k] : 0;
+        return sum;
     }
 
     private static boolean isQuiet(boolean[] quiet, TempoMap tempo, long tick) {

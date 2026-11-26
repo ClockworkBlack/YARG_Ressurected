@@ -109,7 +109,9 @@ def main():
         if proc.returncode == 0 and os.path.exists(base + ".json"):
             s = json.load(open(base + ".json", encoding="utf-8"))
             s.update(file=name, mode=mode, notes=notes, seconds=round(took))
-            say("%s done in %d s: %s, %d vocal lines (%s)" % (tag, took, s["folder"], s["vocalLines"], s["lyrics"]))
+            say("%s done in %d s: %s, %.0f BPM, guitar from %s, %d vocal lines (%s)%s" % (
+                tag, took, s["folder"], s.get("bpm", 0), s.get("guitarFrom", "?"), s["vocalLines"], s["lyrics"],
+                ", Deep Music Mode guitar %d / bass %d notes" % (s["deepGuitarExpert"], s["deepBassExpert"]) if s.get("deepGuitarExpert") or s.get("deepBassExpert") else ""))
         else:
             tail = open(base + ".log", encoding="utf-8", errors="replace").read()[-400:]
             s = dict(file=name, mode=mode, notes=notes, folder="", error=tail.strip().splitlines()[-1] if tail.strip() else "failed")
@@ -122,7 +124,8 @@ def main():
         report = list(pool.map(lambda a: convert(*a), [(n, name) for n, name in enumerate(files, 1)]))
     print("All done in %d min %02d s" % divmod(int(time.time() - started_all), 60), flush=True)
 
-    cols = ["file", "folder", "title", "artist", "mode", "notes", "lyrics", "vocalLines", "guitarExpert", "bassExpert", "seconds", "timing", "error"]
+    cols = ["file", "folder", "title", "artist", "mode", "notes", "bpm", "tempo", "guitarFrom", "lyrics", "vocalLines", "guitarExpert",
+            "bassExpert", "deepGuitarExpert", "deepBassExpert", "seconds", "timing", "error"]
     with open(os.path.join(args.out, "report.csv"), "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore"); w.writeheader(); w.writerows(report)
     ok = sum(1 for r in report if r.get("folder"))

@@ -17,7 +17,13 @@ Hugging Face) to time the lyrics word by word against the voice and check them a
 repeats: the most accurate way there is here, and it needs no times in the lyrics at all.
 
 `--mode` is normal, split or rnb; `--notes` fewer, standard or more; `--two-singers` guesses who sings
-which line from their voices. The folder appears in `songs/Artist - Title/`; copy it into
+which line from their voices. With split (or rnb), the vocals and drums are measured like instruments, as
+the phone app does: a song the voice carries (rap over a beat) then gets its guitar from the vocals
+and the instruments where they lead, its tempo counted by the drums' backbeat (95 BPM, not 190),
+and Deep Music Mode parts (`PART GUITAR COOP` / `PART RHYTHM`: guitar adds the vocals and the
+beat's melody, bass adds the drum hits). The summary line says which of these happened. The song's
+sound is copied without re-encoding but without any cover art stream in it (an Ogg with its cover
+art as a video stream was neither previewed nor played by the game); the art goes to `album.png`. The folder appears in `songs/Artist - Title/`; copy it into
 `Internal storage/YARG/songs/` on the phone.
 
 **Finding lyrics as the app does.** The app's lookup (LRCLIB, then NetEase when its box is ticked,

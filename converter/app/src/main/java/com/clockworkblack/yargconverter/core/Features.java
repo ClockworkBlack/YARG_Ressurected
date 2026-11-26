@@ -21,6 +21,14 @@ public final class Features {
     public float[] pitch;
     /** 0..1: how much of the newly arrived tone that single pitch explains. */
     public float[] pitchConf;
+    /**
+     * Bass parts only (null otherwise): the pitch of what is sounding as a MIDI note number, read
+     * from the waveform, NaN where there is none; and how sure it is, 0..1. Unlike {@link #pitch}
+     * this is the sound as a whole, not just what newly arrived, and it tells apart notes a
+     * semitone apart down to 28 Hz.
+     */
+    public float[] lowPitch;
+    public float[] lowPitchConf;
     /** 0..1: how much of the new tone is left over after that pitch (high for chords). */
     public float[] rich;
     /** Loudness of each frame. */

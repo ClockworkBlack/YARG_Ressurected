@@ -14,3 +14,5 @@ tests/RemoteServerTests/bin/
 tests/RemoteServerTests/obj/
 __pycache__/
 tools/desktop-check/work/
+converter/real-songs/audio/
+converter/real-songs/**/.cache/
