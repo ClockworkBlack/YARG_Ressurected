@@ -816,13 +816,14 @@ namespace YARG.Remote
             _urlQrImage = MakeQr(root, new Vector2(0.73f, 0.555f));
             _urlDetail = MakeText(root, new Vector2(0.73f, 0.555f), new Vector2(760f, 360f), 30, TextAlignmentOptions.Center);
 
-            _lobbyStatus = MakeText(root, new Vector2(0.5f, 0.215f), new Vector2(1760f, 110f), 28, TextAlignmentOptions.Center);
+            _lobbyStatus = MakeText(root, new Vector2(0.5f, OnComputer ? 0.235f : 0.215f), new Vector2(1760f, 110f), 28, TextAlignmentOptions.Center);
             _lobbyStatus.color = new Color(0.75f, 0.8f, 0.9f);
 
             if (OnComputer)
             {
-                // No game network on a computer (that is a phone's own Wi-Fi network): just Close
-                MakeButton(root, new Vector2(0.5f, 0.085f), "Close",
+                // No game network on a computer (that is a phone's own Wi-Fi network): just Close,
+                // a little higher so the button bar along the bottom doesn't cut into it
+                MakeButton(root, new Vector2(0.5f, 0.12f), "Close",
                     new Color(1f, 0.85f, 0.3f), Color.black, CloseLobby);
             }
             else

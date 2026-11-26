@@ -14,6 +14,32 @@ index 1e8e34c..34471ab 100644
                  Gamepad gamepad => SetDefaultBindings(gamepad, ControllerLayout.GuitarBindingMode),
  
                  FiveFretGuitar guitar => SetDefaultBindings(guitar),
+diff --git a/Assets/Script/Input/InputManager.cs b/Assets/Script/Input/InputManager.cs
+index ba89bbc..2700e65 100644
+--- a/Assets/Script/Input/InputManager.cs
++++ b/Assets/Script/Input/InputManager.cs
+@@ -205,6 +205,12 @@ namespace YARG.Input
+ 
+         private static void OnPlayerBindingDeviceAdded(InputDevice device)
+         {
++            // YARG Resurrected: a device given to a player who is already in (a phone that joins,
++            // or Add Device on a connected profile) is that player's from now on. It was only
++            // noted for devices the player came in with, so "Player not registered with device"
++            // was logged as an error when such a player left.
++            _registeredDevices.Add(device);
++
+             if (HasProfileWithKeyboard)
+             {
+                 _defaultKeyboardMenuBindings.Disable();
+@@ -213,6 +219,8 @@ namespace YARG.Input
+ 
+         private static void OnPlayerBindingDeviceRemoved(InputDevice device)
+         {
++            _registeredDevices.Remove(device);
++
+             if (!HasProfileWithKeyboard)
+             {
+                 _defaultKeyboardMenuBindings.Enable();
 diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
 index bb97bf9..7f89a40 100644
 --- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
@@ -44,3 +70,22 @@ index 23fd7f5..f575908 100644
                  new NavigationScheme.Entry(MenuAction.Orange, "Menu.Common.Phones", () => YARG.Remote.RemotePlayManager.OpenPhones()),
  #endif
              }, true));
+diff --git a/Assets/Script/Persistent/GlobalVariables.cs b/Assets/Script/Persistent/GlobalVariables.cs
+index 5f180d5..135ed08 100644
+--- a/Assets/Script/Persistent/GlobalVariables.cs
++++ b/Assets/Script/Persistent/GlobalVariables.cs
+@@ -108,6 +108,14 @@ namespace YARG
+ 
+         private void OnApplicationFocus(bool hasFocus)
+         {
++            // YARG Resurrected: on a computer this is also called while the game is still
++            // starting (a window opened behind another one), before the settings are loaded.
++            // That was an error on every such start.
++            if (SettingsManager.Settings == null)
++            {
++                return;
++            }
++
+             if (!hasFocus)
+             {
+                 if (SettingsManager.Settings.MuteOnFocusLoss.Value && !_mutedFromFocusLoss)

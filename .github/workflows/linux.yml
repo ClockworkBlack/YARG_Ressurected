@@ -201,8 +201,9 @@ jobs:
         uses: LABSN/sound-ci-helpers@v1
       - name: Unpack the game
         run: |
-          # Software OpenGL for the virtual screen, and ALSA -> PulseAudio for the game's sound
-          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libasound2-plugins >/dev/null
+          # Software OpenGL for the virtual screen, ALSA -> PulseAudio for the game's sound, and
+          # xdotool to put the game's window in front (the virtual screen has no window manager)
+          sudo apt-get install -y -qq xvfb xdotool libgl1-mesa-dri libasound2-plugins >/dev/null
           cd "$RUNNER_TEMP"
           tar xzf "$GITHUB_WORKSPACE/dist/"*.tar.gz
           # Install the way the Chromebook guide says, then test the installed copy

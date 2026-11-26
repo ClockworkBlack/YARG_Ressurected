@@ -9,7 +9,7 @@
 # with a bot guitarist and a generated guitar track, and quits with 0 (pass) or 1 (fail).
 # This script adds a watchdog, prints what happened, and fails on native library errors
 # (a missing or wrong-architecture .dll / .so / .dylib) even if the game itself carried on.
-# On Linux without a display it runs the game inside Xvfb.
+# On Linux without a display it runs the game on a virtual screen (Xvfb), with the window in front.
 set -uo pipefail
 
 GAME="$1"
@@ -43,13 +43,41 @@ fi
 args=(-logFile "$out_arg/player.log" -screen-fullscreen 0 -screen-width 1280 -screen-height 720
       -yarg-smoke-test -yarg-smoke-songs "$songs_arg" -yarg-smoke-out "$out_arg")
 
-echo "Starting $exe on $OS"
-if [ "$OS" = linux ] && [ -z "${DISPLAY:-}" ] && command -v xvfb-run >/dev/null; then
-    xvfb-run -a -s "-screen 0 1280x720x24" "$exe" "${args[@]}" &
-else
-    "$exe" "${args[@]}" &
+# Linux without a display (CI): a virtual screen of our own
+xvfb_pid=""
+if [ "$OS" = linux ] && [ -z "${DISPLAY:-}" ] && command -v Xvfb >/dev/null; then
+    for n in 99 98 97 96; do
+        Xvfb ":$n" -screen 0 1280x720x24 -nolisten tcp >/dev/null 2>&1 &
+        xvfb_pid=$!
+        sleep 2
+        if kill -0 "$xvfb_pid" 2>/dev/null; then
+            export DISPLAY=":$n"
+            break
+        fi
+        xvfb_pid=""
+    done
+    [ -n "$xvfb_pid" ] || { echo "::error::could not start a virtual screen (Xvfb)"; exit 1; }
+    trap 'kill "$xvfb_pid" 2>/dev/null' EXIT
 fi
+
+echo "Starting $exe on $OS"
+"$exe" "${args[@]}" &
 pid=$!
+
+# A virtual screen has no window manager, so nothing puts the game's window in front the way
+# a desktop does, and the game takes no controller input in the background. Do what a
+# desktop would: give the window the keyboard focus once it shows up.
+# (Kept up for the first minutes: the game re-makes its window while it starts, which drops it.)
+if [ -n "$xvfb_pid" ] && command -v xdotool >/dev/null; then
+    (
+        for _ in $(seq 1 180); do
+            kill -0 "$pid" 2>/dev/null || break
+            win="$(xdotool search --onlyvisible --name 'YARG' 2>/dev/null | head -n1)"
+            [ -n "$win" ] && xdotool windowfocus "$win" 2>/dev/null
+            sleep 1
+        done
+    ) &
+fi
 
 # Watchdog (macOS has no `timeout`)
 waited=0

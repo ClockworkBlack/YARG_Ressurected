@@ -104,7 +104,9 @@ namespace YARG.Testing
                 _errorCount++;
                 if (_errors.Count < 25)
                 {
-                    string line = (condition ?? "").Trim();
+                    // (The game's log lines carry a link to the source file: keep only its text)
+                    string line = System.Text.RegularExpressions.Regex.Replace((condition ?? "").Trim(),
+                        "<a href=\"[^\"]*\"[^>]*>([^<]*)</a>", "$1");
                     int end = line.IndexOf('\n');
                     if (end > 0)
                     {
@@ -386,28 +388,42 @@ namespace YARG.Testing
 
                 // Whammy bar fully pressed, no buttons (a button would work the menu):
                 // [1][buttons u32][whammy u8][touch time f64, 0 = not synced]
-                var packet = new byte[14];
-                packet[0] = 1;
-                packet[5] = 255;
-                await UniTask.RunOnThreadPool(() => phone.SendBinary(packet));
-
-                bool moved = false;
+                // The game takes no controller input while its window is in the background (the
+                // same for every controller), so this is only checked with the window in front.
                 deadline = Time.realtimeSinceStartup + 5f;
-                while (Time.realtimeSinceStartup < deadline)
+                while (!Application.isFocused && Time.realtimeSinceStartup < deadline)
                 {
-                    if (pad.added && pad.rightStick.ReadValue().x > 0.5f)
-                    {
-                        moved = true;
-                        break;
-                    }
                     await UniTask.NextFrame();
                 }
-                if (!moved)
+                if (Application.isFocused)
                 {
-                    Finish(false, "the phone's whammy bar did not reach the game");
-                    return false;
+                    var packet = new byte[14];
+                    packet[0] = 1;
+                    packet[5] = 255;
+                    await UniTask.RunOnThreadPool(() => phone.SendBinary(packet));
+
+                    bool moved = false;
+                    deadline = Time.realtimeSinceStartup + 5f;
+                    while (Time.realtimeSinceStartup < deadline)
+                    {
+                        if (pad.added && pad.rightStick.ReadValue().x > 0.5f)
+                        {
+                            moved = true;
+                            break;
+                        }
+                        await UniTask.NextFrame();
+                    }
+                    if (!moved)
+                    {
+                        Finish(false, "the phone's whammy bar did not reach the game");
+                        return false;
+                    }
+                    Note("Phone's whammy bar reaches the game");
                 }
-                Note("Phone's whammy bar reaches the game");
+                else
+                {
+                    Note("Phone's whammy bar: not checked (the game's window is in the background, where it takes no controller input)");
+                }
 
                 // PLAY WITH PHONES (the join code screen)
                 _step = "opening PLAY WITH PHONES";
