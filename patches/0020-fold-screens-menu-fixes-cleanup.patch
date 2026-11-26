@@ -80,8 +80,25 @@ index f488d39..fbffcc2 100644
                  Screen.sleepTimeout = SleepTimeout.NeverSleep;
              }
          }
+diff --git a/Assets/Script/Integration/DiscordController.cs b/Assets/Script/Integration/DiscordController.cs
+index 4883d4d..6f37e40 100644
+--- a/Assets/Script/Integration/DiscordController.cs
++++ b/Assets/Script/Integration/DiscordController.cs
+@@ -67,6 +67,12 @@ namespace YARG.Integration
+                 return;
+             }
+ 
++            // Discord's library isn't part of the phone build: trying only logs an error on every start
++            if (Application.platform == RuntimePlatform.Android)
++            {
++                return;
++            }
++
+             // Don't create instance if Discord rich presence is turned off in settings
+             if (SettingsManager.Settings.DiscordRichPresence.Value == DiscordRichPresenceMode.Hide)
+             {
 diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
-index 4b90b44..9a3105c 100644
+index 4b90b44..9a656ce 100644
 --- a/Assets/Script/Settings/SettingsManager.Settings.cs
 +++ b/Assets/Script/Settings/SettingsManager.Settings.cs
 @@ -162,8 +162,6 @@ namespace YARG.Settings
@@ -93,11 +110,41 @@ index 4b90b44..9a3105c 100644
              public ToggleSetting EnablePracticeSP { get; } = new(false);
              public SliderSetting PracticeRestartDelay { get; } = new(2f, 0.5f, 5f);
  
+@@ -239,7 +237,6 @@ namespace YARG.Settings
+                     DiscordRichPresenceMode.Hide
+                 };
+ 
+-            public ToggleSetting AmIAwesome { get; } = new(false);
+ 
+             #endregion
+ 
 diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
-index b521298..1884d13 100644
+index b521298..733cb25 100644
 --- a/Assets/Script/Settings/SettingsManager.cs
 +++ b/Assets/Script/Settings/SettingsManager.cs
-@@ -57,7 +57,6 @@ namespace YARG.Settings
+@@ -39,14 +39,21 @@ namespace YARG.Settings
+                 new HeaderMetadata("Venues"),
+                 nameof(Settings.VenueChoice),
+                 nameof(Settings.VenueCrowd),
++#if !UNITY_ANDROID
++                // (On a phone: the folder is private to the app, and the venues take the place of
++                // the global and default backgrounds; the Venue setting says where pictures go)
+                 new ButtonRowMetadata(nameof(Settings.OpenVenueFolder)),
+                 new FieldMetadata(nameof(Settings.DisableDefaultBackground), isAdvanced: true),
+                 new FieldMetadata(nameof(Settings.DisableGlobalBackgrounds), isAdvanced: true),
++#endif
+                 nameof(Settings.DisablePerSongBackgrounds),
+                 new FieldMetadata(nameof(Settings.WaitForSongVideo), isAdvanced: true),
+ 
+                 new HeaderMetadata("Gameplay"),
++#if !UNITY_ANDROID
++                // (Android delivers input as events; there is nothing to poll)
+                 new FieldMetadata(nameof(Settings.InputPollingFrequency), isAdvanced: true),
++#endif
+                 nameof(Settings.VoiceActivatedVocalStarPower),
+                 new FieldMetadata(nameof(Settings.EnablePracticeSP), isAdvanced: true),
+                 new FieldMetadata(nameof(Settings.PracticeRestartDelay), isAdvanced: true),
+@@ -57,7 +64,6 @@ namespace YARG.Settings
                  new HeaderMetadata("Vocals"),
                  nameof(Settings.SingOff),
                  nameof(Settings.SingOffTurnLength),
@@ -105,10 +152,128 @@ index b521298..1884d13 100644
  
                  new HeaderMetadata("StatusBar"),
                  nameof(Settings.ShowBattery),
+@@ -72,7 +78,9 @@ namespace YARG.Settings
+                 nameof(Settings.GamepadGuitarLayout),
+                 nameof(Settings.GamepadNoStrum),
+                 nameof(Settings.ShowControllerButtonNames),
++#if UNITY_ANDROID
+                 nameof(Settings.TouchControls),
++#endif
+ 
+                 new HeaderMetadata("Other"),
+                 nameof(Settings.ReconnectProfiles),
+@@ -82,8 +90,10 @@ namespace YARG.Settings
+                 nameof(Settings.PauseOnFocusLoss),
+                 nameof(Settings.MuteOnFocusLoss),
+                 nameof(Settings.WrapAroundNavigation),
++#if !UNITY_ANDROID
++                // (Discord isn't part of the phone build)
+                 nameof(Settings.DiscordRichPresence),
+-                new FieldMetadata(nameof(Settings.AmIAwesome), isAdvanced: true),
++#endif
+             },
+             new SongManagerTab("SongManager", icon: "Songs")
+             {
+@@ -105,8 +115,11 @@ namespace YARG.Settings
+             },
+             new MetadataTab("Sound", icon: "Sound")
+             {
++#if UNITY_ANDROID
++                // (Phones only: on a computer the output is chosen under Experimental)
+                 new HeaderMetadata("SoundOutput"),
+                 nameof(Settings.SoundOutput),
++#endif
+ 
+                 new HeaderMetadata("Volume"),
+                 new FieldMetadata(nameof(Settings.EnableNormalization), isAdvanced: true),
+@@ -157,12 +170,17 @@ namespace YARG.Settings
+             new MetadataTab("Graphics", icon: "Display", new TrackPreviewBuilder())
+             {
+                 new HeaderMetadata("Display"),
++#if !UNITY_ANDROID
++                // (A phone has no window, resolution or VSync choice: the game fills the screen at
++                // its refresh rate, and FPS Cap is what sets the frame rate)
+                 nameof(Settings.VSync),
++#endif
+                 new FieldMetadata(nameof(Settings.FpsCap)),
+                 new FieldMetadata(nameof(Settings.VenueFpsCap), isAdvanced: true),
++#if !UNITY_ANDROID
+                 nameof(Settings.FullscreenMode),
+                 nameof(Settings.Resolution),
+-                new FieldMetadata(nameof(Settings.FpsStats), isAdvanced: true),
++#endif
+ 
+                 new HeaderMetadata("Graphics"),
+                 nameof(Settings.LowQuality),
+@@ -216,7 +234,9 @@ namespace YARG.Settings
+                     nameof(Settings.CopyCurrentSongTextFilePath),
+                     nameof(Settings.CopyCurrentSongJsonFilePath)),
+                 new ButtonRowMetadata(nameof(Settings.OpenPersistentDataPath)),
++#if !UNITY_ANDROID
+                 new ButtonRowMetadata(nameof(Settings.OpenExecutablePath)),
++#endif
+             },
+             new MetadataTab("LightingPeripherals", icon: "Lighting", new DMXInformationPanelBuilder())
+             {
+@@ -270,6 +290,8 @@ namespace YARG.Settings
+                 nameof(Settings.SaveScoresWithBots),
+                 new HeaderMetadata("Accessibility"),
+                 nameof(Settings.FontScaling),
++#if !UNITY_ANDROID
++                // (On a phone the sound library has one output; Sound > Play Sound Through picks it)
+                 new HeaderMetadata("OutputConfiguration"),
+                 nameof(Settings.OutputDevice),
+                 nameof(Settings.OutputChannelDefault),
+@@ -277,6 +299,7 @@ namespace YARG.Settings
+                 nameof(Settings.OutputChannelMetronome),
+                 nameof(Settings.OutputChannelSfx),
+                 nameof(Settings.OutputChannelVox),
++#endif
+             }
+         };
+ 
+@@ -315,6 +338,15 @@ namespace YARG.Settings
+                 Settings.DefaultsVersion = 1;
+             }
+ 
++#if UNITY_ANDROID
++            // Settings a phone does not show: a value saved by an earlier build would otherwise
++            // stay in force with no way to change it
++            Settings.FullscreenMode.SetValueWithoutNotify(FullScreenMode.FullScreenWindow);
++            Settings.Resolution.SetValueWithoutNotify(null);
++            Settings.DisableGlobalBackgrounds.SetValueWithoutNotify(false);
++            Settings.DisableDefaultBackground.SetValueWithoutNotify(false);
++#endif
++
+             SettingContainer.IsInitialized = true;
+ 
+             // Now that we're done loading, call all of the callbacks
+diff --git a/Assets/Script/Venue/VenueLoader.cs b/Assets/Script/Venue/VenueLoader.cs
+index 6327919..01e2a73 100644
+--- a/Assets/Script/Venue/VenueLoader.cs
++++ b/Assets/Script/Venue/VenueLoader.cs
+@@ -51,6 +51,8 @@ namespace YARG.Venue
+ 
+             if (!SettingsManager.Settings.DisableDefaultBackground.Value && result == null)
+             {
++                // (Not the song's own: tagged as one, it kept the drawn venues away)
++                source = VenueSource.Global;
+                 result = LoadDefaultVenue();
+             }
+ 
 diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
-index 5fab337..959ac86 100644
+index 5fab337..ed2329d 100644
 --- a/Assets/StreamingAssets/lang/en-US.json
 +++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -979,7 +979,7 @@
+         "Button": {
+             "CopyCurrentSongJsonFilePath": "Copy Current Song Json File Path",
+             "CopyCurrentSongTextFilePath": "Copy Current Song Text File Path",
+-            "ExportSongsJson": "Ouvert (JSON)",
++            "ExportSongsJson": "Export (JSON)",
+             "ExportSongsText": "Plain Text",
+             "ExportSongsCsv": "CSV",
+             "OpenCalibrator": "Open Calibrator",
 @@ -1717,10 +1717,6 @@
                  "Name": "Sing-Off",
                  "Description": "Turns the vocals into a battle when two or more players sing. On the Vocals instrument the lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. On Harmonies (a song with a part for each artist) each player sings the artist they picked and the two artists' singers face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. A sing-off with turns leaves no high score, since each singer has only half the song. Can also be switched on the screen before a song."
