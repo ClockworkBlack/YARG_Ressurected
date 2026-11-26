@@ -55,3 +55,11 @@ Java writes file names in the locale's encoding, and under a plain `C` or `POSIX
 ASCII fits. `batch_convert.py` runs the converter with `LC_ALL=C.UTF-8` by itself; when running
 `ConvertSong` by hand, set it too. Without it the folder gets an ASCII name ("Beyonce - Halo")
 and the converter says so, instead of failing.
+
+**Picking up where a run stopped:** `batch_convert.py songs out --keep FOLDER` copies each song
+into `FOLDER/Converted` the moment it is finished and records what is done in `FOLDER/state.json`.
+Run it again with the same `--keep` and only what is not finished is converted: new files, songs
+that failed or got no lyrics, and songs whose file or `songs.csv` row changed (`--redo-all` does
+everything again). Without a record yet, a `report.csv` in that folder from an earlier run is
+taken as the record. Speech-to-text runs on the GPU when it can (CUDA 12's cuBLAS and cuDNN 9:
+`pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"`) and on the processor when it cannot.

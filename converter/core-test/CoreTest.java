@@ -66,7 +66,22 @@ public final class CoreTest {
             {"Seduction.mp3", "", "Seduction"},
             {"Artist \u2013 Song Title (Live).flac", "Artist", "Song Title (Live)"},
             {"Music.mp3", "", "Music"},
+            {"Girls'_Generation_소녀시대_'FOREVER_1'_MV.mp3", "Girls' Generation", "FOREVER 1"},
+            {"Girls'_Generation_(소녀시대)_–_Genie_(소원을_말해_봐)_(Color_Coded_Lyr.mp3", "Girls' Generation", "Genie (소원을 말해 봐) (Color Coded Lyr"},
+            {"Don't Stop 'Til You Get Enough.mp3", "", "Don't Stop 'Til You Get Enough"},
+            {"소녀시대 - 소원을 말해봐.mp3", "소녀시대", "소원을 말해봐"},
         };
+        String[][] titles = {
+            {"Genie (소원을 말해 봐) (Color Coded Lyrics Han/Rom/Eng)", "Genie (소원을 말해 봐)"},
+            {"Genie (소원을 말해 봐) (Color Coded Lyr", "Genie (소원을 말해 봐)"},
+            {"Gee [Eng Sub]", "Gee"},
+            {"Ain't No Mountain High Enough (Remastered)", "Ain't No Mountain High Enough"},
+            {"Song (Part 2)", "Song (Part 2)"},
+        };
+        for (String[] c : titles) {
+            String got = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(c[0]);
+            check(got.equals(c[1]), "title " + c[0] + " -> \"" + got + "\"");
+        }
         for (String[] c : cases) {
             String[] got = com.clockworkblack.yargconverter.core.SongNames.fromFileName(c[0]);
             check(got[0].equals(c[1]) && got[1].equals(c[2]), c[0] + " -> \"" + got[0] + "\" / \"" + got[1] + "\"");

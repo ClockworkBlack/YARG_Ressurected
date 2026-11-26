@@ -6,7 +6,12 @@
   - every song's lyrics timed word by word against the voice and checked against its repeats.
 
     python batch_convert.py <songs folder> <output folder> [--mode split|rnb|normal] [--notes more|standard|fewer]
-                            [--gpu] [--jobs N|auto]
+                            [--gpu] [--jobs N|auto] [--keep FOLDER] [--redo-all]
+
+--keep FOLDER keeps every finished song there as soon as it is done, with a record of what is
+done (state.json); run again with the same --keep and only the songs not finished last time are
+converted: new files, ones that failed or found no lyrics, and ones whose file or songs.csv row
+changed. --redo-all converts everything again.
 
 --jobs converts several songs at once (auto: as many as the machine's memory and processors allow,
 at most 4). Speech-to-text runs for one song at a time, so the GPU never holds more than one copy.
@@ -17,7 +22,7 @@ cut a music video's intro or outro off). The file column is matched in any lette
 without the extension.
 Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv.
 """
-import argparse, csv, json, os, subprocess, sys, threading, time
+import argparse, csv, json, os, re, shutil, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -39,6 +44,9 @@ def main():
     ap.add_argument("--words-model", default=os.environ.get("YARG_WORDS", "wav2vec2-base-960h.onnx"))
     ap.add_argument("--whisper", default="large-v3")
     ap.add_argument("--jobs", default="auto")
+    ap.add_argument("--keep", help="a folder (on Google Drive, say) that keeps every finished song and the record of "
+                    "what is done, so a later run picks up where this one stopped")
+    ap.add_argument("--redo-all", action="store_true", help="convert every song again, finished or not")
     args = ap.parse_args()
 
     plan = {}
@@ -54,26 +62,108 @@ def main():
     out_songs = os.path.join(args.out, "Converted")
     work = os.path.join(args.out, ".work")
     os.makedirs(out_songs, exist_ok=True); os.makedirs(work, exist_ok=True)
+    keep_songs = os.path.join(args.keep, "Converted") if args.keep else None
+    if keep_songs: os.makedirs(keep_songs, exist_ok=True)
+    state_path = os.path.join(args.keep or args.out, "state.json")
+    state = {}
+    if os.path.exists(state_path):
+        try:
+            state = json.load(open(state_path, encoding="utf-8"))
+        except ValueError:
+            state = {}
+    songs_dir = keep_songs or out_songs
+
+    def settings(name):
+        p = plan.get(name.lower()) or plan.get(os.path.splitext(name)[0].lower()) or {}
+        mode = p.get("mode") or args.mode
+        notes = p.get("notes") or args.notes
+        given = {k: p.get(k, "") for k in ("title", "artist", "album", "year", "genre", "start", "end")}
+        return p, mode, notes, dict(given, mode=mode, notes=notes, size=os.path.getsize(os.path.join(args.songs, name)))
+
+    def finished(name):
+        """Why a song needs converting again, or None when its last conversion is complete."""
+        before = state.get(name.lower())
+        if args.redo_all: return "all songs redone"
+        if not before: return "new"
+        if before.get("settings") != settings(name)[3]: return "file or settings changed"
+        row = before.get("row", {})
+        if row.get("error") or not row.get("folder"): return "failed last time"
+        if not os.path.isdir(os.path.join(songs_dir, row["folder"])): return "folder missing"
+        if before.get("settings", {}).get("mode") != "normal" and row.get("lyrics") == "none" and not before.get("noWords"):
+            return "no lyrics last time"
+        return None
+
+    report_path = os.path.join(args.keep or args.out, "report.csv")
+    if not state and not args.redo_all and os.path.exists(report_path):
+        # A run from before there was a record: its report says what was finished
+        with open(report_path, encoding="utf-8-sig") as f:
+            rows = {(r.get("file") or "").lower(): r for r in csv.DictReader(f)}
+        for name in files:
+            r = rows.get(name.lower())
+            if r and r.get("folder") and os.path.isdir(os.path.join(songs_dir, r["folder"])):
+                state[name.lower()] = dict(settings=settings(name)[3], row={k: v for k, v in r.items() if k})
+        if state: print("Picked up %d songs from an earlier run's report" % len(state), flush=True)
+
+    todo, report = [], {}
+    for name in files:
+        why = finished(name)
+        if why is None:
+            report[name] = state[name.lower()]["row"]
+        else:
+            todo.append((name, why))
+    skipped = len(files) - len(todo)
+    if skipped:
+        print("%d songs already done (kept as they are), %d to convert" % (skipped, len(todo)), flush=True)
 
     jobs = auto_jobs() if args.jobs == "auto" else max(1, int(args.jobs))
     heap = heap_for(jobs)
-    print("%d songs, %d at a time" % (len(files), jobs), flush=True)
+    print("%d songs, %d at a time" % (len(todo), jobs), flush=True)
     whisper_lock = threading.Lock()
     print_lock = threading.Lock()
-    total = len(files)
+    state_lock = threading.Lock()
+    total = len(todo)
+    whisper = {"device": "cuda" if args.gpu else "cpu"}
 
     def say(text):
         with print_lock:
             print(text, flush=True)
 
-    def convert(n, name):
-        p = plan.get(name.lower()) or plan.get(os.path.splitext(name)[0].lower()) or {}
-        mode = p.get("mode") or args.mode
-        notes = p.get("notes") or args.notes
+    def save_state():
+        tmp = state_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f: json.dump(state, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, state_path)
+        write_report(args.keep or args.out, [report[n] for n in files if n in report])
+
+    def speech_to_text(tag, name, base, song):
+        """Writes lyrics from the voice; on the GPU when it can, else on the processor. True when it worked."""
+        for attempt in range(2):
+            env = dict(os.environ, NOVAD="1", DEVICE=whisper["device"])
+            if whisper["device"] == "cuda":
+                libs = cuda_libraries()
+                if libs: env["LD_LIBRARY_PATH"] = ":".join(libs + [os.environ.get("LD_LIBRARY_PATH", "")]).rstrip(":")
+            if song: env["HINT"] = song
+            r = subprocess.run([sys.executable, os.path.join(HERE, "transcribe_lyrics.py"), base + ".vocals.wav",
+                                base + ".lrc.tmp", args.whisper, "auto"], env=env, capture_output=True, text=True)
+            if r.returncode == 0 and os.path.exists(base + ".lrc.tmp"):
+                return True
+            gpu_trouble = re.search(r"libcublas|libcudnn|CUDA|cuda|cuBLAS|GPU", r.stderr or "")
+            if whisper["device"] == "cuda" and gpu_trouble and attempt == 0:
+                # The GPU's libraries are missing or broken: the processor is slower but works
+                whisper["device"] = "cpu"
+                say("%s speech to text cannot use the GPU (%s); using the processor from now on (slower)"
+                    % (tag, (r.stderr or "").strip().splitlines()[-1][:160] if r.stderr.strip() else "error"))
+                continue
+            say("%s speech to text failed: %s" % (tag, (r.stderr or "")[-300:]))
+            return False
+        return False
+
+    def convert(n, name, why):
+        p, mode, notes, sig = settings(name)
         tag = "[%d/%d]" % (n, total)
         base = os.path.join(work, "%03d" % n)
-        for ext in (".vocals.wav", ".lrc", ".lrc.needed", ".json", ".log"):
+        for ext in (".vocals.wav", ".lrc", ".lrc.tmp", ".lrc.needed", ".json", ".log"):
             if os.path.exists(base + ext): os.remove(base + ext)
+        before = state.get(name.lower(), {}).get("row", {}).get("folder")
         cmd = ["java", "-Xmx%dm" % heap] + (["-Dyarg.cuda=1"] if args.gpu else []) + ["-cp", args.classpath, "ConvertSong",
                "--audio", os.path.join(args.songs, name), "--out", out_songs, "--mode", mode, "--notes", notes,
                "--model", args.stems_model, "--words-model", args.words_model, "--find-details", "--find-lyrics",
@@ -82,8 +172,9 @@ def main():
             if p.get(key): cmd += ["--" + key, p[key]]
         if mode != "normal":
             cmd += ["--vocals-out", base + ".vocals.wav", "--wait-for-lyrics", base + ".lrc"]
-        say("%s %s (%s, %s notes)" % (tag, name, mode, notes))
+        say("%s %s (%s, %s notes)%s" % (tag, name, mode, notes, "" if why == "new" else ": " + why))
         started = time.time()
+        stt = None
         with open(base + ".log", "w") as log:
             proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=JAVA_ENV)
             wrote = False
@@ -93,15 +184,10 @@ def main():
                     song = None
                     for line in open(base + ".log", encoding="utf-8", errors="replace"):
                         if line.startswith("Hint: "): song = line[6:].strip()
-                    env = dict(os.environ, NOVAD="1", DEVICE="cuda" if args.gpu else "cpu")
-                    if song: env["HINT"] = song
                     with whisper_lock:
                         say("%s no lyrics online for %s: writing them from the voice" % (tag, name))
-                        r = subprocess.run([sys.executable, os.path.join(HERE, "transcribe_lyrics.py"), base + ".vocals.wav",
-                                            base + ".lrc.tmp", args.whisper, "auto"], env=env, capture_output=True, text=True)
-                    if r.returncode != 0 or not os.path.exists(base + ".lrc.tmp"):
-                        say("%s speech to text failed: %s" % (tag, r.stderr[-300:]))
-                        open(base + ".lrc.tmp", "w").close()
+                        stt = speech_to_text(tag, name, base, song)
+                    if not stt: open(base + ".lrc.tmp", "w").close()
                     os.replace(base + ".lrc.tmp", base + ".lrc")
                     wrote = True
                 time.sleep(1)
@@ -115,18 +201,52 @@ def main():
             s = dict(file=name, mode=mode, notes=notes, folder="", error=tail.strip().splitlines()[-1] if tail.strip() else "failed")
             say("%s FAILED %s: %s" % (tag, name, s["error"]))
         if os.path.exists(base + ".vocals.wav"): os.remove(base + ".vocals.wav")
+        with state_lock:
+            if s.get("folder") and keep_songs:
+                # Kept at once, so a run cut short loses only the songs still in progress
+                dest = os.path.join(keep_songs, s["folder"])
+                if os.path.isdir(dest): shutil.rmtree(dest)
+                shutil.copytree(os.path.join(out_songs, s["folder"]), dest)
+            if s.get("folder") and before and before != s["folder"]:
+                # The song's folder has a new name (its details were found this time): the old one goes
+                for d in (out_songs, keep_songs):
+                    if d and os.path.isdir(os.path.join(d, before)): shutil.rmtree(os.path.join(d, before))
+            report[name] = s
+            # Speech to text that worked and heard no words: an instrumental, not to be tried again
+            state[name.lower()] = dict(settings=sig, row=s, noWords=bool(stt) and s.get("lyrics") == "none")
+            save_state()
         return s
 
     started_all = time.time()
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        report = list(pool.map(lambda a: convert(*a), [(n, name) for n, name in enumerate(files, 1)]))
+        list(pool.map(lambda a: convert(*a), [(n, name, why) for n, (name, why) in enumerate(todo, 1)]))
     print("All done in %d min %02d s" % divmod(int(time.time() - started_all), 60), flush=True)
+    rows = [report[n] for n in files if n in report]
+    write_report(args.out, rows)
+    if args.keep: write_report(args.keep, rows)
+    ok = sum(1 for r in rows if r.get("folder"))
+    print("Converted %d of %d songs into %s%s" % (ok, len(rows), songs_dir, " (%d of them earlier)" % skipped if skipped else ""))
 
-    cols = ["file", "folder", "title", "artist", "mode", "notes", "lyrics", "vocalLines", "guitarExpert", "bassExpert", "seconds", "timing", "error"]
-    with open(os.path.join(args.out, "report.csv"), "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore"); w.writeheader(); w.writerows(report)
-    ok = sum(1 for r in report if r.get("folder"))
-    print("Converted %d of %d songs into %s" % (ok, len(report), out_songs))
+
+COLS = ["file", "folder", "title", "artist", "mode", "notes", "lyrics", "vocalLines", "guitarExpert", "bassExpert", "seconds", "timing", "error"]
+
+
+def write_report(folder, rows):
+    tmp = os.path.join(folder, "report.csv.tmp")
+    with open(tmp, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=COLS, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
+    os.replace(tmp, os.path.join(folder, "report.csv"))
+
+
+def cuda_libraries():
+    """Folders of the CUDA libraries pip installs (nvidia-cublas-cu12, nvidia-cudnn-cu12), for speech to text."""
+    import glob, site
+    roots = list(getattr(site, "getsitepackages", lambda: [])()) + [site.getusersitepackages()] + sys.path
+    found = []
+    for root in roots:
+        for d in sorted(glob.glob(os.path.join(root, "nvidia", "*", "lib"))):
+            if d not in found: found.append(d)
+    return found
 
 
 def memory_mb():
