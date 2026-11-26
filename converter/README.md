@@ -254,7 +254,7 @@ list). Normal mode cannot listen to voices: there, only the lyrics' own headers 
 
 ## Several songs at once
 
-Under **Several songs at once**, press **Choose files (up to 33)** and pick as many songs as you
+Under **Several songs at once**, press **Choose files (up to 60)** and pick as many songs as you
 like in the file picker (long-press the first, then tap the others). They are listed with the
 title and artist from each file's tags, or from a file name like `Artist - Title.mp3`; take any
 out with **Remove**. Each song also has a button with its way of converting: it starts as the
@@ -265,7 +265,7 @@ is looked up on LRCLIB by its title, artist and length, and gets a vocals part w
 are found there.
 
 **Convert all** converts them one after another, each its own way, with the number of notes
-chosen in step 3, in the background with a notification ("Song 7 of 33: ..."). A song that fails does not
+chosen in step 3, in the background with a notification ("Song 7 of 50: ..."). A song that fails does not
 stop the rest. At the end a summary lists which songs were converted (and whether lyrics were
 found) and which were not, and why; those stay in the list to try again. Then scan songs in YARG
 once for all of them.
@@ -284,6 +284,11 @@ sync** (it plays that song), and marked with **Who sings what**. A song's row sh
 lyrics are ready or still need times. Lyrics without times give that song no vocals, and the
 summary says so.
 
+
+Each song is saved into `YARG/songs/Converted` as soon as it is done. If Android closes the app part way
+through a long list, open it again: the songs still to do are back in the list (the ones already
+converted are taken off), so press **Convert all** to carry on. Picking a file the app has converted
+before leaves it out of the list, and asks whether to add it anyway to convert it again.
 ## Adding a converted song to YARG
 
 The converter already puts the song where YARG looks for songs, so there is nothing to copy or
