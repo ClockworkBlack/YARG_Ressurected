@@ -1,5 +1,8 @@
 # YARG Converter
 
+**Convert a whole folder of songs on a free Google GPU:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ClockworkBlack/YARG_Resurrected/blob/ccr-7c39c845-6cqp27/converter/colab/YARG_batch_convert.ipynb)
+(the notebook in `colab/`: songs from `My Drive/YARG/input`, finished songs zipped into `My Drive/YARG/output`).
+
 Companion Android app for YARG Resurrected. Pick an **MP3, WAV or FLAC** and it writes a
 ready-to-play song folder into `Internal storage/YARG/songs/Converted/<Artist - Title>/`:
 
@@ -7,7 +10,7 @@ ready-to-play song folder into `Internal storage/YARG/songs/Converted/<Artist - 
 |---|---|
 | `notes.mid` | Tempo map, 5-fret guitar and bass on Easy / Medium / Hard / Expert, Star Power, practice sections, and a **vocals part** made from the lyrics: a note under every word, for one singer or two |
 | `song.ini` | Title, artist, album, year, genre, length, preview point, difficulty rating |
-| `song.mp3` / `.wav` / `.ogg` / `.opus` | The audio. MP3, WAV, OGG and OPUS are copied as they are; FLAC and anything else is saved as WAV |
+| `song.mp3` / `.wav` / `.ogg` / `.opus` | The audio. MP3, WAV, OGG and OPUS are copied as they are (on a computer or in Colab, without any cover-art stream); FLAC and anything else is saved as WAV |
 | `album.jpg` / `.png` | Cover art, when the audio file has one embedded |
 | `lyrics.lrc` | The timed lyrics that were used, with who sings each line (handy if you convert again) |
 | `vocal_parts.txt` | Only for a song with two singers: their names, shown in the game where a player picks whose lines to sing |
