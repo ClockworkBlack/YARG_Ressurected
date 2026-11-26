@@ -878,16 +878,18 @@ public final class MainActivity extends Activity {
 
     /**
      * Runs the separation model over the parked audio and measures the guitar, the pitched
-     * instruments together, and the bass as they come out. Only the measurements are kept;
-     * the separated audio itself is not stored.
+     * instruments together, the pitched instruments with the vocals, and the bass as they come
+     * out. Only the measurements are kept; the separated audio itself is not stored.
      */
     private SongWriter.Stems separate(File pcmFile, long frames) throws Exception {
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        final AudioAnalyzer voiced = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer bass = new AudioAnalyzer(StemSplitter.SAMPLE_RATE, true);
-        final double[] energy = new double[4];
+        final double[] energy = new double[5];
         final float[] g = new float[StemSplitter.SEGMENT];
         final float[] m = new float[StemSplitter.SEGMENT];
+        final float[] v = new float[StemSplitter.SEGMENT];
         final float[] b = new float[StemSplitter.SEGMENT];
         int cores = Runtime.getRuntime().availableProcessors();
         int threads = Math.max(2, Math.min(6, cores - 2));
@@ -928,21 +930,26 @@ public final class MainActivity extends Activity {
                 public void accept(float[] mixLeft, float[] mixRight, float[][][] stems, int count) {
                     float[][] gt = stems[StemSplitter.GUITAR], ot = stems[StemSplitter.OTHER];
                     float[][] pn = stems[StemSplitter.PIANO], bs = stems[StemSplitter.BASS];
+                    float[][] vo = stems[StemSplitter.VOCALS];
                     for (int i = 0; i < count; i++) {
                         float gv = (gt[0][i] + gt[1][i]) * 0.5f;
                         float mv = gv + (ot[0][i] + ot[1][i] + pn[0][i] + pn[1][i]) * 0.5f;
+                        float vv = (vo[0][i] + vo[1][i]) * 0.5f;
                         float bv = (bs[0][i] + bs[1][i]) * 0.5f;
                         float xv = (mixLeft[i] + mixRight[i]) * 0.5f;
                         g[i] = gv;
                         m[i] = mv;
+                        v[i] = mv + vv;
                         b[i] = bv;
                         energy[0] += gv * gv;
                         energy[1] += mv * mv;
                         energy[2] += bv * bv;
                         energy[3] += xv * xv;
+                        energy[4] += vv * vv;
                     }
                     guitar.feed(g, 0, count);
                     melodic.feed(m, 0, count);
+                    voiced.feed(v, 0, count);
                     bass.feed(b, 0, count);
                 }
             };
@@ -969,11 +976,13 @@ public final class MainActivity extends Activity {
         SongWriter.Stems out = new SongWriter.Stems();
         out.guitar = guitar.finish();
         out.melodic = melodic.finish();
+        out.voiced = voiced.finish();
         out.bass = bass.finish();
         out.guitarEnergy = energy[0];
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];
         out.mixEnergy = energy[3];
+        out.vocalsEnergy = energy[4];
         return out;
     }
 

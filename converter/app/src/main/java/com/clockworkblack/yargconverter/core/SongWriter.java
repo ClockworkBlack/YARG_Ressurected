@@ -53,8 +53,27 @@ public final class SongWriter {
         public Features melodic;
         /** The bass on its own. */
         public Features bass;
+        /**
+         * Guitar, keys, other pitched instruments and the vocals together (no drums or bass), for
+         * songs where the voice carries the tune, such as rap over a beat. Null if not measured.
+         */
+        public Features voiced;
         /** Sum of squared samples of each, for comparing how much of the song they make up. */
-        public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy;
+        public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy, vocalsEnergy;
+    }
+
+    /**
+     * Below this share of (pitched instruments + vocals), the instruments are too thin to chart on
+     * their own and the guitar chart follows the vocals with them. A hip-hop track measured 18%;
+     * band recordings with a real guitar part sit far above it.
+     */
+    static final double VOCAL_LED_SHARE = 0.25;
+
+    /** True when the separated instruments are a small part of the song next to the vocals. */
+    static boolean vocalLed(Stems stems) {
+        if (stems.voiced == null || stems.vocalsEnergy <= 0) return false;
+        double pitched = stems.melodicEnergy;
+        return pitched < VOCAL_LED_SHARE * (pitched + stems.vocalsEnergy);
     }
 
     public static Result analyze(Features f, List<Lrc.Line> lyrics, GuitarCharter.Options options) {
@@ -106,10 +125,21 @@ public final class SongWriter {
         String[] names = guitarLed
                 ? new String[] {"the separated guitar", "the separated guitar and keys"}
                 : new String[] {"the separated guitar and keys", "the separated guitar"};
+        boolean[] singleNotes = new boolean[sources.length];
+        // In a song carried by the voice (rap over a beat, say) the instruments are mostly
+        // leftovers, so the chart follows the vocals and the instruments together. A voice is one
+        // note at a time, and its breathy sound would otherwise read as chords, so no chords.
+        if (vocalLed(stems)) {
+            sources = new Features[] {stems.voiced, sources[0], sources[1]};
+            names = new String[] {"the separated instruments and vocals, as single notes", names[0], names[1]};
+            singleNotes = new boolean[] {true, false, false};
+        }
+        GuitarCharter.Options single = options == null ? new GuitarCharter.Options() : options.copy();
+        single.chords = false;
         for (int i = 0; i < sources.length; i++) {
             if (sources[i] == null) continue;
             List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(sources[i]);
-            GuitarCharter.Chart chart = GuitarCharter.build(sources[i], onsets, r.tempo, r.bpm, options);
+            GuitarCharter.Chart chart = GuitarCharter.build(sources[i], onsets, r.tempo, r.bpm, singleNotes[i] ? single : options);
             int notes = chart.notes.get(GuitarCharter.EXPERT).size();
             // A stem with almost nothing in it is not worth charting from.
             if (notes >= 24 && notes >= 0.2 * mixNotes) {

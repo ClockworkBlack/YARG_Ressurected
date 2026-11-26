@@ -105,6 +105,7 @@ public final class RealSongCheck {
         stems.melodicEnergy = StemTest.energy(melodic);
         stems.bassEnergy = energy[StemSplitter.BASS];
         stems.mixEnergy = ref;
+        StemTest.addVocals(stems, melodic, mono[StemSplitter.VOCALS], StemSplitter.SAMPLE_RATE);
         long t1 = System.currentTimeMillis();
         Features mixFeatures = StemTest.analyze(mix, StemSplitter.SAMPLE_RATE);
         SongWriter.Result plain = SongWriter.analyze(mixFeatures, null, null);

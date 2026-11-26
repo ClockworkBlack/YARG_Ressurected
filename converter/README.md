@@ -84,6 +84,17 @@ the guitar chart is made from the separated guitar (or, in a song with little gu
 guitar, keys and other pitched instruments together), and the bass chart from the separated
 bass. Without it, everything below is done on the full mix and there is no bass chart.
 
+**Songs carried by the vocals** (rap over a beat, for example) have little or nothing for a
+guitar chart to follow once the drums and bass are taken out. When the pitched instruments
+are under 25% of the pitched instruments and vocals together, the guitar chart follows the
+**instruments and the vocals together**, and uses **single notes only**: a voice sings one
+note at a time, and its breathy sound would otherwise turn into chords. The converter's Done
+message then says "Guitar chart made from the separated instruments and vocals, as single
+notes". On a hip-hop test track (88% of the sound in the bass/808s, 8% vocals, 1% other
+instruments, no guitar) this raised the share of guitar notes that land on a rapped syllable
+from 35% to 67%. Songs with a real guitar part don't reach the 25% cut-off and are charted as
+before.
+
 The app listens about 86 times a second and works in five steps.
 
 1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
@@ -142,7 +153,7 @@ Typical scores on the 4/4 songs:
 "Right" is below 100% mostly because five frets cannot give every pitch its own position;
 neighbouring pitches share a fret rather than going the wrong way.
 
-For separation, three things are checked on every build:
+For separation, four things are checked on every build:
 
 1. **The plumbing**, with a stand-in model: cutting a song into overlapping segments and joining
    the results gives back every sample exactly once, aligned with the original.
@@ -150,7 +161,11 @@ For separation, three things are checked on every build:
    tracks): the guitar chart then contains guitar notes only (0% stray notes, against 10-11%
    from the full mix), and the bass chart follows the bass (every bass note charted, frets
    move the right way 93-96% of the time, 0% the wrong way).
-3. **The real model** (`model-test/`), downloaded and run through the app's own code on a
+3. **A song carried by the vocals**: the busy test song's drums, bass and singing with only a
+   trace of guitar. The guitar chart must follow the vocals, with no chords on any difficulty,
+   and chart at least 80% of the sung notes (it charts all of them). The full band songs, which
+   have singing too, must still chart guitar from the guitar.
+4. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their
      level) and the six stems add back up to the mix (-22 dB difference). The synthetic
