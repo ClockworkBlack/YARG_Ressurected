@@ -40,6 +40,9 @@ public final class YargMicCapture {
     private volatile boolean dead;
     private final Thread thread;
     private final int wantedKind;
+    /** The voice played back to the singer ("Vocal Monitoring"), made when it is first turned up. */
+    private volatile YargVoiceMonitor monitor;
+    private volatile float monitorGain;
 
     private YargMicCapture(AudioRecord record, int sampleRate, int chunkSamples, int wantedKind) {
         this.record = record;
@@ -216,6 +219,9 @@ public final class YargMicCapture {
                 break;
             }
             if (got == 0) continue;
+            // Played back straight from here, so the voice is not held up by the game
+            YargVoiceMonitor m = monitor;
+            if (m != null) m.write(block, got);
             synchronized (lock) {
                 for (int i = 0; i < got; i++) {
                     ring[writeAt] = block[i];
@@ -290,8 +296,31 @@ public final class YargMicCapture {
         }
     }
 
+    /**
+     * How loud the singer hears their own voice: 0 is off. The player is made the first time it
+     * is turned up, on the output the game's sound is on.
+     */
+    public void setMonitorLevel(float gain) {
+        monitorGain = gain;
+        YargVoiceMonitor m = monitor;
+        if (m == null && gain > 0f) {
+            m = YargVoiceMonitor.open(sampleRate, 0);
+            monitor = m;
+        }
+        if (m != null) m.setGain(gain);
+    }
+
+    /** Whether the voice is played back over Bluetooth (which adds a delay of its own). */
+    public boolean isMonitorOnBluetooth() {
+        YargVoiceMonitor m = monitor;
+        return m != null && monitorGain > 0f && m.isBluetooth();
+    }
+
     public void close() {
         running = false;
+        YargVoiceMonitor m = monitor;
+        monitor = null;
+        if (m != null) m.close();
         try {
             record.stop();
         } catch (Throwable ignored) {

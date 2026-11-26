@@ -237,6 +237,20 @@ namespace YARG.Remote
         private float? _lastPitch;
         private float? _lastAmplitude;
 
+        // The voice played back ("Vocal Monitoring"). Sound arrives on the network's thread and is
+        // played from the game's, which is the one that may talk to Android.
+        private const int MONITOR_CUSHION_MS = 80;
+        private const int MONITOR_MAX_WAITING = 24;
+        private volatile float _monitorGain;
+        private readonly ConcurrentQueue<short[]> _monitorQueue = new ConcurrentQueue<short[]>();
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private AndroidJavaObject _monitor;
+#endif
+        private int _monitorRate;
+        private int _lastMonitorFrame = -1;
+        private float _monitorStartedAt;
+        private bool _checkedBluetooth;
+
         internal RemoteMicDevice(string displayName) : base(displayName)
         {
         }
@@ -264,6 +278,22 @@ namespace YARG.Remote
 
         internal void Feed(byte[] data, int offset, int count, int sampleRate)
         {
+            if (_monitorGain > 0f && count >= 2)
+            {
+                // Kept for playing back on the game's thread; if the game falls behind, the
+                // oldest goes, so the voice never lags further
+                var pcm = new short[count / 2];
+                for (int i = 0; i < pcm.Length; i++)
+                {
+                    int index = offset + i * 2;
+                    pcm[i] = (short) (data[index] | (data[index + 1] << 8));
+                }
+                _monitorQueue.Enqueue(pcm);
+                while (_monitorQueue.Count > MONITOR_MAX_WAITING && _monitorQueue.TryDequeue(out _))
+                {
+                }
+            }
+
             lock (_lock)
             {
                 SetSampleRateLocked(sampleRate);
@@ -349,7 +379,104 @@ namespace YARG.Remote
 
         public override bool DequeueOutputFrame(out MicOutputFrame frame)
         {
+            PumpMonitor();
             return _frameQueue.TryDequeue(out frame);
+        }
+
+        /// <summary>Plays the sound that came in since the last frame (game thread, once a frame).</summary>
+        private void PumpMonitor()
+        {
+            if (_lastMonitorFrame == Time.frameCount)
+            {
+                return;
+            }
+            _lastMonitorFrame = Time.frameCount;
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                float gain = _monitorGain;
+                int rate = _sampleRate;
+                if (gain <= 0f || rate <= 0)
+                {
+                    if (_monitor != null)
+                    {
+                        _monitor.Call("setGain", 0f);
+                    }
+                    while (_monitorQueue.TryDequeue(out _))
+                    {
+                    }
+                    return;
+                }
+
+                if (_monitor != null && _monitorRate != rate)
+                {
+                    CloseMonitor();
+                }
+
+                if (_monitor == null)
+                {
+                    using var cls = new AndroidJavaClass("in.yarg.resurrected.YargVoiceMonitor");
+                    _monitor = cls.CallStatic<AndroidJavaObject>("open", rate, MONITOR_CUSHION_MS);
+                    if (_monitor == null)
+                    {
+                        // Android would not play it: stop asking until the level changes
+                        _monitorGain = 0f;
+                        return;
+                    }
+                    _monitorRate = rate;
+                    _monitorStartedAt = Time.unscaledTime;
+                    _checkedBluetooth = false;
+                }
+
+                _monitor.Call("setGain", gain);
+                while (_monitorQueue.TryDequeue(out var pcm))
+                {
+                    _monitor.Call("write", pcm, pcm.Length);
+                }
+
+                if (!_checkedBluetooth && Time.unscaledTime > _monitorStartedAt + 1.5f)
+                {
+                    _checkedBluetooth = true;
+                    if (_monitor.Call<bool>("isBluetooth"))
+                    {
+                        YARG.Audio.VoiceMonitor.WarnBluetooth();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                YARG.Core.Logging.YargLogger.LogException(e, "Couldn't play a phone mic back");
+                CloseMonitor();
+                _monitorGain = 0f;
+            }
+#else
+            while (_monitorQueue.TryDequeue(out _))
+            {
+            }
+#endif
+        }
+
+        private void CloseMonitor()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (_monitor == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _monitor.Call("close");
+            }
+            catch (Exception)
+            {
+                // Already gone
+            }
+
+            _monitor.Dispose();
+            _monitor = null;
+#endif
         }
 
         public override void ClearOutputQueue()
@@ -361,7 +488,10 @@ namespace YARG.Remote
 
         public override void SetMonitoringLevel(float volume)
         {
-            // Hearing your own voice back isn't supported for phone mics (Wi-Fi delay would make it echo).
+            // Wi-Fi adds a delay (about a tenth of a second, with the cushion against its uneven
+            // bursts), so this is for hearing the singers in the room rather than for a singer's
+            // own ear; the level is the same "Vocal Monitoring" setting as for every mic.
+            _monitorGain = YARG.Audio.VoiceMonitor.Gain(volume);
         }
 
         public override SerializedMic Serialize()
@@ -372,6 +502,7 @@ namespace YARG.Remote
         protected override void DisposeManagedResources()
         {
             RemoteMics.Remove(this);
+            CloseMonitor();
         }
     }
 }

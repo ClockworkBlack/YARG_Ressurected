@@ -270,9 +270,20 @@ the syllables it would count. **Hear myself** plays the microphone back; use hea
 **No vocals to pick?** Then the song has no vocals part: a message says so when the instrument
 screen opens. Songs from the converter only get one when they are converted with lyrics.
 
-**Hearing yourself.** Your voice is played back to you (**Settings > Sound > Vocal Monitoring
-Volume**) only while headphones are connected, wired, USB or Bluetooth. Through the phone's own
-speaker the microphone would hear it again and squeal, so without headphones it is silent.
+**Hearing yourself.** Every microphone is played back on the output the game's sound is on:
+the phone's own mic, a USB mic, a headset mic, and phones singing over Wi-Fi. **Settings > Sound >
+Vocal Monitoring Volume** (also in the pause menu's quick settings) sets how loud: 0 is off, 70%
+(the default) about one and a half times as recorded, 100% three times, with loud notes rounded
+off instead of crackling. It plays only while headphones or another output are connected (wired,
+USB or Bluetooth): through the phone's own speaker the microphone would hear it again and
+squeal, so without them it is silent.
+
+The phone's own mics are played back straight from the recorder, with the shortest delay Android
+offers. Phones over Wi-Fi arrive about a tenth of a second later (the network, and a small
+cushion against its uneven bursts): fine for hearing the singers in the room, a little late in a
+singer's own ear. Bluetooth headphones add a delay of their own, and the game says so once;
+wired or USB headphones keep the voice in time. With a Bluetooth speaker in the room, keep the
+phone mics away from it, or turn the level down, so they do not pick it up again.
 
 **Sing-off**
 

@@ -99,12 +99,9 @@ namespace YARG.Audio
                 return;
             }
 
+            // Sent every time, not only when headphones come and go: a microphone added since
+            // starts out silent until told (setting the same level again costs nothing)
             bool mute = !_headphones;
-            if (!mute && !_wasMuted)
-            {
-                return;
-            }
-
             float volume = mute ? 0f : SettingsManager.Settings.VocalMonitoring.Value;
             foreach (var player in PlayerContainer.Players)
             {
