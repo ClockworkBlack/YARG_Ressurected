@@ -40,6 +40,30 @@ index ba89bbc..2700e65 100644
              if (!HasProfileWithKeyboard)
              {
                  _defaultKeyboardMenuBindings.Enable();
+diff --git a/Assets/Script/Integration/Data Stream/DataStreamController.cs b/Assets/Script/Integration/Data Stream/DataStreamController.cs
+index be00262..fae9505 100644
+--- a/Assets/Script/Integration/Data Stream/DataStreamController.cs	
++++ b/Assets/Script/Integration/Data Stream/DataStreamController.cs	
+@@ -305,6 +305,10 @@ namespace YARG.Integration
+             {
+                 StopSendThread();
+                 _sendClient?.Dispose();
++                // YARG Resurrected: forget the sender once it is closed. It was kept, so closing
++                // the game tried to send a last packet through it, and "Error sending UDP packet"
++                // was logged on every exit with this feature off (which it is by default).
++                _sendClient = null;
+                 ClearInstrumentQueues();
+             }
+         }
+@@ -506,7 +510,7 @@ namespace YARG.Integration
+                 _writer.Write((byte) message.CameraCutPriority);
+                 _writer.Write((byte) message.CameraCutSubject);
+ 
+-                _sendClient.Send(_ms.GetBuffer(), (int) _ms.Position);
++                _sendClient?.Send(_ms.GetBuffer(), (int) _ms.Position);
+             }
+             catch (Exception ex)
+             {
 diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
 index bb97bf9..7f89a40 100644
 --- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs

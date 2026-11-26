@@ -18,8 +18,9 @@
 //      is generated on this system (audio: the song only moves forward when it is playing),
 //   6. checks the song time moves on and the bot hits notes, with the computer's microphone
 //      open and listening the way a singer's is (on a build machine it hears the song itself),
-//   7. writes result.txt (PASS or FAIL and why) plus screenshots (menu.png, phones.png,
-//      song-setup.png, gameplay.png) to <folder>, and quits with exit code 0 (pass) or 1 (fail).
+//   7. leaves the song for the menu, writes result.txt (PASS or FAIL and why) plus screenshots
+//      (menu.png, phones.png, song-setup.png, gameplay.png) to <folder>, and quits with exit
+//      code 0 (pass) or 1 (fail).
 // If any step takes too long it fails with the step it was stuck on. Errors the game logged
 // along the way are listed in result.txt.
 
@@ -306,6 +307,23 @@ namespace YARG.Testing
                     Finish(false, $"the bot only hit {hit} notes");
                     return;
                 }
+
+                // 7. Leave the song the way Quit in the pause menu does, and close the game from
+                // the menu (closing it in the middle of a song is a different, rougher path)
+                _step = "leaving the song";
+                game.ForceQuitSong();
+                float leaveBy = Time.realtimeSinceStartup + 45f;
+                while (!SceneManager.GetSceneByName("MenuScene").isLoaded && Time.realtimeSinceStartup < leaveBy)
+                {
+                    await UniTask.NextFrame();
+                }
+                if (!SceneManager.GetSceneByName("MenuScene").isLoaded)
+                {
+                    Finish(false, "the game did not get back to the menu after leaving the song");
+                    return;
+                }
+                await UniTask.Delay(TimeSpan.FromSeconds(2), ignoreTimeScale: true);
+                Note("Back at the menu after leaving the song");
 
                 Finish(true, "menu, phone join, song scan, Song Setup, guitar sound, song start, audio and gameplay all work");
             }

@@ -24,6 +24,10 @@ GitHub Actions downloads YARG-DROID at a pinned commit (`UPSTREAM_REF`), applies
 copies `overlay/` on top, builds the native libraries (`android/native/`), then builds the APK with Unity (game-ci).
 
 **Windows, Mac, Linux and Chromebook:** the same game also builds for Windows x64 (**Actions → Build Windows**, see [windows/README.md](windows/README.md)), macOS (**Actions → Build Mac**, see [mac/README.md](mac/README.md)) and Linux x86_64, which Intel/AMD Chromebooks run too (**Actions → Build Linux (and Chromebook)**, see [linux/README.md](linux/README.md) for step-by-step Chromebook instructions).
+They are built from the same `patches/`, `patches-core/` and `overlay/` as the phone version, so to keep them level with it,
+run those three workflows on the same branch whenever the Android one is run. Each is play-tested on a machine of its own
+system before it is published: the game starts, a phone joins over the network, Song Setup opens, and a bot plays a test
+song with the guitar sound generated and the microphone listening (`tests/desktop-play-test.sh`).
 
 `patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 `tests/RemoteServerTests` checks the phone remote server on every build (runs before the Unity build).
