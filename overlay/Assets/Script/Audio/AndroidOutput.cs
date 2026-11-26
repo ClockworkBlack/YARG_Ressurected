@@ -7,6 +7,13 @@
 // mix, the sound of everything playing, just before it goes out, plays it on the chosen output
 // through Android's own low-latency audio (AAudio), and silences the original. If the chosen
 // output isn't connected, or goes away, the sound is simply left where Android puts it.
+//
+// On Automatic, a USB microphone never takes the sound: it goes to Bluetooth, wired headphones,
+// the TV or the phone speaker instead (in that order, whichever is connected). Pick "USB Device"
+// to hear the game through headphones plugged into the microphone.
+//
+// The two outputs run on clocks of their own, so the mix is very slightly sped up or slowed down
+// to keep a steady amount waiting, never by dropping or repeating samples (which crackles).
 
 using System;
 using System.Runtime.InteropServices;
@@ -35,6 +42,12 @@ namespace YARG.Audio
     public static class AndroidOutput
     {
         private static SoundOutputDevice _choice = SoundOutputDevice.Automatic;
+
+        /// <summary>
+        /// True while the game's sound is played on the phone speaker or a TV, out loud in the
+        /// room, where a microphone would hear it again. (False when it is not known.)
+        /// </summary>
+        public static bool PlaysOutLoud { get; private set; }
 
         /// <summary>The setting changed (or was loaded).</summary>
         public static void Apply(SoundOutputDevice choice)
@@ -89,6 +102,12 @@ namespace YARG.Audio
         [DllImport(AAUDIO)] private static extern int AAudioStream_getDeviceId(IntPtr stream);
         [DllImport(AAUDIO)] private static extern long AAudioStream_getFramesWritten(IntPtr stream);
         [DllImport(AAUDIO)] private static extern long AAudioStream_getFramesRead(IntPtr stream);
+        [DllImport(AAUDIO)] private static extern int AAudioStream_getXRunCount(IntPtr stream);
+        [DllImport(AAUDIO)] private static extern int AAudioStream_getBufferCapacityInFrames(IntPtr stream);
+        [DllImport(AAUDIO, EntryPoint = "AAudioStream_write")]
+        private static extern int AAudioStream_writeFloats(IntPtr stream, float[] buffer, int frames, long timeoutNanos);
+        [DllImport(AAUDIO, EntryPoint = "AAudioStream_write")]
+        private static extern int AAudioStream_writeShorts(IntPtr stream, short[] buffer, int frames, long timeoutNanos);
         [DllImport(AAUDIO, EntryPoint = "AAudioStream_write")]
         private static extern int AAudioStream_writePtr(IntPtr stream, IntPtr buffer, int frames, long timeoutNanos);
         [DllImport(AAUDIO, EntryPoint = "AAudioStream_write")]
@@ -114,7 +133,21 @@ namespace YARG.Audio
         private static IntPtr _stream;
         private static int _streamDevice;
         private static int _bytesPerFrame;
-        private static long _low, _high;
+        private static int _channels;
+        private static bool _isFloat;
+        private static int _burst;
+        private static int _capacity;
+        private static long _target;
+        private static long _maxTarget;
+        private static int _xruns;
+        private static double _smoothedWaiting;
+        private static double _position;    // where the next output frame falls, in input frames (-1 = the previous block's last)
+        private static float[] _inFloats = new float[0];
+        private static float[] _outFloats = new float[0];
+        private static short[] _inShorts = new short[0];
+        private static short[] _outShorts = new short[0];
+        private static float[] _previous = new float[8];
+        private static double _maxStepSeen = 1.0, _minStepSeen = 1.0;
         private static volatile bool _active;
         private static volatile bool _lost;
         private static byte[] _zeros = new byte[1 << 16];
@@ -209,14 +242,33 @@ namespace YARG.Audio
             if (!_bassReady) return;
 
             int kind = Kind(_choice);
+            if (!Java()) return;
+
+            // Automatic: a USB microphone is not a place to play the game, whatever Android thinks
+            bool avoidingMic = false;
+            if (kind == 0 && _route.CallStatic<bool>("soundGoesToUsbMic", _activity))
+            {
+                foreach (int k in new[] { 4, 5, 2, 1 })
+                {
+                    if (_route.CallStatic<int>("find", _activity, k) != 0)
+                    {
+                        kind = k;
+                        avoidingMic = true;
+                        break;
+                    }
+                }
+            }
+
             if (kind == 0)
             {
                 Stop();
+                PlaysOutLoud = false;
                 Report(Status.Usual, 0, _status == Status.Redirected ? "Sound: wherever Android sends it" : null);
                 return;
             }
 
-            if (!Java()) return;
+            // Out loud: the phone speaker or the TV
+            PlaysOutLoud = kind == 1 || kind == 2;
 
             int id = _route.CallStatic<int>("find", _activity, kind);
             if (id == 0)
@@ -270,7 +322,7 @@ namespace YARG.Audio
 
             if (Start(id))
             {
-                Report(Status.Redirected, id, "Sound: " + name);
+                Report(Status.Redirected, id, "Sound: " + name + (avoidingMic ? " (not the USB microphone)" : ""));
             }
             else
             {
@@ -336,10 +388,13 @@ namespace YARG.Audio
                 YargLogger.LogWarning("Sound output: asked for device " + deviceId + ", AAudio gave " + actual);
             }
 
-            // Keep about 25 ms waiting to be played: enough to ride out the uneven way the mix arrives
+            // Keep about 30 ms waiting to be played: enough to ride out the uneven way the mix
+            // arrives. If the output still runs dry now and then, this grows (up to 120 ms).
             int burst = Math.Max(32, AAudioStream_getFramesPerBurst(stream));
-            int target = Math.Max(2 * burst, rate / 40);
-            AAudioStream_setBufferSizeInFrames(stream, 2 * target + burst);
+            int target = Math.Max(2 * burst, rate * 3 / 100);
+            int capacity = AAudioStream_getBufferCapacityInFrames(stream);
+            if (capacity <= 0) capacity = 4 * target + burst;
+            AAudioStream_setBufferSizeInFrames(stream, Math.Min(capacity, 2 * target + burst));
 
             if (AAudioStream_requestStart(stream) != 0)
             {
@@ -355,8 +410,18 @@ namespace YARG.Audio
                 _stream = stream;
                 _streamDevice = deviceId;
                 _bytesPerFrame = bytesPerFrame;
-                _low = burst;
-                _high = target + target / 2;
+                _channels = channels;
+                _isFloat = isFloat;
+                _burst = burst;
+                _capacity = capacity;
+                _target = target;
+                _maxTarget = Math.Max(target, Math.Min((capacity - burst) / 2, rate * 12 / 100));
+                _xruns = AAudioStream_getXRunCount(stream);
+                _smoothedWaiting = target;
+                _position = -1.0;
+                if (_previous.Length < channels) _previous = new float[channels];
+                Array.Clear(_previous, 0, _previous.Length);
+                _maxStepSeen = _minStepSeen = 1.0;
                 _lost = false;
                 _adjusted = 0;
                 _rate = rate;
@@ -392,7 +457,12 @@ namespace YARG.Audio
                 AAudioStream_close(_stream);
                 _stream = IntPtr.Zero;
                 _streamDevice = 0;
-                if (_adjusted > 0) YargLogger.LogInfo("Sound output: clock drift evened out by " + _adjusted + " frame(s)");
+                if (_maxStepSeen != 1.0 || _minStepSeen != 1.0)
+                {
+                    YargLogger.LogInfo("Sound output: clock drift evened out by speed changes of " +
+                        ((_minStepSeen - 1.0) * 100).ToString("0.###") + "% to " + ((_maxStepSeen - 1.0) * 100).ToString("0.###") +
+                        "%, " + _adjusted + " time(s) the output ran dry");
+                }
             }
         }
 
@@ -427,22 +497,40 @@ namespace YARG.Audio
                     return;
                 }
 
-                long waiting = AAudioStream_getFramesWritten(_stream) - read;
-                IntPtr from = buffer;
-                int count = frames;
-                if (waiting > _high && count > 1)
+                // The output ran dry: keep more waiting from now on
+                int xruns = AAudioStream_getXRunCount(_stream);
+                if (xruns > _xruns)
                 {
-                    from = IntPtr.Add(buffer, _bytesPerFrame);
-                    count--;
+                    _xruns = xruns;
                     _adjusted++;
-                }
-                else if (waiting < _low)
-                {
-                    AAudioStream_writePtr(_stream, buffer, 1, 0);
-                    _adjusted++;
+                    if (_target < _maxTarget)
+                    {
+                        _target = Math.Min(_maxTarget, _target + _rate / 100);
+                        AAudioStream_setBufferSizeInFrames(_stream, (int) Math.Min(_capacity, 2 * _target + _burst));
+                    }
                 }
 
-                int written = AAudioStream_writePtr(_stream, from, count, 0);
+                long waiting = AAudioStream_getFramesWritten(_stream) - read;
+                // (Smoothed over about a second, so the speed changes far too slowly to hear)
+                _smoothedWaiting += (waiting - _smoothedWaiting) * 0.01;
+
+                int written;
+                if (waiting > 4 * _target)
+                {
+                    // Far too much waiting (the output was held up): let this block go
+                    written = 0;
+                }
+                else
+                {
+                    // Played a hair faster when too much is waiting, slower when too little: at
+                    // most 0.3%, which no one can hear (a tenth of the smallest step in pitch)
+                    double error = (_smoothedWaiting - _target) / _rate;
+                    double step = 1.0 + Math.Max(-0.003, Math.Min(0.003, error * 0.1));
+                    if (step > _maxStepSeen) _maxStepSeen = step;
+                    if (step < _minStepSeen) _minStepSeen = step;
+                    written = WriteResampled(buffer, frames, step);
+                }
+
                 if (written < 0)
                 {
                     // The output went away: leave this block (and the rest) on the usual output
@@ -462,6 +550,63 @@ namespace YARG.Audio
             {
                 Monitor.Exit(_lock);
             }
+        }
+
+        // Writes one block of the mix to the output, read at "step" input frames per output frame
+        // (linear interpolation, carrying the last frame over to the next block). Under the lock.
+        private static int WriteResampled(IntPtr buffer, int frames, double step)
+        {
+            int channels = _channels;
+            int samples = frames * channels;
+            int most = (int) (frames / step) + 3;
+
+            if (_inFloats.Length < samples) _inFloats = new float[samples];
+            if (_outFloats.Length < most * channels) _outFloats = new float[most * channels];
+            if (_isFloat)
+            {
+                Marshal.Copy(buffer, _inFloats, 0, samples);
+            }
+            else
+            {
+                if (_inShorts.Length < samples) _inShorts = new short[samples];
+                Marshal.Copy(buffer, _inShorts, 0, samples);
+                for (int i = 0; i < samples; i++) _inFloats[i] = _inShorts[i];
+            }
+
+            // Input frame -1 is the previous block's last frame
+            double position = _position;
+            int count = 0;
+            while (position < frames - 1 && count < most)
+            {
+                int index = (int) Math.Floor(position);
+                float fraction = (float) (position - index);
+                int o = count * channels;
+                for (int c = 0; c < channels; c++)
+                {
+                    float a = index < 0 ? _previous[c] : _inFloats[index * channels + c];
+                    float b = _inFloats[(index + 1) * channels + c];
+                    _outFloats[o + c] = a + (b - a) * fraction;
+                }
+                count++;
+                position += step;
+            }
+            _position = position - frames;
+            for (int c = 0; c < channels; c++) _previous[c] = _inFloats[(frames - 1) * channels + c];
+
+            if (count == 0) return 0;
+            if (_isFloat)
+            {
+                return AAudioStream_writeFloats(_stream, _outFloats, count, 0);
+            }
+
+            int outSamples = count * channels;
+            if (_outShorts.Length < outSamples) _outShorts = new short[outSamples];
+            for (int i = 0; i < outSamples; i++)
+            {
+                float v = _outFloats[i];
+                _outShorts[i] = (short) (v > 32767f ? 32767f : v < -32768f ? -32768f : v);
+            }
+            return AAudioStream_writeShorts(_stream, _outShorts, count, 0);
         }
 #endif
     }

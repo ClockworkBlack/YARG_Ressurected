@@ -88,6 +88,47 @@ public final class YargAudioRoute {
         return false;
     }
 
+    private static boolean isUsb(int type) {
+        return type == AudioDeviceInfo.TYPE_USB_DEVICE || type == AudioDeviceInfo.TYPE_USB_HEADSET
+                || type == AudioDeviceInfo.TYPE_USB_ACCESSORY;
+    }
+
+    /**
+     * Whether Android is sending game sound to a USB microphone: a USB sound device that records
+     * is plugged in and has an output of its own, and (where Android can say, from 13) the sound
+     * goes there. Before Android 13 a plugged-in USB output always takes the sound.
+     */
+    public static boolean soundGoesToUsbMic(Context context) {
+        try {
+            AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+            if (am == null) return false;
+            boolean usbInput = false;
+            for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
+                if (isUsb(d.getType())) usbInput = true;
+            }
+            if (!usbInput) return false;
+
+            if (Build.VERSION.SDK_INT >= 33) {
+                AudioAttributes attributes = new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build();
+                List<AudioDeviceInfo> routed = am.getAudioDevicesForAttributes(attributes);
+                if (routed != null && !routed.isEmpty()) {
+                    for (AudioDeviceInfo d : routed) if (isUsb(d.getType())) return true;
+                    return false;
+                }
+            }
+
+            for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                if (d.isSink() && isUsb(d.getType())) return true;
+            }
+        } catch (RuntimeException ignored) {
+            // Can't tell: leave the sound where it is
+        }
+        return false;
+    }
+
     /** A name for an output to show the player, like "Galaxy Z Fold (speaker)". */
     public static String name(Context context, int deviceId) {
         try {

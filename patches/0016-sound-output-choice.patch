@@ -67,7 +67,7 @@ index fb0944e..a4f6dbb 100644
              },
 +            "SoundOutput": {
 +                "Name": "Play Sound Through",
-+                "Description": "Where the game's sound comes out. Automatic: wherever Android sends it, which is the last sound device plugged in. A USB microphone with a headphone jack (such as a Fifine AM8) counts as one, so plugging it in silences the phone speaker and the TV. Pick Phone Speaker, TV (HDMI), USB, Bluetooth or Headphones to play there instead while the microphone keeps working. If what you picked isn't connected, the sound stays on the usual output until it is. Playing somewhere other than where Android sends it adds a few hundredths of a second of delay, so run the audio calibration again after changing this.",
++                "Description": "Where the game's sound comes out. Automatic: wherever Android sends it, except a USB microphone: Android sends all sound to one the moment it is plugged in, so then the sound goes to Bluetooth, wired headphones, the TV or the phone speaker instead (whichever is connected, in that order). Pick USB Device to hear the game through headphones plugged into the microphone, or Phone Speaker, TV (HDMI), Bluetooth or Headphones to always play there. If what you picked isn't connected, the sound stays on the usual output until it is. Playing somewhere other than where Android sends it adds a few hundredths of a second of delay, so run the audio calibration again after changing this.",
 +                "Dropdown": {
 +                    "Automatic": "Automatic",
 +                    "PhoneSpeaker": "Phone Speaker",

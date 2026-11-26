@@ -358,11 +358,15 @@ this phone can only listen to one microphone at a time, a message says so when t
 then a second phone as a mic (next section) is the way. Hearing yourself through the speakers is
 only offered for "This phone's mic".
 
-**Sound went quiet when the USB mic went in?** A USB microphone with a headphone jack (a Fifine
-AM8, for one) is also a sound card, and Android sends all sound to it the moment it is plugged
-in. Choose where the game plays in **Settings > Sound > Play Sound Through**: **Phone Speaker**,
-**TV (HDMI)** (through a USB-C hub's HDMI port), **USB Device**, **Bluetooth** or **Wired
-Headphones**. The microphone keeps working. A message says where the sound went, or that what
+**Sound and USB mics.** A USB microphone with a headphone jack (a Fifine AM8, for one) is also a
+sound card, and Android sends all sound to it the moment it is plugged in. The game doesn't let
+it: on **Automatic** the sound goes to Bluetooth, wired headphones, the TV or the phone speaker
+instead (whichever is connected, in that order). To hear the game through headphones plugged
+into the microphone, pick **USB Device** in **Settings > Sound > Play Sound Through**; the other
+choices there are **Phone Speaker**, **TV (HDMI)** (through a USB-C hub's HDMI port),
+**Bluetooth** and **Wired Headphones**. The microphone keeps working. Your own voice is never
+played back while the game plays out loud on the phone speaker or a TV (the mic would hear it
+again). A message says where the sound went, or that what
 you picked isn't connected (the sound then stays where Android puts it until it is plugged in).
 Playing somewhere other than Android's choice adds a few hundredths of a second of delay, so run
 **Settings > Calibration** once more for that setup.
