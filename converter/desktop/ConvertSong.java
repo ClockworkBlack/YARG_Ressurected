@@ -36,6 +36,7 @@ import java.util.Map;
  * the lyrics up as the app does (timed, or words only, which are then timed from the voice with
  * --words-model). --gpu runs both models on an NVIDIA card (with onnxruntime_gpu).
  * --summary file.json writes one line of JSON about the result.
+ * --start / --end (seconds) use only that part of the file: a music video's intro or outro cut off.
  *
  * --vocals-out writes the separated voice to a WAV file; with --wait-for-lyrics (and no lyrics found,
  * which it signals by creating "<that file>.needed") the run then waits
@@ -54,6 +55,32 @@ public final class ConvertSong {
             a.put(key, flag ? "true" : args[++i]);
         }
         File audio = new File(req(a, "audio"));
+        if (a.containsKey("start") || a.containsKey("end")) {
+            // Only part of the file: a music video's intro or outro cut off (seconds, --start / --end)
+            String name0 = audio.getName();
+            String ext0 = name0.substring(name0.lastIndexOf('.') + 1).toLowerCase(Locale.US);
+            File cut = File.createTempFile("cut", "." + (ext0.equals("mp3") ? "mp3" : "wav"));
+            cut.deleteOnExit();
+            List<String> ff = new ArrayList<>(List.of("ffmpeg", "-v", "error", "-y"));
+            if (a.containsKey("start")) ff.addAll(List.of("-ss", a.get("start")));
+            if (a.containsKey("end")) ff.addAll(List.of("-to", a.get("end")));
+            ff.addAll(List.of("-i", audio.getPath()));
+            double len = (a.containsKey("end") ? Double.parseDouble(a.get("end")) : 1e9) - (a.containsKey("start") ? Double.parseDouble(a.get("start")) : 0);
+            // A short fade at each end, so the cut never clicks
+            ff.addAll(List.of("-af", "afade=t=in:d=0.05" + (len < 1e8 ? ",afade=t=out:st=" + String.format(Locale.US, "%.2f", Math.max(0, len - 0.6)) + ":d=0.6" : "")));
+            if (ext0.equals("mp3")) ff.addAll(List.of("-c:a", "libmp3lame", "-b:a", "192k"));
+            ff.add(cut.getPath());
+            run(ff.toArray(new String[0]));
+            // Keep the original name, so the title and artist are read from it as before
+            File named = new File(cut.getParentFile(), "cut-" + System.nanoTime() + "-" + name0.replaceAll("\\.[^.]+$", "") + "." + (ext0.equals("mp3") ? "mp3" : "wav"));
+            Files.move(cut.toPath(), named.toPath());
+            named.deleteOnExit();
+            Map<String, String> keep = tags(audio);
+            audio = named;
+            if (!a.containsKey("title") && keep.containsKey("title")) a.put("title", keep.get("title"));
+            if (!a.containsKey("artist") && keep.containsKey("artist")) a.put("artist", keep.get("artist"));
+            log(String.format(Locale.US, "Using %s to %s of the file", a.getOrDefault("start", "0"), a.getOrDefault("end", "the end")));
+        }
         String mode = a.getOrDefault("mode", "normal").toLowerCase(Locale.US);
         boolean useStems = mode.equals("split") || mode.equals("rnb");
         boolean rnb = mode.equals("rnb");
@@ -83,7 +110,7 @@ public final class ConvertSong {
         if (meta.year.isEmpty()) meta.year = tags.getOrDefault("date", "").replaceAll("^(\\d{4}).*", "$1");
         if (meta.genre.isEmpty()) meta.genre = tags.getOrDefault("genre", "");
         if (meta.title.isEmpty() || meta.artist.isEmpty()) {
-            String base = audio.getName().replaceAll("\\.[^.]+$", "").replaceAll("^[0-9a-f]{8}-", "").replace('_', ' ').trim();
+            String base = audio.getName().replaceAll("\\.[^.]+$", "").replaceAll("^cut-\\d+-", "").replaceAll("^[0-9a-f]{8}-", "").replace('_', ' ').trim();
             int dash = base.indexOf(" - ");
             if (dash > 0) {
                 if (meta.artist.isEmpty()) meta.artist = base.substring(0, dash).trim();

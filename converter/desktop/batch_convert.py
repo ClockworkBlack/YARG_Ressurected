@@ -11,8 +11,9 @@
 --jobs converts several songs at once (auto: as many as the machine's memory and processors allow,
 at most 4). Speech-to-text runs for one song at a time, so the GPU never holds more than one copy.
 
-An optional songs.csv in the songs folder gives, per file: file,mode,notes,title,artist,album,year,genre
-(any column may be empty; mode and notes default to the command line's).
+An optional songs.csv in the songs folder gives, per file: file,mode,notes,title,artist,album,year,genre,start,end
+(any column may be empty; mode and notes default to the command line's; start and end, in seconds,
+cut a music video's intro or outro off).
 Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv.
 """
 import argparse, csv, json, os, subprocess, sys, threading, time
@@ -69,7 +70,7 @@ def main():
                "--audio", os.path.join(args.songs, name), "--out", out_songs, "--mode", mode, "--notes", notes,
                "--model", args.stems_model, "--words-model", args.words_model, "--find-details", "--find-lyrics",
                "--two-singers", "--summary", base + ".json", "--threads", str(max(1, (os.cpu_count() or 2) // jobs))]
-        for key in ("title", "artist", "album", "year", "genre"):
+        for key in ("title", "artist", "album", "year", "genre", "start", "end"):
             if p.get(key): cmd += ["--" + key, p[key]]
         if mode != "normal":
             cmd += ["--vocals-out", base + ".vocals.wav", "--wait-for-lyrics", base + ".lrc"]
