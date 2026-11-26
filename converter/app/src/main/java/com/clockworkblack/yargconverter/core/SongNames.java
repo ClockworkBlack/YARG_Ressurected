@@ -180,6 +180,44 @@ public final class SongNames {
                 + "|\\bchannel|\\bfilms?|\\bmedia|\\bproductions?|\\blabel|\\bstudios?|- topic|\\bworldwide|\\bgroup)\\s*$");
     }
 
+    /**
+     * A title that names its artist without a dash ("The Rio Da Yung OG On The Radar Freestyle"),
+     * read against artists already known (from the other songs converted with it): {artist, the
+     * rest as the title}, or null when none of them is in it. The longest name found wins.
+     */
+    public static String[] artistInTitle(String title, java.util.Collection<String> known) {
+        if (title == null || known == null) return null;
+        String[] words = title.trim().split("\\s+");
+        String bestArtist = null;
+        int bestFrom = -1, bestTo = -1, bestLength = 0;
+        for (String artist : known) {
+            String k = key(artist);
+            if (k.length() < 4 || k.length() <= bestLength) continue;
+            for (int i = 0; i < words.length; i++) {
+                StringBuilder sb = new StringBuilder();
+                for (int j = i; j < words.length; j++) {
+                    sb.append(key(words[j]));
+                    if (sb.length() > k.length() || !k.startsWith(sb.toString())) break;
+                    if (sb.length() == k.length()) {
+                        bestArtist = artist.trim();
+                        bestFrom = i;
+                        bestTo = j;
+                        bestLength = k.length();
+                        break;
+                    }
+                }
+                if (bestArtist != null && bestLength == k.length()) break;
+            }
+        }
+        if (bestArtist == null) return null;
+        String before = String.join(" ", java.util.Arrays.copyOfRange(words, 0, bestFrom)).trim();
+        String after = String.join(" ", java.util.Arrays.copyOfRange(words, bestTo + 1, words.length)).trim();
+        // "The <artist> ...": a leading article belongs to neither
+        if (before.matches("(?i)(the|a|an)")) before = "";
+        String rest = (before + " " + after).trim().replaceAll("^[-:|,]+\\s*", "").replaceAll("\\s*[-:|,]+$", "");
+        return rest.isEmpty() ? null : new String[] {bestArtist, rest};
+    }
+
     /** A title in quotes: the opening quote after a space, the closing one before a space or the end. */
     private static final java.util.regex.Pattern QUOTED =
             java.util.regex.Pattern.compile("(?<=^|\\s)['\u2018\"\u201c]([^'\u2019\"\u201d]{1,80})['\u2019\"\u201d](?=\\s|$)");

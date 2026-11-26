@@ -121,6 +121,22 @@ def main():
     if skipped:
         print("%d songs already done (kept as they are), %d to convert" % (skipped, len(todo)), flush=True)
 
+    # Artists already known (other files' names, songs.csv, earlier results): a title that names
+    # one without a dash ("The Rio Da Yung OG On The Radar Freestyle") is read by them
+    known = set()
+    for f in files:
+        stem = re.sub(r"[ _]+[\u2013\u2014-][ _]+", " - ", os.path.splitext(f)[0]).replace("_", " ")
+        if " - " in stem: known.add(stem.split(" - ")[0].strip())
+    for p in plan.values():
+        if p.get("artist"): known.add(p["artist"])
+    for st in state.values():
+        a = (st.get("row") or {}).get("artist", "")
+        if a and a.lower() != "unknown artist": known.add(a)
+    known_path = os.path.join(work, "known_artists.txt")
+    with open(known_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(sorted(a for a in known if len(a) >= 3)))
+    logs_dir = os.path.join(args.keep or args.out, "logs")
+
     jobs = auto_jobs() if args.jobs == "auto" else max(1, int(args.jobs))
     heap = heap_for(jobs)
     print("%d songs, %d at a time" % (len(todo), jobs), flush=True)
@@ -173,7 +189,7 @@ def main():
         cmd = ["java", "-Xmx%dm" % heap] + (["-Dyarg.cuda=1"] if args.gpu else []) + ["-cp", args.classpath, "ConvertSong",
                "--audio", os.path.join(args.songs, name), "--out", out_songs, "--mode", mode, "--notes", notes,
                "--model", args.stems_model, "--words-model", args.words_model, "--find-details", "--find-lyrics",
-               "--two-singers", "--summary", base + ".json", "--threads", str(max(1, (os.cpu_count() or 2) // jobs))]
+               "--two-singers", "--summary", base + ".json", "--known-artists", known_path, "--threads", str(max(1, (os.cpu_count() or 2) // jobs))]
         for key in ("title", "artist", "album", "year", "genre", "start", "end"):
             if p.get(key): cmd += ["--" + key, p[key]]
         if mode != "normal":
@@ -206,6 +222,13 @@ def main():
                 ", Deep Music Mode guitar %d / bass %d notes" % (s["deepGuitarExpert"], s["deepBassExpert"]) if s.get("deepGuitarExpert") or s.get("deepBassExpert") else ""))
         else:
             s = dict(file=name, mode=mode, notes=notes, folder="", error=error_line(base + ".log"))
+            # The whole log kept where the songs are, to see what went wrong
+            try:
+                os.makedirs(logs_dir, exist_ok=True)
+                shutil.copy(base + ".log", os.path.join(logs_dir, re.sub(r'[\\/:*?"<>|]', "_", name) + ".log"))
+                s["error"] += " (full log in logs/)"
+            except OSError:
+                pass
             say("%s FAILED %s: %s" % (tag, name, s["error"]))
         if os.path.exists(base + ".vocals.wav"): os.remove(base + ".vocals.wav")
         with state_lock:
@@ -249,6 +272,10 @@ def error_line(log_path):
         lines = [l.strip() for l in open(log_path, encoding="utf-8", errors="replace") if l.strip()]
     except OSError:
         return "failed"
+    # The converter's own check of the chart says what it found
+    found = [l.split("notes.mid problem:", 1)[1].strip() for l in lines if "notes.mid problem:" in l]
+    if found:
+        return ("notes.mid: " + "; ".join(found[:3]) + ("; and %d more" % (len(found) - 3) if len(found) > 3 else ""))[:400]
     for l in lines:
         if ("Exception" in l or "Error" in l) and not l.startswith("at ") and not l.startswith("Picked up"):
             return l[:300]

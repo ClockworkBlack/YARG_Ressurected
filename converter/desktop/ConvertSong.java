@@ -196,6 +196,21 @@ public final class ConvertSong {
             }
             if (meta.title.isEmpty()) meta.title = named[1];
         }
+        // No artist anywhere, but one of the other songs' artists is named in the title
+        // ("The Rio Da Yung OG On The Radar Freestyle"): --known-artists is a file, one per line
+        if (meta.artist.isEmpty() && a.containsKey("known-artists")) {
+            try {
+                List<String> known = Files.readAllLines(new File(a.get("known-artists")).toPath(), StandardCharsets.UTF_8);
+                String[] found = com.clockworkblack.yargconverter.core.SongNames.artistInTitle(meta.title, known);
+                if (found != null) {
+                    log("Artist named in the title: " + found[0]);
+                    meta.artist = found[0];
+                    meta.title = found[1];
+                }
+            } catch (IOException e) {
+                // Nothing known: carry on without
+            }
+        }
         // File names that lost their brackets: "Title Official 4K Video", "Title Lyric Video", "Title MV"
         if (!a.containsKey("title")) {
             meta.title = com.clockworkblack.yargconverter.core.SongNames.dropVideoWords(meta.title);

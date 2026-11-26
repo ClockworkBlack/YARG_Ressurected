@@ -98,6 +98,18 @@ public final class CoreTest {
             {"Hold On - Remastered", "Wilson Phillips", "x.mp3", "Wilson Phillips", "Hold On - Remastered"},
             {"Charlene", "anthonyhamiltonVEVO", "Anthony Hamilton - Charlene.mp3", "Anthony Hamilton", "Charlene"},
         };
+        java.util.List<String> known = java.util.Arrays.asList("Rio Da Yung OG", "RMC Mike", "Anita Baker", "OG");
+        String[][] inTitle = {
+            {"The Rio Da Yung OG On The Radar Freestyle", "Rio Da Yung OG", "On The Radar Freestyle"},
+            {"Polynesian Rio Da Yung OG", "Rio Da Yung OG", "Polynesian"},
+            {"Whatever It Takes", null, null},
+            {"Rio Da Yung OG", null, null},
+        };
+        for (String[] c : inTitle) {
+            String[] got = com.clockworkblack.yargconverter.core.SongNames.artistInTitle(c[0], known);
+            boolean ok = c[1] == null ? got == null : got != null && got[0].equals(c[1]) && got[1].equals(c[2]);
+            check(ok, "artist in title " + c[0] + " -> " + (got == null ? "none" : "\"" + got[0] + "\" / \"" + got[1] + "\""));
+        }
         for (String[] c : tagCases) {
             String[] got = com.clockworkblack.yargconverter.core.SongNames.fromTags(c[0], c[1], c[2]);
             check(got[0].equals(c[3]) && got[1].equals(c[4]), "tags " + c[1] + " / " + c[0] + " -> \"" + got[0] + "\" / \"" + got[1] + "\"");
