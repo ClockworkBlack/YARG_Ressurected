@@ -86,45 +86,24 @@ bass. Without it, everything below is done on the full mix and there is no bass 
 
 **Songs carried by the vocals** (rap over a beat, for example) have little or nothing for a
 guitar chart to follow once the drums and bass are taken out. When the pitched instruments
-are under 35% of the pitched instruments and vocals together, the guitar chart follows the
-**instruments and the vocals together**, and uses **single notes only**: a voice sings one
-note at a time, and its breathy sound would otherwise turn into chords. The converter's Done
-message then says "Guitar chart made from the separated instruments and vocals, as single
-notes". On a hip-hop test track (88% of the sound in the bass/808s, 8% vocals, 1% other
-instruments, no guitar) this raised the share of guitar notes that land on a rapped syllable
-from 35% to 67%. Songs with a real guitar part don't reach the cut-off and are charted as
-before.
+are under 35% of the pitched instruments and vocals together, the converter charts the song
+the way a band without a drummer would cover it:
 
-In those songs, **measures without vocals** (a piano intro, a beat break, the outro) follow the
-instruments on their own, with half the usual bar for how strong a note must be, because an
-intro is usually softer than the rest of the song. On a rap track with a soft piano intro this
-charted 15 of the intro's 18 piano notes instead of 11. The Done message says how many
-measures were charted this way.
+- **Guitar covers the vocals and the beat's melody** (a chime, a keys loop). The vocals and
+  the instruments are charted separately and merged: every vocal note, plus every instrument
+  note that does not fall right next to one. The instruments get half the usual bar for how
+  strong a note must be, since a chime under a rap is quiet. Single notes only: a voice sings
+  one note at a time, and its breathy sound would otherwise turn into chords. In measures
+  without vocals (intro, breaks, outro) only the instruments are charted.
+- **Bass covers the 808s and the drums.** Drum hits between the bass notes join the bass chart;
+  a hit takes the fret of the bass note that is sounding, and a bright hit (snare, clap, hat)
+  takes the fret next to it. A held note ends where a drum hit comes in.
 
-The app listens about 86 times a second and works in five steps.
-
-1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
-   seconds so songs that speed up or slow down stay locked. A dotted or triplet rhythm can pass
-   for the beat (trap 808s in dotted eighths make a 95 BPM song look like 127 BPM), so tempos at
-   3/4, 4/3, 2/3 and 3/2 of the first choice are tried too: one that is nearly as good a beat
-   and makes the song repeat measure by measure much more strongly wins, since songs are built
-   from measures (a beat loop, a riff, a chord change). Each beat is nudged onto the nearest
-   note start, bass hits and chord changes say which beat is the "one", and it tells 4/4 from 3/4.
-2. **Note starts.** Every moment where new sound arrives is split into *pitched* sound (guitar,
-   bass, voice, keys) and *noisy bursts* (drums). Pitched starts count fully; bare drum hits
-   count less, so the chart leans towards the instruments rather than the drum kit.
-3. **What each note is.** For each pitched start it reads the pitch of the new sound and takes a
-   "fingerprint" of it. Starts with the same fingerprint are the same note or chord played
-   again.
-4. **Frets.** Within each four-measure phrase the distinct sounds are lined up from lowest to
-   highest and spread over the frets. The same sound always gets the same fret, higher sounds
-   get higher frets, low thick sounds become chords, and drum hits between strums repeat the
-   fret before them. Notes that keep ringing become sustains.
-5. **Repeats and difficulties.** Measures that repeat in the music (same rhythm, same notes) are
-   pooled, so a riff played eight times gets one pattern decided by all eight hearings, and a
-   verse that comes round again gets the same chart. Expert is written first; Hard, Medium and
-   Easy are thinned-out versions of it (eighths, quarters, half notes, adapting to the song's
-   speed) on 5, 4 and 3 frets.
+The Done message says when this happens. On two rap tracks, the guitar now covers 85-92% of
+the chime/keys notes (from 64-71%) and 84-87% of the rapped syllables (from 68-71%), at about
+4-5 notes a second on Expert; the bass covers 81% of the main drum hits on one (from 28%),
+and every other trap hi-hat on the other. Songs with a real guitar part don't reach the
+cut-off and are charted as before, without drums in the bass.
 
 **Bass charts** (from the separated bass) read each note's name allowing for the song's own
 tuning, which is often not A = 440 Hz. A long note (a trap 808, a held synth bass) pumps and

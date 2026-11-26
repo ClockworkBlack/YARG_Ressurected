@@ -31,6 +31,8 @@ final class SynthBand {
     final List<GuitarNote> bassNotes = new ArrayList<>();
     /** The instruments on their own, as a perfect separation would return them. */
     float[] drumsTrack, bassTrack, guitarTrack, keysTrack, vocalsTrack;
+    /** Start time of every kick and snare hit. */
+    final List<Double> drumHits = new ArrayList<>();
     /** Start time of every sung note (busy songs only). */
     final List<Double> sungNotes = new ArrayList<>();
     private int currentBar;
@@ -290,6 +292,7 @@ final class SynthBand {
     }
 
     private void kick(double t, float amp) {
+        drumHits.add(t);
         int start = (int) Math.round(t * sampleRate);
         int count = (int) (0.16 * sampleRate);
         double ph = 0;
@@ -303,6 +306,7 @@ final class SynthBand {
     }
 
     private void snare(double t) {
+        drumHits.add(t);
         noise(drums, t, 0.16, 0.3f, false);
         int start = (int) Math.round(t * sampleRate);
         int count = (int) (0.1 * sampleRate);

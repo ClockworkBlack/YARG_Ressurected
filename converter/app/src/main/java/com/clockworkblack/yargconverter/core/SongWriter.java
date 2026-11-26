@@ -32,6 +32,8 @@ public final class SongWriter {
          * guitar chart follows the instruments on their own. 0 otherwise.
          */
         public int instrumentalMeasures;
+        /** In a song carried by the vocals: drum hits added to the Expert bass chart. 0 otherwise. */
+        public int drumNotesInBass;
         public int bassTier = -1;
         public List<LyricsCharter.Event> lyrics = new ArrayList<>();
         public double bpm;
@@ -59,13 +61,12 @@ public final class SongWriter {
         public Features melodic;
         /** The bass on its own. */
         public Features bass;
-        /**
-         * Guitar, keys, other pitched instruments and the vocals together (no drums or bass), for
-         * songs where the voice carries the tune, such as rap over a beat. Null if not measured.
-         */
-        public Features voiced;
+        /** The vocals on their own, for songs where the voice carries the tune. Null if not measured. */
+        public Features vocals;
+        /** The drums on their own, which the bass covers in a song carried by the vocals. Null if not measured. */
+        public Features drums;
         /** Sum of squared samples of each, for comparing how much of the song they make up. */
-        public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy, vocalsEnergy;
+        public double guitarEnergy, melodicEnergy, bassEnergy, mixEnergy, vocalsEnergy, drumsEnergy;
     }
 
     /**
@@ -80,15 +81,15 @@ public final class SongWriter {
     static final double NO_VOCALS_LEVEL = 0.1;
 
     /**
-     * Note threshold for the instruments in measures without vocals, against 1 for standard. An
-     * intro is usually quieter than the rest of the song, and at the standard threshold a soft
-     * piano intro loses a third of its notes.
+     * Note threshold for the instruments in a song carried by the vocals, against 1 for standard.
+     * A chime or keys loop under a rap is quiet, and at the standard threshold a soft piano intro
+     * loses a third of its notes.
      */
     static final double INSTRUMENTAL_THRESHOLD = 0.5;
 
     /** True when the separated instruments are a small part of the song next to the vocals. */
     static boolean vocalLed(Stems stems) {
-        if (stems.voiced == null || stems.vocalsEnergy <= 0) return false;
+        if (stems.vocals == null || stems.vocalsEnergy <= 0) return false;
         double pitched = stems.melodicEnergy;
         return pitched < VOCAL_LED_SHARE * (pitched + stems.vocalsEnergy);
     }
@@ -142,27 +143,18 @@ public final class SongWriter {
         String[] names = guitarLed
                 ? new String[] {"the separated guitar", "the separated guitar and keys"}
                 : new String[] {"the separated guitar and keys", "the separated guitar"};
-        boolean[] singleNotes = new boolean[sources.length];
-        // In a song carried by the voice (rap over a beat, say) the instruments are mostly
-        // leftovers, so the chart follows the vocals and the instruments together. A voice is one
-        // note at a time, and its breathy sound would otherwise read as chords, so no chords.
-        if (vocalLed(stems)) {
-            sources = new Features[] {stems.voiced, sources[0], sources[1]};
-            names = new String[] {"the separated instruments and vocals, as single notes", names[0], names[1]};
-            singleNotes = new boolean[] {true, false, false};
-        }
-        GuitarCharter.Options single = options == null ? new GuitarCharter.Options() : options.copy();
-        single.chords = false;
-        for (int i = 0; i < sources.length; i++) {
+        // In a song carried by the voice (rap over a beat, say) the guitar covers the vocals and
+        // whatever melody the beat has (a chime, a keys loop), and the bass covers the drums too.
+        boolean vocalLed = vocalLed(stems) && chartVocalLed(r, stems, options, mixNotes);
+        for (int i = 0; i < sources.length && !vocalLed; i++) {
             if (sources[i] == null) continue;
             List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(sources[i]);
-            GuitarCharter.Chart chart = GuitarCharter.build(sources[i], onsets, r.tempo, r.bpm, singleNotes[i] ? single : options);
+            GuitarCharter.Chart chart = GuitarCharter.build(sources[i], onsets, r.tempo, r.bpm, options);
             int notes = chart.notes.get(GuitarCharter.EXPERT).size();
             // A stem with almost nothing in it is not worth charting from.
             if (notes >= 24 && notes >= 0.2 * mixNotes) {
                 r.chart = chart;
                 r.guitarSource = names[i];
-                if (sources[i] == stems.voiced) chartInstrumentalMeasures(r, stems, options);
                 break;
             }
         }
@@ -173,31 +165,162 @@ public final class SongWriter {
             List<GuitarCharter.Onset> onsets = GuitarCharter.detectOnsets(stems.bass, true);
             GuitarCharter.Chart chart = GuitarCharter.build(stems.bass, onsets, r.tempo, r.bpm, bassOptions);
             int notes = chart.notes.get(GuitarCharter.EXPERT).size();
-            if (notes >= 16) {
-                r.bassChart = chart;
-                double nps = r.duration > 1 ? notes / r.duration : 0;
-                r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
-            }
+            if (notes >= 16) r.bassChart = chart;
+        }
+        if (vocalLed) addDrumsToBass(r, stems, options);
+        if (r.bassChart != null) {
+            double nps = r.duration > 1 ? r.bassChart.notes.get(GuitarCharter.EXPERT).size() / r.duration : 0;
+            r.bassTier = (int) Math.max(0, Math.min(6, Math.round(nps * 1.1)));
         }
     }
 
     /**
-     * Which measures have no vocals, indexed by measure + 1 (so the pickup before the first full
-     * measure is entry 0). The vocal level of each frame is what the vocals add on top of the
-     * instruments; a measure has no vocals when its level is a small part of the song's usual
-     * level (the level that a quarter of the measures reach).
+     * Closest a note from a second source may come to a note already in the chart, in ticks, per
+     * difficulty (Easy..Expert): a beat, an eighth, an eighth, a sixteenth.
      */
-    static boolean[] measuresWithoutVocals(Stems stems, TempoMap tempo, double duration) {
-        Features v = stems.voiced, m = stems.melodic;
+    private static final long[] MERGE_GAP = {192, 96, 96, 48};
+
+    /**
+     * Guitar for a song carried by the vocals: the vocals charted on their own, plus every note of
+     * the instruments (with a lower bar, since a chime or keys loop under a rap is quiet) that
+     * does not fall right next to a vocal note. Single notes throughout: a voice sings one note at
+     * a time, and its breathy sound would otherwise read as chords. In measures without vocals the
+     * vocal part holds only leakage, so only the instruments are charted there.
+     *
+     * @return false if there is too little to chart, leaving the normal sources to be tried
+     */
+    private static boolean chartVocalLed(Result r, Stems stems, GuitarCharter.Options options, int mixNotes) {
+        GuitarCharter.Options single = options == null ? new GuitarCharter.Options() : options.copy();
+        single.chords = false;
+        GuitarCharter.Options soft = single.copy();
+        soft.threshold *= INSTRUMENTAL_THRESHOLD;
+        GuitarCharter.Chart vocals = GuitarCharter.build(stems.vocals, GuitarCharter.detectOnsets(stems.vocals), r.tempo, r.bpm, single);
+        GuitarCharter.Chart instruments = stems.melodic == null ? null
+                : GuitarCharter.build(stems.melodic, GuitarCharter.detectOnsets(stems.melodic), r.tempo, r.bpm, soft);
+        boolean[] quiet = measuresWithoutVocals(stems.vocals, r.tempo, r.duration);
+        GuitarCharter.Chart out = new GuitarCharter.Chart();
+        for (int d = 0; d < vocals.notes.size(); d++) {
+            List<GuitarCharter.Note> sung = new ArrayList<>();
+            for (GuitarCharter.Note n : vocals.notes.get(d)) if (!isQuiet(quiet, r.tempo, n.tick)) sung.add(n);
+            List<GuitarCharter.Note> played = instruments == null ? new ArrayList<GuitarCharter.Note>() : instruments.notes.get(d);
+            out.notes.add(merge(sung, played, MERGE_GAP[d]));
+        }
+        int notes = out.notes.get(GuitarCharter.EXPERT).size();
+        if (notes < 24 || notes < 0.2 * mixNotes) return false;
+        out.starPower.addAll(vocals.starPower);
+        out.onsetCount = vocals.onsetCount + (instruments == null ? 0 : instruments.onsetCount);
+        out.soundGroups = vocals.soundGroups + (instruments == null ? 0 : instruments.soundGroups);
+        out.repeatedMeasures = instruments == null ? vocals.repeatedMeasures : Math.max(vocals.repeatedMeasures, instruments.repeatedMeasures);
+        r.chart = out;
+        r.guitarSource = "the separated instruments and vocals, as single notes";
+        int quietCount = 0;
+        for (boolean q : quiet) if (q) quietCount++;
+        r.instrumentalMeasures = quietCount;
+        return true;
+    }
+
+    /**
+     * Bass for a song carried by the vocals, where no drum chart is played: the drum hits between
+     * the bass notes join the bass chart. A hit takes the fret of the bass note that is sounding
+     * (a kick under an 808 plays its note); a bright hit (snare, clap, hat) takes the fret next to
+     * it, so the two feel different. A held note ends where a drum hit comes in.
+     */
+    private static void addDrumsToBass(Result r, Stems stems, GuitarCharter.Options options) {
+        if (stems.drums == null || stems.drumsEnergy < 0.003 * Math.max(1e-12, stems.mixEnergy)) return;
+        GuitarCharter.Options single = options == null ? new GuitarCharter.Options() : options.copy();
+        single.chords = false;
+        List<GuitarCharter.Onset> hits = GuitarCharter.detectOnsets(stems.drums);
+        if (hits.isEmpty()) return;
+        GuitarCharter.Chart drums = GuitarCharter.build(stems.drums, hits, r.tempo, r.bpm, single);
+        float[] bright = new float[hits.size()];
+        double[] times = new double[hits.size()];
+        for (int i = 0; i < bright.length; i++) {
+            bright[i] = hits.get(i).bright;
+            times[i] = hits.get(i).time;
+        }
+        float[] sorted = bright.clone();
+        Arrays.sort(sorted);
+        float brightLine = sorted[sorted.length / 2];
+        GuitarCharter.Chart bass = r.bassChart != null ? r.bassChart : new GuitarCharter.Chart();
+        int added = 0;
+        for (int d = 0; d < drums.notes.size(); d++) {
+            List<GuitarCharter.Note> base = d < bass.notes.size() ? bass.notes.get(d) : new ArrayList<GuitarCharter.Note>();
+            int lanes = GuitarCharter.lanes(d);
+            List<GuitarCharter.Note> placed = new ArrayList<>();
+            int at = 0;
+            for (GuitarCharter.Note hit : drums.notes.get(d)) {
+                while (at + 1 < base.size() && base.get(at + 1).tick <= hit.tick) at++;
+                int lane = base.isEmpty() ? 0 : base.get(at).tick <= hit.tick ? base.get(at).lane : base.get(0).lane;
+                if (isBright(times, bright, brightLine, r.tempo.tickToTime(hit.tick))) lane = lane + 1 < lanes ? lane + 1 : lane - 1;
+                placed.add(new GuitarCharter.Note(hit.tick, Math.max(0, lane), -1, 0));
+            }
+            List<GuitarCharter.Note> merged = merge(base, placed, MERGE_GAP[d]);
+            if (d == GuitarCharter.EXPERT) added = merged.size() - base.size();
+            if (d < bass.notes.size()) bass.notes.set(d, merged);
+            else bass.notes.add(merged);
+        }
+        if (bass.notes.get(GuitarCharter.EXPERT).size() < 16) return;
+        r.bassChart = bass;
+        r.drumNotesInBass = added;
+    }
+
+    /** Whether the drum hit nearest to {@code time} is a bright one (snare, clap, hat). */
+    private static boolean isBright(double[] times, float[] bright, float line, double time) {
+        int k = Arrays.binarySearch(times, time);
+        if (k < 0) k = -k - 1;
+        int best = -1;
+        for (int j = Math.max(0, k - 1); j <= Math.min(times.length - 1, k); j++) {
+            if (best < 0 || Math.abs(times[j] - time) < Math.abs(times[best] - time)) best = j;
+        }
+        return best >= 0 && Math.abs(times[best] - time) < 0.08 && bright[best] > line;
+    }
+
+    /**
+     * The notes of {@code base}, plus each note of {@code extra} that is at least {@code gap}
+     * ticks from every base note, in order. Held notes let go before the next note.
+     */
+    static List<GuitarCharter.Note> merge(List<GuitarCharter.Note> base, List<GuitarCharter.Note> extra, long gap) {
+        List<GuitarCharter.Note> merged = new ArrayList<>(base);
+        long[] ticks = new long[base.size()];
+        for (int i = 0; i < ticks.length; i++) ticks[i] = base.get(i).tick;
+        Arrays.sort(ticks);
+        for (GuitarCharter.Note n : extra) {
+            int k = Arrays.binarySearch(ticks, n.tick);
+            if (k >= 0) continue;
+            k = -k - 1;
+            boolean clash = (k < ticks.length && ticks[k] - n.tick < gap) || (k > 0 && n.tick - ticks[k - 1] < gap);
+            if (!clash) merged.add(n);
+        }
+        Collections.sort(merged, new Comparator<GuitarCharter.Note>() {
+            @Override
+            public int compare(GuitarCharter.Note a, GuitarCharter.Note b) {
+                return Long.compare(a.tick, b.tick);
+            }
+        });
+        for (int i = 0; i + 1 < merged.size(); i++) {
+            GuitarCharter.Note n = merged.get(i);
+            long room = merged.get(i + 1).tick - n.tick - TempoMap.RESOLUTION / 2;
+            if (n.sustain > 0 && n.sustain > room) {
+                long sustain = room >= TempoMap.RESOLUTION / 2 ? room : 0;
+                merged.set(i, new GuitarCharter.Note(n.tick, n.lane, n.lane2, sustain));
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * Which measures have no vocals, indexed by measure + 1 (so the pickup before the first full
+     * measure is entry 0): those whose vocal level is a small part of the song's usual level (the
+     * level that a quarter of the measures reach).
+     */
+    static boolean[] measuresWithoutVocals(Features v, TempoMap tempo, double duration) {
         int count = Math.max(0, tempo.measureOf(tempo.timeToTick(duration))) + 2;
         double[] sum = new double[count];
         int[] frames = new int[count];
-        int n = Math.min(v.frames(), m.frames());
-        for (int i = 0; i < n; i++) {
-            double power = (double) v.rms[i] * v.rms[i] - (double) m.rms[i] * m.rms[i];
+        for (int i = 0; i < v.frames(); i++) {
             int at = tempo.measureOf(tempo.timeToTick(v.timeOf(i))) + 1;
             if (at < 0 || at >= count) continue;
-            sum[at] += Math.max(0, power);
+            sum[at] += (double) v.rms[i] * v.rms[i];
             frames[at]++;
         }
         double[] level = new double[count];
@@ -211,45 +334,6 @@ public final class SongWriter {
         if (usual <= 0) return quiet;
         for (int k = 0; k < count; k++) quiet[k] = frames[k] > 0 && sum[k] / frames[k] < NO_VOCALS_LEVEL * usual;
         return quiet;
-    }
-
-    /**
-     * In a chart that follows the vocals, the measures without vocals (an intro played on the
-     * piano, say) follow the instruments instead, with a lower bar for how strong a note must be.
-     * Single notes, like the rest of the chart.
-     */
-    private static void chartInstrumentalMeasures(Result r, Stems stems, GuitarCharter.Options options) {
-        if (stems.melodic == null) return;
-        boolean[] quiet = measuresWithoutVocals(stems, r.tempo, r.duration);
-        int quietCount = 0;
-        for (boolean q : quiet) if (q) quietCount++;
-        if (quietCount == 0) return;
-        GuitarCharter.Options o = options == null ? new GuitarCharter.Options() : options.copy();
-        o.chords = false;
-        o.threshold *= INSTRUMENTAL_THRESHOLD;
-        GuitarCharter.Chart instruments = GuitarCharter.build(stems.melodic, GuitarCharter.detectOnsets(stems.melodic), r.tempo, r.bpm, o);
-        for (int d = 0; d < r.chart.notes.size(); d++) {
-            List<GuitarCharter.Note> merged = new ArrayList<>();
-            for (GuitarCharter.Note n : r.chart.notes.get(d)) if (!isQuiet(quiet, r.tempo, n.tick)) merged.add(n);
-            for (GuitarCharter.Note n : instruments.notes.get(d)) if (isQuiet(quiet, r.tempo, n.tick)) merged.add(n);
-            Collections.sort(merged, new Comparator<GuitarCharter.Note>() {
-                @Override
-                public int compare(GuitarCharter.Note a, GuitarCharter.Note b) {
-                    return Long.compare(a.tick, b.tick);
-                }
-            });
-            // Where the two meet, a held note must let go before the next note.
-            for (int i = 0; i + 1 < merged.size(); i++) {
-                GuitarCharter.Note n = merged.get(i);
-                long room = merged.get(i + 1).tick - n.tick - TempoMap.RESOLUTION / 2;
-                if (n.sustain > 0 && n.sustain > room) {
-                    long sustain = room >= TempoMap.RESOLUTION / 2 ? room : 0;
-                    merged.set(i, new GuitarCharter.Note(n.tick, n.lane, n.lane2, sustain));
-                }
-            }
-            r.chart.notes.set(d, merged);
-        }
-        r.instrumentalMeasures = quietCount;
     }
 
     private static boolean isQuiet(boolean[] quiet, TempoMap tempo, long tick) {

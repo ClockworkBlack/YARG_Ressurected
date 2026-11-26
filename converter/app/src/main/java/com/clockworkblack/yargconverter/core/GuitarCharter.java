@@ -51,6 +51,11 @@ public final class GuitarCharter {
     private static final float[] FINE_STRENGTH = {0.8f, 0.7f, 0.8f, 9f};
     private static final float[] OFF_STRENGTH = {0f, 0f, 0.3f, 0f};
     private static final int[] LANES = {3, 4, 5, 5};
+
+    /** How many frets a difficulty (Easy..Expert) uses. */
+    public static int lanes(int difficulty) {
+        return LANES[Math.max(0, Math.min(LANES.length - 1, difficulty))];
+    }
     private static final int[] SUSTAIN_MIN_GAP = {384, 384, 384, 288};
     // Expert: strength needed on a measure start, a beat, an eighth and a sixteenth. A full band
     // has something on nearly every subdivision; weak in-between sounds are left out so the chart
@@ -110,7 +115,7 @@ public final class GuitarCharter {
         public final int lane2;
         public final long sustain;
 
-        Note(long tick, int lane, int lane2, long sustain) {
+        public Note(long tick, int lane, int lane2, long sustain) {
             this.tick = tick;
             this.lane = lane;
             this.lane2 = lane2;

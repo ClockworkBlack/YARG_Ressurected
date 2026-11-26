@@ -174,7 +174,7 @@ final class StemTest {
         return e;
     }
 
-    static SongWriter.Stems stems(float[] guitar, float[] keys, float[] vocals, float[] bass, float[] mix, int sr) {
+    static SongWriter.Stems stems(float[] guitar, float[] keys, float[] vocals, float[] drums, float[] bass, float[] mix, int sr) {
         SongWriter.Stems s = new SongWriter.Stems();
         float[] melodic = new float[guitar.length];
         for (int i = 0; i < melodic.length; i++) melodic[i] = guitar[i] + keys[i];
@@ -185,16 +185,18 @@ final class StemTest {
         s.melodicEnergy = energy(melodic);
         s.bassEnergy = energy(bass);
         s.mixEnergy = energy(mix);
-        addVocals(s, melodic, vocals, sr);
+        addVocals(s, vocals, drums, sr);
         return s;
     }
 
-    /** Adds the pitched-instruments-plus-vocals measurement, the way the app does. */
-    static void addVocals(SongWriter.Stems s, float[] melodic, float[] vocals, int sr) {
-        float[] voiced = new float[melodic.length];
-        for (int i = 0; i < voiced.length; i++) voiced[i] = melodic[i] + vocals[i];
-        s.voiced = analyze(voiced, sr);
+    /** Adds the vocals and drums measurements, the way the app does. */
+    static void addVocals(SongWriter.Stems s, float[] vocals, float[] drums, int sr) {
+        s.vocals = analyze(vocals, sr);
         s.vocalsEnergy = energy(vocals);
+        if (drums != null) {
+            s.drums = analyze(drums, sr);
+            s.drumsEnergy = energy(drums);
+        }
     }
 
     /**
@@ -211,7 +213,7 @@ final class StemTest {
             mix[i] = song.drumsTrack[i] + song.bassTrack[i] + song.vocalsTrack[i] + faint[i];
         }
         Features f = analyze(mix, sr);
-        SongWriter.Result r = SongWriter.analyze(f, null, null, stems(faint, none, song.vocalsTrack, song.bassTrack, mix, sr));
+        SongWriter.Result r = SongWriter.analyze(f, null, null, stems(faint, none, song.vocalsTrack, song.drumsTrack, song.bassTrack, mix, sr));
         System.out.println("  guitar from " + r.guitarSource);
         check(r.guitarSource.contains("vocals"), "guitar chart follows the vocals (got: " + r.guitarSource + ")");
         for (int d = 0; d < 4; d++) {
@@ -234,6 +236,27 @@ final class StemTest {
         System.out.printf(java.util.Locale.US, "  %d Expert notes; %.0f%% of the %d sung notes are charted%n", expert.size(), 100 * coverage, song.sungNotes.size());
         check(coverage >= 0.8, "sung notes are charted (" + coverage + ")");
         check(r.bassChart != null, "the bass chart is still written");
+        if (r.bassChart != null) {
+            // No drum chart is played, so the bass covers the kick and snare as well.
+            List<GuitarCharter.Note> bass = r.bassChart.notes.get(GuitarCharter.EXPERT);
+            double[] bt = new double[bass.size()];
+            for (int i = 0; i < bt.length; i++) bt[i] = r.tempo.tickToTime(bass.get(i).tick);
+            java.util.Arrays.sort(bt);
+            int covered = 0;
+            for (double t : song.drumHits) {
+                int k = java.util.Arrays.binarySearch(bt, t);
+                if (k < 0) k = -k - 1;
+                if ((k < bt.length && Math.abs(bt[k] - t) < 0.06) || (k > 0 && Math.abs(bt[k - 1] - t) < 0.06)) covered++;
+            }
+            double share = song.drumHits.isEmpty() ? 0 : (double) covered / song.drumHits.size();
+            System.out.printf(java.util.Locale.US, "  bass: %d Expert notes, %d of them drum hits; %.0f%% of the %d kick and snare hits covered%n",
+                    bass.size(), r.drumNotesInBass, 100 * share, song.drumHits.size());
+            check(r.drumNotesInBass > 0, "drum hits are added to the bass");
+            check(share >= 0.8, "the bass covers the kick and snare (" + share + ")");
+            for (int d = 0; d < 4; d++) {
+                for (GuitarCharter.Note b : r.bassChart.notes.get(d)) check(b.lane < GuitarCharter.lanes(d) && b.lane2 < 0, "bass notes fit the difficulty's frets");
+            }
+        }
         // Only the verses are sung; the intro, choruses and outro follow the instruments (plus
         // the part-measure before the first full measure and the tail after the last one).
         int unsung = 0;
@@ -247,7 +270,7 @@ final class StemTest {
         System.out.println(name);
         Features mix = analyze(song.audio, song.sampleRate);
         SongWriter.Result plain = SongWriter.analyze(mix, null, null);
-        SongWriter.Result split = SongWriter.analyze(mix, null, null, stems(song.guitarTrack, song.keysTrack, song.vocalsTrack, song.bassTrack, song.audio, song.sampleRate));
+        SongWriter.Result split = SongWriter.analyze(mix, null, null, stems(song.guitarTrack, song.keysTrack, song.vocalsTrack, song.drumsTrack, song.bassTrack, song.audio, song.sampleRate));
         ChartEval before = ChartEval.score(song, plain);
         ChartEval after = ChartEval.score(song, split);
         System.out.println("  guitar from " + plain.guitarSource + ":");

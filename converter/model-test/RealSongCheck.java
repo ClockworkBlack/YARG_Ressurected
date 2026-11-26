@@ -105,7 +105,7 @@ public final class RealSongCheck {
         stems.melodicEnergy = StemTest.energy(melodic);
         stems.bassEnergy = energy[StemSplitter.BASS];
         stems.mixEnergy = ref;
-        StemTest.addVocals(stems, melodic, mono[StemSplitter.VOCALS], StemSplitter.SAMPLE_RATE);
+        StemTest.addVocals(stems, mono[StemSplitter.VOCALS], mono[StemSplitter.DRUMS], StemSplitter.SAMPLE_RATE);
         long t1 = System.currentTimeMillis();
         Features mixFeatures = StemTest.analyze(mix, StemSplitter.SAMPLE_RATE);
         SongWriter.Result plain = SongWriter.analyze(mixFeatures, null, null);
@@ -117,6 +117,7 @@ public final class RealSongCheck {
         describe("Guitar from " + split.guitarSource, split.chart, seconds);
         if (split.instrumentalMeasures > 0) System.out.println("  " + split.instrumentalMeasures + " measure(s) without vocals charted from the instruments");
         if (split.bassChart != null) describe("Bass from the separated bass", split.bassChart, seconds);
+        if (split.drumNotesInBass > 0) System.out.println("  " + split.drumNotesInBass + " drum hits added to the Expert bass");
         else System.out.println("No bass chart.");
 
         Set<Long> mixTicks = new HashSet<>();
