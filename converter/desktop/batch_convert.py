@@ -13,7 +13,8 @@ at most 4). Speech-to-text runs for one song at a time, so the GPU never holds m
 
 An optional songs.csv in the songs folder gives, per file: file,mode,notes,title,artist,album,year,genre,start,end
 (any column may be empty; mode and notes default to the command line's; start and end, in seconds,
-cut a music video's intro or outro off).
+cut a music video's intro or outro off). The file column is matched in any letter case, with or
+without the extension.
 Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv.
 """
 import argparse, csv, json, os, subprocess, sys, threading, time
@@ -40,7 +41,9 @@ def main():
     if os.path.exists(csv_path):
         with open(csv_path, encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
-                plan[row.get("file", "").strip()] = {k: (v or "").strip() for k, v in row.items()}
+                # Matched by file name, in any letter case and with or without its extension
+                name = (row.get("file") or "").strip().lower()
+                if name: plan[name] = plan[os.path.splitext(name)[0]] = {k: (v or "").strip() for k, v in row.items() if k}
 
     files = sorted(f for f in os.listdir(args.songs) if f.lower().endswith(AUDIO))
     out_songs = os.path.join(args.out, "Converted")
@@ -59,7 +62,7 @@ def main():
             print(text, flush=True)
 
     def convert(n, name):
-        p = plan.get(name, {})
+        p = plan.get(name.lower()) or plan.get(os.path.splitext(name)[0].lower()) or {}
         mode = p.get("mode") or args.mode
         notes = p.get("notes") or args.notes
         tag = "[%d/%d]" % (n, total)

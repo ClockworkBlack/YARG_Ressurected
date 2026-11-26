@@ -82,6 +82,35 @@ public final class SongNames {
      * Every sensible way to ask for this song, best first: as tagged, tidied, with only the main
      * artist, by title alone, and from the file name ("Artist - Title.mp3", either way round).
      */
+    /**
+     * Artist and title from the name of a file without tags: {artist, or "" when the name has
+     * none, title}. "Artist - Title.mp3" is the usual form. A long run of underscores is where a
+     * download site dropped letters it could not keep ("Girls_Generation______Gee_MV" had 소녀시대
+     * there), and it parts the artist from the title the same way. Words a video's name ends with
+     * ("MV", "Official Video") are left off the title.
+     */
+    public static String[] fromFileName(String name) {
+        String base = name == null ? "" : name.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
+        base = base.replace(" \u2013 ", " - ").replace(" \u2014 ", " - ");
+        if (!base.contains(" - ")) base = base.replaceFirst("_{3,}", " - ");
+        base = base.replace('_', ' ').replaceAll("\\s+", " ").trim();
+        int dash = base.indexOf(" - ");
+        String artist = dash > 0 ? base.substring(0, dash).trim() : "";
+        String title = dash > 0 ? base.substring(dash + 3).trim() : base;
+        return new String[] {artist, dropVideoWords(title)};
+    }
+
+    /** "Title Official 4K Video", "Title Lyric Video", "Title MV": a file name that lost its brackets. */
+    public static String dropVideoWords(String title) {
+        String t = title == null ? "" : title.trim();
+        String before;
+        do {
+            before = t;
+            t = t.replaceAll("(?i)\\s+(official|lyrics?|music|video|audio|visuali[sz]er|4k|hd|hq|mv|m/v|remaster(ed)?|explicit|clean)$", "").trim();
+        } while (!t.equals(before) && t.contains(" "));
+        return t.isEmpty() ? (title == null ? "" : title.trim()) : t;
+    }
+
     public static List<Query> queries(String title, String artist, String fileName) {
         Set<Query> out = new LinkedHashSet<>();
         List<Query> bare = new ArrayList<>();
@@ -95,7 +124,9 @@ public final class SongNames {
             out.add(new Query(ct, pa));
         }
         // A title that is really "Artist - Title" (common when a file has no tags)
-        for (String whole : new String[] {ct, cleanTitle(fileName)}) {
+        String[] named = fromFileName(fileName);
+        String fromName = named[0].isEmpty() ? named[1] : named[0] + " - " + named[1];
+        for (String whole : new String[] {ct, cleanTitle(fromName)}) {
             if (whole == null || whole.isEmpty()) continue;
             int dash = whole.indexOf(" - ");
             if (dash > 0) {

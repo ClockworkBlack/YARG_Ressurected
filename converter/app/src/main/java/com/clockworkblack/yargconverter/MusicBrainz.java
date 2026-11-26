@@ -42,6 +42,23 @@ final class MusicBrainz {
      * @return what was found, or null when nothing matched well enough
      */
     static Found find(String title, String artist) throws IOException {
+        Found found = findOnce(title, artist);
+        if (found != null || title == null || artist == null || artist.trim().isEmpty()) return found;
+        // A title from a mangled file name ("Ascension Dont Ever Wonder" for "Ascension (Don't Ever
+        // Wonder)"): with the artist known, try its first words, and keep a match only when the
+        // title found starts with them
+        String[] words = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(title).trim().split("\\s+");
+        for (int n = Math.min(3, words.length - 1); n >= 1; n--) {
+            String head = String.join(" ", java.util.Arrays.copyOf(words, n));
+            if (head.length() < 4) continue;
+            found = findOnce(head, artist);
+            if (found != null && com.clockworkblack.yargconverter.core.SongNames.key(found.title)
+                    .startsWith(com.clockworkblack.yargconverter.core.SongNames.key(head))) return found;
+        }
+        return null;
+    }
+
+    private static Found findOnce(String title, String artist) throws IOException {
         if (title == null || title.trim().isEmpty()) return null;
         // Without "(Official Video)", "(feat. X)" and the like, and with the main artist only
         title = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(title);
@@ -60,6 +77,11 @@ final class MusicBrainz {
             for (int i = 0; i < recordings.length(); i++) {
                 JSONObject r = recordings.getJSONObject(i);
                 if (r.optInt("score", 0) < MIN_SCORE) continue;
+                // Title alone matches loosely ("Round 11" finds "JAPONESQUE (Round 1-1)"): the
+                // title found must be the one asked for
+                String found = r.optString("title", "");
+                if (!byArtist && !base(found).equals(base(title))
+                        && !com.clockworkblack.yargconverter.core.SongNames.key(found).equals(com.clockworkblack.yargconverter.core.SongNames.key(title))) continue;
                 if (best == null) {
                     best = r;
                 } else if (byArtist) {
@@ -80,6 +102,27 @@ final class MusicBrainz {
             int year = firstYear(best);
             if (year < 9999) f.year = String.valueOf(year);
             f.album = albumOf(best);
+            if (byArtist) {
+                // The same song is often filed as several recordings: the album version, a promo
+                // sampler, compilations. The studio album it is on is the album to show, from
+                // whichever of them has it.
+                String song = base(f.title);
+                JSONObject[] studio = studioAlbum(recordings, song);
+                // The artist may be credited by another name on the original (소녀시대 for Girls'
+                // Generation): their recordings of the song under every name
+                JSONArray all = byArtistId(best, f.title);
+                JSONObject[] other = all == null ? null : studioAlbum(all, song);
+                if (other != null && (studio == null || date(other[1]).compareTo(date(studio[1])) < 0)) studio = other;
+                if (studio != null) {
+                    f.album = studio[1].optString("title", f.album);
+                    // Its full title ("Ascension (Don't Ever Wonder)"), unless what is in brackets
+                    // only names a version ("(Music Video)", "(Live)", "[Japanese ver.]")
+                    String full = studio[0].optString("title", f.title);
+                    if (!full.toLowerCase(Locale.ROOT).matches(".*[(\\[][^)\\]]*\\b(ver|version|mix|remix|live|video|edit|instrumental|acoustic|demo|remaster(ed)?|mono|stereo|uncut|clean|explicit)\\b.*")) f.title = full;
+                    int y = year(studio[1].optString("date", ""));
+                    if (y < 9999 && y <= year) f.year = String.valueOf(y);
+                }
+            }
             f.genre = topTag(best.optJSONArray("tags"));
             if (f.genre.isEmpty()) f.genre = genreOfArtist(best);
             return f;
@@ -126,6 +169,76 @@ final class MusicBrainz {
         }
     }
 
+    /** A title without what is in brackets: "Ascension (Don't Ever Wonder)" is "ascension". */
+    private static String base(String title) {
+        return com.clockworkblack.yargconverter.core.SongNames.key(title.replaceAll("\\s*[(\\[][^)\\]]*[)\\]]", ""));
+    }
+
+    /**
+     * Of the recordings of one song (same title without brackets), the official studio album
+     * release that came out first: {recording, release}, or null when none is on one.
+     */
+    private static JSONObject[] studioAlbum(JSONArray recordings, String song) throws JSONException {
+        if (song.isEmpty()) return null;
+        JSONObject[] best = null;
+        String bestDate = "";
+        for (int i = 0; i < recordings.length(); i++) {
+            JSONObject r = recordings.getJSONObject(i);
+            if (r.optInt("score", 0) < 60 || !base(r.optString("title", "")).equals(song)) continue;
+            JSONArray releases = r.optJSONArray("releases");
+            if (releases == null) continue;
+            for (int k = 0; k < releases.length(); k++) {
+                JSONObject rel = releases.getJSONObject(k);
+                JSONObject group = rel.optJSONObject("release-group");
+                String type = group == null ? "" : group.optString("primary-type", "");
+                if (!"Album".equalsIgnoreCase(type) && !"EP".equalsIgnoreCase(type)) continue;
+                JSONArray secondary = group.optJSONArray("secondary-types");
+                if (secondary != null && secondary.length() > 0) continue; // compilation, live, soundtrack, ...
+                if (!"Official".equalsIgnoreCase(rel.optString("status", ""))) continue;
+                String date = date(rel);
+                if (best == null || date.compareTo(bestDate) < 0) {
+                    best = new JSONObject[] {r, rel};
+                    bestDate = date;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** A release's date for sorting; undated ones last. */
+    private static String date(JSONObject release) {
+        String d = release.optString("date", "");
+        return d.length() < 4 ? "9999" : d;
+    }
+
+    /** The recordings of a song by the artist of {@code recording}, whatever name they are credited by. */
+    private static JSONArray byArtistId(JSONObject recording, String title) throws JSONException, IOException {
+        JSONArray credit = recording.optJSONArray("artist-credit");
+        if (credit == null || credit.length() == 0) return null;
+        JSONObject artist = credit.getJSONObject(0).optJSONObject("artist");
+        String id = artist == null ? "" : artist.optString("id", "");
+        if (!id.matches("[0-9a-f-]{36}")) return null;
+        String q = "recording:\"" + escape(title.replaceAll("\\s*[(\\[][^)\\]]*[)\\]]", "")) + "\" AND arid:" + id;
+        // Only a better album name rides on this: when MusicBrainz is busy, ask once more, then
+        // do without it
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                String body = get(BASE + "recording?fmt=json&limit=25&query=" + URLEncoder.encode(q, "UTF-8"));
+                return body == null ? null : new JSONObject(body).optJSONArray("recordings");
+            } catch (IOException e) {
+                if (attempt == 0) {
+                    try {
+                        Thread.sleep(2500);
+                    } catch (InterruptedException stop) {
+                        Thread.currentThread().interrupt();
+                        return null;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     /** The earliest album the recording is on (not a single or a compilation, when there is one). */
     private static String albumOf(JSONObject recording) throws JSONException {
         JSONArray releases = recording.optJSONArray("releases");
@@ -140,7 +253,7 @@ final class MusicBrainz {
             boolean compilation = false;
             JSONArray secondary = group == null ? null : group.optJSONArray("secondary-types");
             if (secondary != null) {
-                for (int k = 0; k < secondary.length(); k++) compilation |= "Compilation".equalsIgnoreCase(secondary.optString(k));
+                compilation = secondary.length() > 0; // compilation, live, DJ mix, ...
             }
             String title = r.optString("title", "");
             if ("Album".equalsIgnoreCase(type) && !compilation && y < albumYear) {

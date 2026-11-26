@@ -922,13 +922,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         String artist = clean(tags[1]);
                         if (title.isEmpty()) {
                             // "Artist - Title.mp3" is the most common way untagged files are named.
-                            int dash = base.indexOf(" - ");
-                            if (dash > 0 && artist.isEmpty()) {
-                                artist = base.substring(0, dash).trim();
-                                title = base.substring(dash + 3).trim();
-                            } else {
-                                title = base.trim();
-                            }
+                            String[] named = com.clockworkblack.yargconverter.core.SongNames.fromFileName(base);
+                            if (artist.isEmpty()) artist = named[0];
+                            title = named[1];
                         }
                         titleBox.setText(title);
                         artistBox.setText(artist);
@@ -1323,9 +1319,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
         final String a = artist.getText().toString().trim();
         if (t.isEmpty() && fileName != null) {
             // Nothing typed: the file name, "Artist - Title" or just the title
-            String base = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(fileName);
-            int dash = base.indexOf(" - ");
-            t = dash > 0 ? base.substring(dash + 3).trim() : base;
+            t = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(
+                    com.clockworkblack.yargconverter.core.SongNames.fromFileName(fileName)[1]);
         }
         if (t.isEmpty()) {
             status.setText("Type the title (and the artist if you know it) first.");
@@ -1590,13 +1585,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
         String title = clean(tags[0]);
         String artist = clean(tags[1]);
         if (title.isEmpty()) {
-            int dash = base.indexOf(" - ");
-            if (dash > 0 && artist.isEmpty()) {
-                artist = base.substring(0, dash).trim();
-                title = base.substring(dash + 3).trim();
-            } else {
-                title = base.trim();
-            }
+            String[] named = com.clockworkblack.yargconverter.core.SongNames.fromFileName(base);
+            if (artist.isEmpty()) artist = named[0];
+            title = named[1];
         }
         SongMeta m = new SongMeta();
         m.title = title;

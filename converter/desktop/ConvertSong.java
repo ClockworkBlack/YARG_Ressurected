@@ -110,24 +110,14 @@ public final class ConvertSong {
         if (meta.year.isEmpty()) meta.year = tags.getOrDefault("date", "").replaceAll("^(\\d{4}).*", "$1");
         if (meta.genre.isEmpty()) meta.genre = tags.getOrDefault("genre", "");
         if (meta.title.isEmpty() || meta.artist.isEmpty()) {
-            String base = audio.getName().replaceAll("\\.[^.]+$", "").replaceAll("^cut-\\d+-", "").replaceAll("^[0-9a-f]{8}-", "").replace('_', ' ').trim();
-            int dash = base.indexOf(" - ");
-            if (dash > 0) {
-                if (meta.artist.isEmpty()) meta.artist = base.substring(0, dash).trim();
-                if (meta.title.isEmpty()) meta.title = base.substring(dash + 3).trim();
-            } else if (meta.title.isEmpty()) {
-                meta.title = base;
-            }
+            String base = audio.getName().replaceAll("^cut-\\d+-", "").replaceAll("^[0-9a-f]{8}-", "");
+            String[] named = com.clockworkblack.yargconverter.core.SongNames.fromFileName(base);
+            if (meta.artist.isEmpty()) meta.artist = named[0];
+            if (meta.title.isEmpty()) meta.title = named[1];
         }
         // File names that lost their brackets: "Title Official 4K Video", "Title Lyric Video", "Title MV"
         if (!a.containsKey("title")) {
-            String t = meta.title;
-            String before;
-            do {
-                before = t;
-                t = t.replaceAll("(?i)\\s+(official|lyrics?|music|video|audio|visuali[sz]er|4k|hd|hq|mv|remaster(ed)?|explicit|clean)$", "");
-            } while (!t.equals(before) && t.contains(" "));
-            if (!t.trim().isEmpty()) meta.title = t.trim();
+            meta.title = com.clockworkblack.yargconverter.core.SongNames.dropVideoWords(meta.title);
         }
         // "Title (feat. X)", "Title with X": X is a featured artist, not part of the title
         java.util.regex.Matcher feat = java.util.regex.Pattern.compile("(?i)^(.*?)\\s*[(\\[]?\\s*\\b(?:feat\\.?|ft\\.?|featuring|with)\\s+([^)\\]]+?)[)\\]]?\\s*(?:[(\\[].*)?$")
