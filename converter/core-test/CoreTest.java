@@ -27,6 +27,7 @@ import java.util.Random;
  */
 public final class CoreTest {
     private static int failures;
+    private static SongWriter.Result forEditor;
 
     public static void main(String[] args) throws Exception {
         if (args.length >= 3) {
@@ -47,6 +48,7 @@ public final class CoreTest {
         failures += StemTest.run();
         lyrics();
         failures += VocalTest.run();
+        failures += EditTest.run(forEditor);
         failures += RnbTest.run();
         failures += AlignTest.run();
         if (failures > 0) {
@@ -126,6 +128,7 @@ public final class CoreTest {
         AudioAnalyzer an = new AudioAnalyzer(song.sampleRate);
         for (int i = 0; i < song.audio.length; i += 4096) an.feed(song.audio, i, Math.min(4096, song.audio.length - i));
         SongWriter.Result r = SongWriter.analyze(an.finish(), null);
+        if (forEditor == null) forEditor = r;
         ChartEval e = ChartEval.score(song, r);
         System.out.println(e.report());
         boolean four = beatsPerMeasure == 4;

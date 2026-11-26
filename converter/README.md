@@ -330,6 +330,33 @@ A folder with only some of the files won't show up.
   back as in step 1 above and scan again.
 - Converting the same song again replaces the old folder; scan again to see the new chart.
 
+## Changing a song's notes
+
+A converted chart can be fixed by hand without converting the song again: press **Edit a
+converted song's notes** at the bottom of the converter's screen and pick the song.
+
+- The buttons at the top choose the instrument (tap to switch between guitar and bass) and the
+  level (**E**asy, **M**edium, **H**ard, E**x**pert).
+- **Tap** an empty spot in a lane to add a note there. Tapping beside a note on another fret
+  makes it a chord. **Tap a note** to take it away.
+- **Hold a note** until the phone buzzes, then slide up to hold it longer (slide back down to
+  shorten it).
+- **Drag** up and down to move through the song, **pinch** to zoom. **Play** plays the music
+  from where you are, with the notes scrolling to the white line like in the game.
+- **Snap** sets where new notes land: on the beat (1/4), half beats (1/8), quarter beats (1/16)
+  or eighths of a beat (1/32).
+- **Undo** takes back the last change, as many times as you like.
+- **More** can copy all of Expert (or Hard) onto the level you are on, squeezed onto the frets
+  that level uses, so you can make an easier level by taking notes away.
+- **Save**, then in YARG scan for songs again (as after a conversion) to play the new notes.
+  The first save keeps the original file as `notes.mid.bak` in the song's folder; to go back to
+  it, delete `notes.mid` and rename `notes.mid.bak` to `notes.mid`.
+
+Only the guitar, bass (and rhythm, co-op or keys, if a song has them) notes change. Vocals,
+lyrics, tempo, star power and sections are saved exactly as they were, so it also works on
+songs from other charting tools that use `notes.mid`. Converting the same song again replaces
+the folder, edits included.
+
 ## How the charts are made
 
 With **Split into instruments** on, a neural network (HT-Demucs) first separates the recording
@@ -338,7 +365,14 @@ the guitar chart is made from the separated guitar (or, in a song with little gu
 guitar, keys and other pitched instruments together), and the bass chart from the separated
 bass. Without it, everything below is done on the full mix and there is no bass chart.
 
-The app listens about 86 times a second and works in five steps.
+**Songs carried by the vocals** (rap over a beat, for example) have little or nothing for a
+guitar chart to follow once the drums and bass are taken out. When the pitched instruments
+are under 35% of the pitched instruments and vocals together, the **guitar chart follows the
+vocals**, as single notes (a voice sings one note at a time, and its breathy sound would
+otherwise turn into chords). In measures without vocals (intro, breaks, outro) it follows the
+instruments instead, with half the usual bar for how strong a note must be, since an intro
+is usually softer than the rest of the song. Songs with a real guitar part don't reach the
+cut-off and are charted as before.
 
 1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
    seconds so songs that speed up or slow down stay locked. Each beat is nudged onto the nearest
@@ -362,6 +396,32 @@ The app listens about 86 times a second and works in five steps.
    verse that comes round again gets the same chart. Expert is written first; Hard, Medium and
    Easy are thinned-out versions of it (eighths, quarters, half notes, adapting to the song's
    speed) on 5, 4 and 3 frets.
+
+**Deep Music Mode parts.** Every song split into instruments also gets a second guitar and bass
+part that cover the whole song, for playing with no drum or vocal chart. They are written as
+the co-op guitar (`DoubleGuitar`) and rhythm (`DoubleRhythm`) parts, which the game's **Deep
+Music Mode** modifier plays in place of guitar and bass:
+
+- **Guitar** adds the vocals and the other instruments' melody (a chime, a keys loop), charted
+  separately and merged in wherever they don't fall right next to a guitar note. In a song
+  carried by the vocals that is the vocals plus the beat's melody all the way through.
+- **Bass** adds the drum hits between its notes. A hit takes the fret of the bass note that is
+  sounding, and a bright hit (snare, clap, hat) the fret next to it; a held note ends where a
+  drum hit comes in.
+
+On two rap tracks, Deep Music Mode guitar covers 85-92% of the chime/keys notes (normal guitar:
+64-71%) and 84-87% of the rapped syllables, at about 4-5 notes a second on Expert; Deep Music
+Mode bass covers 81% of the main drum hits on one, and every other trap hi-hat on the other.
+The Done message gives how many notes each part adds.
+
+**Bass charts** (from the separated bass) read each note's name allowing for the song's own
+tuning, which is often not A = 440 Hz. A long note (a trap 808, a held synth bass) pumps and
+buzzes while it rings; a start on the same note only counts as a new note when the sound gets
+clearly louder again (4 dB) or the note had already faded, and a change of note without a new
+attack needs a sure pitch reading, since a distorted 808 often reads as its own fifth or octave.
+A note that starts with a click has its pitch read a little later, once its tone settles.
+Notes are held for as long as they stay loud (until 15 dB down). Sounds far below the song's
+usual bass level (-24 dB) are other instruments leaking into the bass and are left out.
 
    A riff that loops (the same one, two or four measures played over and over, under a whole
    verse or the whole song) is charted the same every time: once it has come round at least
@@ -483,7 +543,7 @@ each other, two different "voices", time stamps that come early. On those:
 | | Result |
 |---|---|
 | Which note a steady voice is on | within 0.05 of a semitone, from D2 to C6 |
-| Sung and rapped lines told apart | every line |
+| Sung and rapped lines told apart | every line (on real recordings: every line of one sung song; see below for rap) |
 | Sung words on the right note / starting within 0.08 s | 100% / 100% |
 | Rapped words starting within 0.08 s | 100% |
 | A long word moving to a second note is found, with the right note | 12 of 12 |
@@ -492,16 +552,28 @@ each other, two different "voices", time stamps that come early. On those:
 A made-up singer is far cleaner than a real one, so these numbers show the method works, not
 how well it does on a record. One real recording goes through the whole chain on every build
 (below): "Swansong" by Josh Woodward, one man singing over a guitar, with the time-synced
-lyrics the app itself finds on LRCLIB. On it, 27 of the 29 lines come out as sung, the voice
-is on a clear note 90% of the time it sounds, the notes found stay in one key and move by steps
-the way a tune does, and the one singer is not split into two. Nobody has checked the result by
-ear or played it yet, and no rap record has been through it.
+lyrics the app itself finds on LRCLIB. On it, all 28 sung lines come out as sung (the lyrics
+file's 29th line is the note "[Chorus x 2]", which is now skipped), the voice is on a clear note
+90% of the time it sounds, the notes stay in one key and move by steps the way a tune does, and
+the one singer is not split into two. Nobody has checked the result by ear or played it yet.
+
+Rap is measured on every build too, on real recordings from Wikimedia Commons: three short
+rap clips, and five hip hop songs from the Free Music Archive put through the same instrument
+split as in the app. That showed something the made-up singer did not: rap separated from its
+beat often holds a few notes (scores of 0.16 to 0.29 on the "held notes" measure, against 0.38
+and up for nearly all sung lines and 0.00 for the made-up rapper). So the decision now works
+in three bands. Under 0.15 a line is rapped and over 0.30 it is sung, whatever else happens.
+In between, the line follows the same words elsewhere in the song (a chorus that comes round
+again), or else what most of the song clearly is, and a song only counts as a sung one with a
+clear majority, so the rapped verse of a song with a sung hook stays rapped. In those five
+songs a handful of lines scored 0.38 to 0.64 and count as sung; they are probably sung hooks,
+but nobody has listened to check.
 
 Every song the checks write is also read back from `notes.mid` by a reader that follows the
 game's own rules (how it pairs notes, finds phrases, attaches lyrics, and decides a song has
 vocals at all), and compared note for note with what was meant to be written.
 
-For separation, three things are checked on every build:
+For separation, four things are checked on every build:
 
 1. **The plumbing**, with a stand-in model: cutting a song into overlapping segments and joining
    the results gives back every sample exactly once, aligned with the original.
@@ -509,7 +581,12 @@ For separation, three things are checked on every build:
    tracks): the guitar chart then contains guitar notes only (0% stray notes, against 10-11%
    from the full mix), and the bass chart follows the bass (every bass note charted, frets
    move the right way 93-96% of the time, 0% the wrong way).
-3. **The real model** (`model-test/`), downloaded and run through the app's own code on a
+3. **A song carried by the vocals**: the busy test song's drums, bass and singing with only a
+   trace of guitar. The guitar chart must follow the vocals, with no chords on any difficulty,
+   and chart at least 80% of the sung notes (it charts all of them); the unsung intro, choruses
+   and outro must follow the instruments instead. The full band songs, which have singing too,
+   must still chart guitar from the guitar.
+4. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their
      level) and the six stems add back up to the mix (-22 dB difference). The synthetic

@@ -17,7 +17,11 @@ namespace YARG.Gameplay.VocalBattle
     {
         OneLine,
         TwoLines,
-        FourLines
+        FourLines,
+        // Rap mode: the song split evenly by bars
+        FourBars,
+        EightBars,
+        SixteenBars
     }
 
     /// <summary>
@@ -184,12 +188,32 @@ namespace YARG.Gameplay.VocalBattle
                 return;
             }
 
-            int turnLength = SettingsManager.Settings.SingOffTurnLength.Value switch
+            var turnSetting = SettingsManager.Settings.SingOffTurnLength.Value;
+            int turnLength = turnSetting switch
             {
                 SingOffTurns.OneLine => 1,
                 SingOffTurns.FourLines => 4,
                 _ => 2
             };
+
+            // Rap mode: turns of so many bars, a line going to whoever's bars it starts in
+            int barsPerTurn = turnSetting switch
+            {
+                SingOffTurns.FourBars => 4,
+                SingOffTurns.EightBars => 8,
+                SingOffTurns.SixteenBars => 16,
+                _ => 0
+            };
+            var measureTimes = new List<double>();
+            if (barsPerTurn > 0)
+            {
+                foreach (var line in chart.SyncTrack.Beatlines)
+                {
+                    if (line.Type == BeatlineType.Measure) measureTimes.Add(line.Time);
+                }
+                if (measureTimes.Count < barsPerTurn * 2) barsPerTurn = 0;
+            }
+            int firstBlock = -1;
 
             for (int i = 0; i < singers.Count; i++)
             {
@@ -207,6 +231,16 @@ namespace YARG.Gameplay.VocalBattle
             int linesInTurn = 0;
             foreach (var phrase in original.NotePhrases)
             {
+                if (barsPerTurn > 0)
+                {
+                    // Which block of bars the line starts in (counted from the first one with words)
+                    int measure = measureTimes.BinarySearch(phrase.Time + 0.05);
+                    if (measure < 0) measure = ~measure - 1;
+                    int block = Math.Max(0, measure) / barsPerTurn;
+                    if (firstBlock < 0 && IsSung(phrase)) firstBlock = block;
+                    turn = Math.Max(0, block - Math.Max(0, firstBlock));
+                }
+
                 int side = turn % SIDES;
                 var copy = Rebuild(phrase, side);
 
@@ -223,7 +257,7 @@ namespace YARG.Gameplay.VocalBattle
                 turnOfPhrase[side].Add(turn);
 
                 // Only lines with words to sing use up a turn (not tambourine breaks or empty phrases)
-                if (IsSung(phrase) && ++linesInTurn >= turnLength)
+                if (barsPerTurn == 0 && IsSung(phrase) && ++linesInTurn >= turnLength)
                 {
                     linesInTurn = 0;
                     turn++;

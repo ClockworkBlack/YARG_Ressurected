@@ -64,5 +64,10 @@
             android:name=".TapSyncActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|density|uiMode"
             android:exported="false" />
+
+        <activity
+            android:name=".EditorActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|density|uiMode"
+            android:exported="false" />
     </application>
 </manifest>

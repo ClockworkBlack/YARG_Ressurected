@@ -105,6 +105,29 @@ jobs:
             'Audio from https://commons.wikimedia.org/wiki/File:Josh_Woodward_-_Swansong.ogg' \
             'Charts and vocals made automatically by YARG Converter.' > "sample-song/Josh Woodward - Swansong/CREDITS.txt"
 
+      # Hip hop from the Free Music Archive, as imported to Wikimedia Commons under Creative Commons
+      # licences: the first two minutes of a few songs go through the same separation and vocals
+      # charting as in the app, with a made-up line every eight seconds, and every line's
+      # measurements are printed. Some tracks in the category are instrumentals; those show as
+      # "voice not heard". Nothing from these songs is kept.
+      - name: Measure rapped lines in real hip hop songs
+        continue-on-error: true
+        run: |
+          ua="YARGConverter-CI/0.2 (automated build check; https://github.com/ClockworkBlack/YARG_Ressurected)"
+          curl -sS --fail -A "$ua" -o cat.json \
+            "https://commons.wikimedia.org/w/api.php?action=query&list=categorymembers&cmtitle=Category:Hip_hop_music_from_Free_Music_Archive&cmtype=file&cmlimit=40&format=json"
+          jq -r '.query.categorymembers[].title' cat.json | grep -viE "instrumental|beat|no vocals" | head -5 > picks.txt
+          cat picks.txt
+          while read -r title; do
+            file="${title#File:}"
+            echo "== hip hop: $file"
+            rm -f hh.in hh.f32
+            curl -sSL --fail --max-time 180 -A "$ua" -o hh.in "https://commons.wikimedia.org/wiki/Special:FilePath/${file// /_}" || { echo "could not download"; continue; }
+            ffmpeg -loglevel error -i hh.in -vn -t 120 -f f32le -ac 2 -ar 44100 hh.f32 || continue
+            java -Xmx5g -cp out:onnxruntime.jar RealSongCheck model/htdemucs_6s.onnx hh.f32 hh-out "$file" "FMA" | grep -E "^Vocals|LINE|Voice:" || true
+            rm -rf hh-out
+          done < picks.txt
+
       - uses: actions/upload-artifact@v4
         if: always()
         continue-on-error: true
@@ -148,6 +171,43 @@ jobs:
         run: |
           dotnet run --project tests/GameReaderCheck -c Release \
             -p:YargCore="$GITHUB_WORKSPACE/yarg-core" -- "$RUNNER_TEMP/song"
+
+      - name: Edit the song's notes with the note editor, then scan and load it again
+        run: |
+          cp -r "$RUNNER_TEMP/song" "$RUNNER_TEMP/edited"
+          java -cp converter/core-test/out EditTest "$RUNNER_TEMP/edited"
+          dotnet run --project tests/GameReaderCheck -c Release \
+            -p:YargCore="$GITHUB_WORKSPACE/yarg-core" -- "$RUNNER_TEMP/edited"
+
+  voice-check:
+    name: Sung or rapped, measured on real a cappellas
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg jq > /dev/null
+          javac -d out $(find converter/app/src/main/java -path '*core*' -name '*.java') converter/model-test/VoiceCheck.java
+
+      # Rap recorded live, shared under Creative Commons on Wikimedia Commons. Only measurements
+      # are printed; the recordings are not kept.
+      - name: Measure real rap
+        run: |
+          ua="YARGConverter-CI/0.2 (automated build check; https://github.com/ClockworkBlack/YARG_Ressurected)"
+          for f in "Gully_rap_on_a_train.ogg" "JMoRappinWiki.ogg" "Rap_Agoriadol_-_Rapsgaliwn.ogg"; do
+            echo "== rap: $f (Wikimedia Commons)"
+            rm -f clip.in clip.f32
+            curl -sSL --fail --max-time 120 -A "$ua" -o clip.in "https://commons.wikimedia.org/wiki/Special:FilePath/$f" || { echo "could not download"; continue; }
+            ffmpeg -loglevel error -i clip.in -vn -f f32le -ac 1 -ar 44100 clip.f32 && java -Xmx2g -cp out VoiceCheck clip.f32 "rap $f"
+          done
 
   apk:
     name: Converter APK
@@ -206,7 +266,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish as a GitHub release (easy download on your phone)
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/combined-updates'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/combined-updates' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: converter-${{ github.run_number }}

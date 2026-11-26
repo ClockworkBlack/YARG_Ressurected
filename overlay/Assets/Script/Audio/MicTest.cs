@@ -28,6 +28,22 @@ namespace YARG.Audio
         /// <summary>True while "Hear myself" is on in the test: the helper that silences playback without headphones stands aside.</summary>
         public static bool HearMyself { get; private set; }
 
+        private static MicTest _instance;
+
+        /// <summary>Opens the test from the Profiles screen (its controller button), when the bar is there.</summary>
+        public static void OpenFromMenu()
+        {
+            if (_instance != null && _instance._bar != null && _instance._bar.activeSelf)
+            {
+                _instance.Open();
+            }
+        }
+
+        private void Awake()
+        {
+            _instance = this;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
@@ -250,6 +266,9 @@ namespace YARG.Audio
             row.Needle.gameObject.AddComponent<Image>().color = StoryTheme.Gold;
             row.Needle.gameObject.SetActive(false);
 
+            // Listen the way a song would (the new voice analysis, if it is switched on)
+            (mic as YARG.Audio.Vocals.IVoiceMic)?.BeginSong(false);
+
             mic.ClearOutputQueue();
             mic.IsRecordingOutput = true;
             return row;
@@ -278,6 +297,14 @@ namespace YARG.Audio
                             row.LastSyllable = now;
                         }
 
+                        continue;
+                    }
+
+                    // Sound without a tone (breath, a consonant, noise): it moves the loudness
+                    // bar, but it is not the voice, so no note and no syllable
+                    if (frame.Pitch <= 0f)
+                    {
+                        loudest = float.IsNaN(loudest) ? frame.Volume : Mathf.Max(loudest, frame.Volume);
                         continue;
                     }
 

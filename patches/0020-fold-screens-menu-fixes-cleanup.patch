@@ -1,0 +1,994 @@
+diff --git a/Assets/Plugins/Android/AndroidManifest.xml b/Assets/Plugins/Android/AndroidManifest.xml
+index f9c7b57..ae38e0d 100644
+--- a/Assets/Plugins/Android/AndroidManifest.xml
++++ b/Assets/Plugins/Android/AndroidManifest.xml
+@@ -27,8 +27,8 @@
+             android:exported="true"
+             android:hardwareAccelerated="false"
+             android:launchMode="singleTask"
+-            android:resizeableActivity="false"
+-            android:screenOrientation="landscape"
++            android:resizeableActivity="true"
++            android:screenOrientation="userLandscape"
+             android:theme="@style/UnityThemeSelector">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+diff --git a/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab b/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab
+index e7f4da6..e865fcd 100644
+--- a/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab
++++ b/Assets/Prefabs/Menu/Onboarding/FiveFretMapping.prefab
+@@ -175,7 +175,7 @@ MonoBehaviour:
+   m_ReferencePixelsPerUnit: 100
+   m_ScaleFactor: 1
+   m_ReferenceResolution: {x: 1920, y: 1080}
+-  m_ScreenMatchMode: 0
++  m_ScreenMatchMode: 1
+   m_MatchWidthOrHeight: 0
+   m_PhysicalUnit: 3
+   m_FallbackScreenDPI: 96
+diff --git a/Assets/Scenes/CalibrationScene.unity b/Assets/Scenes/CalibrationScene.unity
+index 04d1dc1..2d7c711 100644
+--- a/Assets/Scenes/CalibrationScene.unity
++++ b/Assets/Scenes/CalibrationScene.unity
+@@ -818,7 +818,7 @@ MonoBehaviour:
+   m_ReferencePixelsPerUnit: 100
+   m_ScaleFactor: 1
+   m_ReferenceResolution: {x: 1920, y: 1080}
+-  m_ScreenMatchMode: 0
++  m_ScreenMatchMode: 1
+   m_MatchWidthOrHeight: 0
+   m_PhysicalUnit: 3
+   m_FallbackScreenDPI: 96
+diff --git a/Assets/Script/Helpers/ScreenHelper.cs b/Assets/Script/Helpers/ScreenHelper.cs
+index 98cb3f7..51e2bec 100644
+--- a/Assets/Script/Helpers/ScreenHelper.cs
++++ b/Assets/Script/Helpers/ScreenHelper.cs
+@@ -72,6 +72,15 @@ namespace YARG.Helpers
+         /// </summary>
+         public static void SetResolution(Resolution resolution)
+         {
++            // YARG Resurrected: on a phone the game always fills its window, and Android changes
++            // that window (folding or unfolding a Fold, turning the phone, split screen). Forcing
++            // a size here, the one saved from the other screen or the display's own size in the
++            // other orientation, left the picture stretched or squashed.
++            if (Application.isMobilePlatform)
++            {
++                return;
++            }
++
+             YargLogger.LogFormatDebug("Changing screen resolution to {0}", resolution);
+             var fullscreenMode = SettingsManager.Settings?.FullscreenMode.Value ?? FullScreenMode.FullScreenWindow;
+             Screen.SetResolution(resolution.width, resolution.height, fullscreenMode, resolution.refreshRateRatio);
+diff --git a/Assets/Script/Input/Touch/TouchControlsBootstrap.cs b/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
+index f488d39..fbffcc2 100644
+--- a/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
++++ b/Assets/Script/Input/Touch/TouchControlsBootstrap.cs
+@@ -41,13 +41,11 @@ namespace YARG.Input.Touch
+ 
+         private static void ApplyAndroidOrientation()
+         {
+-            // Landscape lock + never sleep on Android (belt and braces next to
+-            // the PlayerSettings default orientation, which is already
+-            // LandscapeRight). Build #15 used LandscapeLeft here and the
+-            // phone showed the game upside-down (180° reversed).
++            // Never sleep on Android. (The orientation is left to OrientationUnlock: this used to
++            // pin landscape on every scene load, which fought it, and on a Fold turned the game
++            // sideways or upside-down depending on which of the two ran last.)
+             if (Application.platform == RuntimePlatform.Android)
+             {
+-                Screen.orientation = ScreenOrientation.LandscapeRight;
+                 Screen.sleepTimeout = SleepTimeout.NeverSleep;
+             }
+         }
+diff --git a/Assets/Script/Integration/DiscordController.cs b/Assets/Script/Integration/DiscordController.cs
+index 4883d4d..6f37e40 100644
+--- a/Assets/Script/Integration/DiscordController.cs
++++ b/Assets/Script/Integration/DiscordController.cs
+@@ -67,6 +67,12 @@ namespace YARG.Integration
+                 return;
+             }
+ 
++            // Discord's library isn't part of the phone build: trying only logs an error on every start
++            if (Application.platform == RuntimePlatform.Android)
++            {
++                return;
++            }
++
+             // Don't create instance if Discord rich presence is turned off in settings
+             if (SettingsManager.Settings.DiscordRichPresence.Value == DiscordRichPresenceMode.Hide)
+             {
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index b2bf664..bb97bf9 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -82,8 +82,9 @@ namespace YARG.Menu.DifficultySelect
+         // Keeps the Sing-Off row highlighted after it has been switched
+         private bool _reselectSingOff;
+ 
+-        private State _lastMenuState;
+-        private State _menuState;
++        // (Main, not the first state in the list: the cursor starts on Ready)
++        private State _lastMenuState = State.Main;
++        private State _menuState = State.Main;
+ 
+         private readonly List<Instrument> _possibleInstruments  = new();
+         private readonly List<Difficulty> _possibleDifficulties = new();
+@@ -98,7 +99,8 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private List<SongEntry> _songList;
+ 
+-        private YargPlayer CurrentPlayer => PlayerContainer.Players[_playerIndex];
++        // (Kept in range: a phone that leaves takes its player with it)
++        private YargPlayer CurrentPlayer => PlayerContainer.Players[Mathf.Clamp(_playerIndex, 0, Mathf.Max(0, PlayerContainer.Players.Count - 1))];
+ 
+         private Scrollbar _scrollbar;
+ 
+@@ -137,6 +139,13 @@ namespace YARG.Menu.DifficultySelect
+                 // Left / right (D-pad or a guitar's joystick): song speed, 5% at a time
+                 new NavigationScheme.Entry(MenuAction.Left, "Menu.Common.Left", () => NudgeSpeed(-0.05f), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Right, "Menu.Common.Right", () => NudgeSpeed(0.05f), hide: true),
++#if UNITY_ANDROID && !UNITY_EDITOR
++                // The two bars along the bottom (Song Setup, Venue) were for touch only
++                new NavigationScheme.Entry(MenuAction.Yellow, "Menu.Common.SongSetup",
++                    () => YARG.Menu.SongSetup.SongSetupPanel.OpenFromMenu()),
++#endif
++                new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.Venue",
++                    () => YARG.Venue.Drawn.VenuePicker.OpenList()),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () =>
+                 {
+                     if (_menuState == State.Main)
+@@ -174,6 +183,7 @@ namespace YARG.Menu.DifficultySelect
+             // ChangePlayer(0) will update for the current player
+             _playerIndex = 0;
+             _vocalModifierSelectIndex = -1;
++            _lastMenuState = State.Main;
+             ChangePlayer(0);
+ 
+             _loadingPhrase.text = RichTextUtils.StripRichTextTags(
+@@ -214,8 +224,23 @@ namespace YARG.Menu.DifficultySelect
+             }
+         }
+ 
++        // What the player has now, marked in the lists of instruments, levels and parts
++        private static string CurrentMark(bool current) => current ? "  <color=#FFD84D>(current)</color>" : string.Empty;
++
+         private void UpdateForPlayer()
+         {
++            // Everyone left (phones that disconnected): nothing to choose for
++            if (PlayerContainer.Players.Count == 0)
++            {
++                MenuManager.Instance.PopMenu();
++                return;
++            }
++
++            if (_playerIndex >= PlayerContainer.Players.Count)
++            {
++                _playerIndex = PlayerContainer.Players.Count - 1;
++            }
++
+             // Set player text
+             var profile = CurrentPlayer.Profile;
+             _text.text = $"<sprite name=\"{profile.GameMode.ToResourceName()}\"> {profile.Name}";
+@@ -528,7 +553,7 @@ namespace YARG.Menu.DifficultySelect
+             foreach (var instrument in _possibleInstruments)
+             {
+                 bool selected = CurrentPlayer.Profile.CurrentInstrument == instrument;
+-                CreateItem(instrument.ToLocalizedName(), selected, () =>
++                CreateItem(instrument.ToLocalizedName() + CurrentMark(selected), selected, () =>
+                 {
+                     var preferredInstrument = CurrentPlayer.Profile.PreferredInstrument;
+                     CurrentPlayer.Profile.CurrentInstrument = instrument;
+@@ -564,7 +589,7 @@ namespace YARG.Menu.DifficultySelect
+                     : null;
+                 _nextHintTitle = difficulty.ToLocalizedName();
+                 _nextHint = hint ?? ExplainDifficulty(difficulty, CurrentPlayer.Profile.GameMode);
+-                CreateItem(hint, difficulty.ToLocalizedName(), selected, () =>
++                CreateItem(hint, difficulty.ToLocalizedName() + CurrentMark(selected), selected, () =>
+                 {
+                     CurrentPlayer.Profile.CurrentDifficulty
+                         = CurrentPlayer.Profile.DifficultyFallback
+@@ -768,7 +793,7 @@ namespace YARG.Menu.DifficultySelect
+                 {
+                     _nextHint = "Harmony part " + (i + 1) + ". Part 1 is usually the lead.";
+                 }
+-                CreateItem(YARG.Gameplay.VocalBattle.VocalParts.Label(GlobalVariables.State.CurrentSong, i), selected, () =>
++                CreateItem(YARG.Gameplay.VocalBattle.VocalParts.Label(GlobalVariables.State.CurrentSong, i) + CurrentMark(selected), selected, () =>
+                 {
+                     CurrentPlayer.Profile.HarmonyIndex = (byte) capture;
+ 
+@@ -845,7 +870,7 @@ namespace YARG.Menu.DifficultySelect
+                 }
+ 
+                 // Ensure all vocal players have the same modifiers active
+-                if (_vocalModifierSelectIndex != -1)
++                if (_vocalModifierSelectIndex != -1 && _vocalModifierSelectIndex < PlayerContainer.Players.Count)
+                 {
+                     // Call the player with the selected modifiers, the "primary player"
+                     var primaryPlayer = PlayerContainer.Players[_vocalModifierSelectIndex];
+@@ -1091,7 +1116,9 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private void NudgeSpeed(float change)
+         {
+-            float speed = Mathf.Clamp(Mathf.Round((ShownSongSpeed + change) * 20f) / 20f, 0.25f, 2f);
++            // (Down to 25% and up to 200%; a speed typed in beyond that is not pulled back in)
++            float speed = Mathf.Round((ShownSongSpeed + change) * 20f) / 20f;
++            speed = Mathf.Clamp(speed, Mathf.Min(0.25f, ShownSongSpeed), Mathf.Max(2f, ShownSongSpeed));
+             ShownSongSpeed = speed;
+             YARG.Menu.Persistent.MenuInfoPanel.ShowHint("Song Speed: " + Mathf.RoundToInt(speed * 100f) + "%",
+                 "Left and right change the song's speed, 5% at a time. Slower is easier to learn; the song's pitch stays the same.");
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+index 9f5b187..96a3474 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+@@ -551,12 +551,17 @@ namespace YARG.Menu.MusicLibrary
+ 
+             var dialog = DialogManager.Instance.ShowList("Browse by " + what + "\n<size=60%><line-height=60%>\n" +
+                 groups.Count + " to choose from. Pick one to see its songs.</size>");
+-            dialog.AddListButton("All songs (clear the search)", () => SetSearchInput(attribute, string.Empty));
++            // Browsing shows just the one pick, not that pick on top of the last one
++            dialog.AddListButton("All songs (clear the search)", () => _searchField.ClearFilterQueries());
+             foreach (var (name, count) in groups)
+             {
+                 string chosen = name;
+                 dialog.AddListButton(name + "   <alpha=#88>(" + count + (count == 1 ? " song)" : " songs)"),
+-                    () => SetSearchInput(attribute, "\"" + chosen + "\""));
++                    () =>
++                    {
++                        _searchField.ClearFilterQueries();
++                        SetSearchInput(attribute, "\"" + chosen + "\"");
++                    });
+             }
+         }
+ 
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+index 7b32ad1..a6dfd7b 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+@@ -367,6 +367,8 @@ namespace YARG.Menu.MusicLibrary
+             var selection = CurrentSelection;
+             if (selection == null || !selection.GetFavoriteInfo().ShowFavoriteButton)
+             {
++                // (Say why nothing happened: on a heading, a playlist or a category)
++                ToastManager.ToastInformation("Move to a song to add it to Favorites");
+                 return;
+             }
+ 
+diff --git a/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs b/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs
+index c301a61..c8ef7c1 100644
+--- a/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs
++++ b/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs
+@@ -91,9 +91,11 @@ namespace YARG.Menu.MusicLibrary
+                 else
+                 {
+                     // Regex pattern: The filter specified and the search query tagged with that filter
++                    // (Both taken literally: an album such as "Nevermind (Remastered)" or an artist
++                    // such as "Ke$ha" is not a pattern, and an unbalanced bracket threw)
+                     var currentQuery = $"{filter}:{_searchQueries[attribute]}";
+-                    _fullSearchQuery = Regex.Replace(_fullSearchQuery, currentQuery, updatedQuery,
+-                        RegexOptions.IgnoreCase);
++                    _fullSearchQuery = Regex.Replace(_fullSearchQuery, Regex.Escape(currentQuery),
++                        updatedQuery.Replace("$", "$$"), RegexOptions.IgnoreCase);
+                 }
+             }
+ 
+diff --git a/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs b/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs
+index 4b151cc..9acc68e 100644
+--- a/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs
++++ b/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs
+@@ -1,6 +1,7 @@
+ using System;
+ using UnityEngine;
+ using UnityEngine.EventSystems;
++using UnityEngine.UI;
+ 
+ namespace YARG.Menu.Navigation
+ {
+@@ -40,9 +41,70 @@ namespace YARG.Menu.Navigation
+ 
+             Selected = selected;
+             OnSelectionChanged(selected);
++            ShowFocusFrame(selected);
+             SelectionStateChanged?.Invoke(this, selected, selectionOrigin);
+         }
+ 
++        // YARG Resurrected: the item under the cursor gets a bright frame and a bar down its left
++        // side, on top of its own highlight, which on some screens (the profile list, dialogs, the
++        // screen before a song) was hard to make out on a phone.
++        private static readonly Color FocusColor = new(1f, 0.85f, 0.3f, 1f);
++        private const float FRAME = 3f;
++        private const float BAR = 10f;
++        private GameObject _focusFrame;
++
++        private void ShowFocusFrame(bool selected)
++        {
++            if (!selected && _focusFrame == null)
++            {
++                return;
++            }
++
++            if (_focusFrame == null)
++            {
++                if (transform is not RectTransform)
++                {
++                    return;
++                }
++
++                _focusFrame = new GameObject("Focus Frame", typeof(RectTransform));
++                var frame = (RectTransform) _focusFrame.transform;
++                frame.SetParent(transform, false);
++                frame.anchorMin = Vector2.zero;
++                frame.anchorMax = Vector2.one;
++                frame.offsetMin = Vector2.zero;
++                frame.offsetMax = Vector2.zero;
++                // Not part of the item's own layout
++                _focusFrame.AddComponent<LayoutElement>().ignoreLayout = true;
++
++                Edge(frame, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -FRAME), Vector2.zero);
++                Edge(frame, new Vector2(0f, 0f), new Vector2(1f, 0f), Vector2.zero, new Vector2(0f, FRAME));
++                Edge(frame, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(-FRAME, 0f), Vector2.zero);
++                Edge(frame, new Vector2(0f, 0f), new Vector2(0f, 1f), Vector2.zero, new Vector2(BAR, 0f));
++            }
++
++            if (selected)
++            {
++                // Drawn over the item's own pieces
++                _focusFrame.transform.SetAsLastSibling();
++            }
++            _focusFrame.SetActive(selected);
++        }
++
++        private static void Edge(RectTransform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax)
++        {
++            var edge = new GameObject("Edge", typeof(RectTransform));
++            var rect = (RectTransform) edge.transform;
++            rect.SetParent(parent, false);
++            rect.anchorMin = anchorMin;
++            rect.anchorMax = anchorMax;
++            rect.offsetMin = offsetMin;
++            rect.offsetMax = offsetMax;
++            var image = edge.AddComponent<Image>();
++            image.color = FocusColor;
++            image.raycastTarget = false;
++        }
++
+         protected virtual void OnSelectionChanged(bool selected)
+         {
+             _selectedVisual.SetActive(selected);
+diff --git a/Assets/Script/Menu/Persistent/MusicPlayer.cs b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+index fc872c0..09fe775 100644
+--- a/Assets/Script/Menu/Persistent/MusicPlayer.cs
++++ b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+@@ -188,8 +188,12 @@ namespace YARG.Menu.Persistent
+ 
+                     if (!isActiveAndEnabled)
+                     {
+-                        // Hidden while the song was loading: start afresh when the menu comes back
++                        // Hidden while the song was loading: start afresh when the menu comes back.
++                        // (The song held from before goes too: it would come back under this one's name.)
+                         mixer.Dispose();
++                        _mixer?.Dispose();
++                        _mixer = null;
++                        _heldForLater = false;
+                         return;
+                     }
+ 
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index 45eeb1c..23fd7f5 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -56,13 +56,51 @@ namespace YARG.Menu.ProfileList
+                 new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", OpenSelectedProfileActions),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu(), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfile),
++                // The MIC TEST and PHONES bars on this screen were for touch only
++                new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.MicTest", () => YARG.Audio.MicTest.OpenFromMenu()),
++#if UNITY_ANDROID && !UNITY_EDITOR
++                new NavigationScheme.Entry(MenuAction.Orange, "Menu.Common.Phones", () => YARG.Remote.RemotePlayManager.OpenPhones()),
++#endif
+             }, true));
+ 
+             PlayerContainer.PlayerAdded += OnPlayerAdded;
++            _navigationGroup.SelectionChanged += ScrollToSelection;
++        }
++
++        // The list follows the controller's cursor (on the Fold's cover screen it is longer than the screen)
++        private void ScrollToSelection(NavigatableBehaviour selected, SelectionOrigin origin)
++        {
++            if (origin != SelectionOrigin.Navigation || selected == null)
++            {
++                return;
++            }
++
++            var scrollRect = _profileList.GetComponentInParent<UnityEngine.UI.ScrollRect>();
++            if (scrollRect == null || scrollRect.content == null)
++            {
++                return;
++            }
++
++            Canvas.ForceUpdateCanvases();
++            var content = scrollRect.content;
++            var viewport = scrollRect.viewport != null ? scrollRect.viewport : (RectTransform) scrollRect.transform;
++            float scrollable = content.rect.height - viewport.rect.height;
++            if (scrollable <= 0f)
++            {
++                return;
++            }
++
++            var item = (RectTransform) selected.transform;
++            var middle = content.InverseTransformPoint(item.TransformPoint(item.rect.center));
++            float fromTop = content.rect.yMax - middle.y;
++            float target = Mathf.Clamp(fromTop - viewport.rect.height / 2f, 0f, scrollable);
++            scrollRect.StopMovement();
++            scrollRect.verticalNormalizedPosition = 1f - target / scrollable;
+         }
+ 
+         private void OnDisable()
+         {
++            _navigationGroup.SelectionChanged -= ScrollToSelection;
+             PlayerContainer.EnsureValidInstruments();
+             PlayerContainer.SaveProfiles();
+ 
+@@ -156,7 +194,7 @@ namespace YARG.Menu.ProfileList
+ 
+         public void AddProfile()
+         {
+-            PlayerContainer.AddProfile(new YargProfile
++            var profile = new YargProfile
+             {
+                 Name = GetUniqueProfileName("New Profile"),
+                 NoteSpeed = 5,
+@@ -166,9 +204,11 @@ namespace YARG.Menu.ProfileList
+                 CurrentDifficulty = Difficulty.Easy,
+                 DifficultyFallback = Difficulty.Easy,
+                 GameMode = GameMode.FiveFretGuitar
+-            });
++            };
++            PlayerContainer.AddProfile(profile);
+ 
+-            RefreshList();
++            // The new profile is the one lit up, so the next press acts on it
++            RefreshList(profile);
+         }
+ 
+         public void AddBotProfile()
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 0b069fe..396a519 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -11,6 +11,7 @@ using YARG.Core.Game;
+ using YARG.Core.Logging;
+ using YARG.Input;
+ using YARG.Localization;
++using YARG.Menu.Data;
+ using YARG.Menu.Navigation;
+ using YARG.Menu.Persistent;
+ using YARG.Player;
+@@ -135,8 +136,11 @@ namespace YARG.Menu.ProfileList
+ 
+             if (!remove) return;
+ 
+-            // Then remove
++            DeleteNow();
++        }
+ 
++        private void DeleteNow()
++        {
+             if (Selected)
+             {
+                 _profileSidebar.HideContents();
+@@ -148,6 +152,36 @@ namespace YARG.Menu.ProfileList
+             }
+         }
+ 
++        // On a controller: the usual confirmation asks for the profile's name to be typed, which a
++        // controller can't do, so ask with two buttons instead
++        private async UniTask ConfirmDeleteWithController()
++        {
++            if (Profile.IsBot)
++            {
++                DeleteNow();
++                return;
++            }
++
++            bool remove = false;
++            var dialog = DialogManager.Instance.ShowMessage("Delete " + Profile.Name + "?",
++                "Deleting this profile is permanent and you will lose all stats and binds. Play history will " +
++                "remain and can be accessed in the <b>History</b> tab.");
++            dialog.ClearButtons();
++            dialog.AddDialogButton("Menu.Common.Cancel", MenuData.Colors.CancelButton,
++                () => DialogManager.Instance.ClearDialog());
++            dialog.AddDialogButton("Menu.Common.Delete", MenuData.Colors.ConfirmButton, () =>
++            {
++                remove = true;
++                DialogManager.Instance.ClearDialog();
++            });
++            await dialog.WaitUntilClosed();
++
++            if (remove && this != null)
++            {
++                DeleteNow();
++            }
++        }
++
+         public UniTask<bool> PromptAddDevice() => PromptAddDeviceFor(Profile);
+ 
+         /// <summary>
+@@ -378,7 +412,16 @@ namespace YARG.Menu.ProfileList
+             bool selectedDevice = false;
+             bool clearBinds = false;
+ 
+-            dialog.AddToggleSetting("Clear Binds for Device", false, (value) => clearBinds = value);
++            // (A row of the list rather than a tick box, so a controller can reach it too)
++            ColoredButton clearRow = null;
++            clearRow = dialog.AddListButton("Clear binds for the removed device: off", () =>
++            {
++                clearBinds = !clearBinds;
++                if (clearRow != null)
++                {
++                    clearRow.Text.text = "Clear binds for the removed device: " + (clearBinds ? "ON" : "off");
++                }
++            }, false);
+ 
+             // Add available devices
+             foreach (var device in InputSystem.devices)
+@@ -434,7 +477,8 @@ namespace YARG.Menu.ProfileList
+         /// Confirm on a controller: a list of what can be done with this profile, since the buttons
+         /// on the row and in the sidebar can only be reached by touch.
+         /// </summary>
+-        public void ShowActions()
++        /// <param name="select">The row to put the cursor on (the one just used, when the list is shown again).</param>
++        public void ShowActions(int select = 0)
+         {
+             var engine = YARG.Settings.Customization.CustomContentManager.EnginePresets.GetPresetById(Profile.EnginePreset);
+             string engineName = engine != null ? engine.Name : "Default";
+@@ -449,14 +493,12 @@ namespace YARG.Menu.ProfileList
+                     dialog.AddListButton(Profile.IsBot ? "Add this bot to the band" : "Connect (play as this profile)",
+                         () => After(() => Connect(true)));
+                 }
+-                dialog.AddListButton("Delete this profile", () => After(() =>
+-                {
+-                    RemoveProfile();
+-                    return UniTask.CompletedTask;
+-                }));
++                dialog.AddListButton("Delete this profile", () => After(ConfirmDeleteWithController));
+                 return;
+             }
+ 
++            // Rows are counted so that the list can come back with the cursor where it was
++            int rows = 0;
+             if (!Profile.IsBot)
+             {
+                 dialog.AddListButton("Add Device (controller or microphone)", () => After(async () =>
+@@ -469,23 +511,28 @@ namespace YARG.Menu.ProfileList
+                     await PromptRemoveDevice();
+                     _profileListMenu.RefreshList(Profile);
+                 }));
++                rows += 2;
+             }
+ 
++            int typeRow = rows++;
+             dialog.AddListButton("Instrument Type: " + Profile.GameMode.ToLocalizedName() + "  (change)", () =>
+             {
++                // The same instruments, in the same order, as the profile's own list (a mode that
++                // list doesn't have was turned back into Five Fret Guitar when it was shown)
+                 var modes = new[]
+                 {
+                     YARG.Core.GameMode.FiveFretGuitar, YARG.Core.GameMode.Vocals,
+                     YARG.Core.GameMode.FourLaneDrums, YARG.Core.GameMode.FiveLaneDrums,
+-                    YARG.Core.GameMode.SixFretGuitar, YARG.Core.GameMode.ProKeys,
++                    YARG.Core.GameMode.EliteDrums, YARG.Core.GameMode.ProKeys,
+                 };
+                 int at = System.Array.IndexOf(modes, Profile.GameMode);
+                 Profile.GameMode = modes[(at + 1) % modes.Length];
+                 Profile.CurrentInstrument = Profile.GameMode.PossibleInstruments()[0];
+                 YARG.Menu.Filters.FiltersMenu.ResetIntensityFiltersForProfile(Profile);
+                 UpdateDisplay(Profile);
+-                After(Reopen);
++                After(() => Reopen(typeRow));
+             });
++            int engineRow = rows++;
+             dialog.AddListButton("Engine: " + engineName + "  (change)", () =>
+             {
+                 // Default, Casual, Precision, Solo Taps: the ones that change this instrument
+@@ -499,23 +546,31 @@ namespace YARG.Menu.ProfileList
+                     choices.Add(YARG.Core.Game.EnginePreset.SoloTaps);
+                 int at = choices.FindIndex(e => e.Id == Profile.EnginePreset);
+                 Profile.EnginePreset = choices[(at + 1) % choices.Count].Id;
+-                After(Reopen);
++                After(() => Reopen(engineRow));
+             });
++            int fasterRow = rows++;
+             dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (faster)", () =>
+             {
+                 Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed + 0.5f, 0.5f, 100f);
+-                After(Reopen);
++                After(() => Reopen(fasterRow));
+             });
++            int slowerRow = rows++;
+             dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (slower)", () =>
+             {
+                 Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed - 0.5f, 0.5f, 100f);
+-                After(Reopen);
++                After(() => Reopen(slowerRow));
+             });
++            int leftyRow = rows++;
+             dialog.AddListButton(Profile.LeftyFlip ? "Lefty Flip: On" : "Lefty Flip: Off", () =>
+             {
+                 Profile.LeftyFlip = !Profile.LeftyFlip;
+-                After(Reopen);
++                After(() => Reopen(leftyRow));
+             });
++            dialog.AddListButton("Profile Settings (highway, calibration, colors, camera...)", () => After(() =>
++            {
++                ShowSettings(0);
++                return UniTask.CompletedTask;
++            }));
+             dialog.AddListButton("More Settings and Button Bindings", () => After(() =>
+             {
+                 _profileSidebar.UpdateSidebar(Profile, this);
+@@ -546,12 +601,120 @@ namespace YARG.Menu.ProfileList
+                 Disconnect();
+                 return UniTask.CompletedTask;
+             }));
++
++            dialog.SelectListIndex(select);
+         }
+ 
+-        private UniTask Reopen()
++        /// <summary>
++        /// On a controller: the profile's own settings, which otherwise are only in the panel on the
++        /// right (reachable by touch). Each change shows the list again with the cursor where it was.
++        /// </summary>
++        private void ShowSettings(int select)
++        {
++            var dialog = DialogManager.Instance.ShowList(Profile.Name + "\n<size=55%><line-height=60%>\nProfile Settings</size>");
++            int rows = 0;
++
++            void Row(string text, System.Action change)
++            {
++                int row = rows++;
++                dialog.AddListButton(text, () =>
++                {
++                    change();
++                    After(() =>
++                    {
++                        _profileSidebar.UpdateSidebar(Profile, this);
++                        ShowSettings(row);
++                        return UniTask.CompletedTask;
++                    });
++                });
++            }
++
++            Row($"Highway Length: {Profile.HighwayLength:0.0#}  (longer)",
++                () => Profile.HighwayLength = Mathf.Clamp(Mathf.Round((Profile.HighwayLength + 0.1f) * 10f) / 10f, 0.1f, 10f));
++            Row($"Highway Length: {Profile.HighwayLength:0.0#}  (shorter)",
++                () => Profile.HighwayLength = Mathf.Clamp(Mathf.Round((Profile.HighwayLength - 0.1f) * 10f) / 10f, 0.1f, 10f));
++            Row($"Input Calibration: {Profile.InputCalibrationMilliseconds} ms  (+10)",
++                () => Profile.InputCalibrationMilliseconds += 10);
++            Row($"Input Calibration: {Profile.InputCalibrationMilliseconds} ms  (-10)",
++                () => Profile.InputCalibrationMilliseconds -= 10);
++
++            if (Profile.GameMode is GameMode.FourLaneDrums or GameMode.FiveLaneDrums or GameMode.EliteDrums)
++            {
++                Row("Star Power Activation: " + Profile.StarPowerActivationType.ToLocalizedName() + "  (change)", () =>
++                {
++                    Profile.StarPowerActivationType = Profile.StarPowerActivationType == StarPowerActivationType.RightmostNote
++                        ? StarPowerActivationType.AllNotes
++                        : StarPowerActivationType.RightmostNote;
++                });
++            }
++
++            if (Profile.GameMode is GameMode.FourLaneDrums or GameMode.EliteDrums)
++            {
++                Row("Cymbal Models: " + (Profile.UseCymbalModels ? "On" : "Off"), () => Profile.UseCymbalModels = !Profile.UseCymbalModels);
++            }
++
++            if (Profile.GameMode is GameMode.FiveFretGuitar)
++            {
++                Row("Open Note Lane: " + Profile.OpenLaneDisplayType.ToLocalizedName() + "  (change)", () =>
++                {
++                    Profile.OpenLaneDisplayType = Profile.OpenLaneDisplayType switch
++                    {
++                        OpenLaneDisplayType.Never => OpenLaneDisplayType.IfChartContainsOpens,
++                        OpenLaneDisplayType.IfChartContainsOpens => OpenLaneDisplayType.Always,
++                        _ => OpenLaneDisplayType.Never,
++                    };
++                });
++            }
++
++            if (Profile.GameMode is GameMode.ProKeys)
++            {
++                Row("Range Shifts: " + (Profile.RangeEnabled ? "On" : "Off"), () => Profile.RangeEnabled = !Profile.RangeEnabled);
++            }
++
++            var content = YARG.Settings.Customization.CustomContentManager.ThemePresets;
++            Row("Theme: " + PresetName(content, Profile.ThemePreset) + "  (change)",
++                () => Profile.ThemePreset = NextPreset(content, Profile.ThemePreset));
++            var colors = YARG.Settings.Customization.CustomContentManager.ColorProfiles;
++            Row("Color Profile: " + PresetName(colors, Profile.ColorProfile) + "  (change)",
++                () => Profile.ColorProfile = NextPreset(colors, Profile.ColorProfile));
++            var cameras = YARG.Settings.Customization.CustomContentManager.CameraSettings;
++            Row("Camera: " + PresetName(cameras, Profile.CameraPreset) + "  (change)",
++                () => Profile.CameraPreset = NextPreset(cameras, Profile.CameraPreset));
++            var highways = YARG.Settings.Customization.CustomContentManager.HighwayPresets;
++            Row("Highway Look: " + PresetName(highways, Profile.HighwayPreset) + "  (change)",
++                () => Profile.HighwayPreset = NextPreset(highways, Profile.HighwayPreset));
++            var meters = YARG.Settings.Customization.CustomContentManager.RockMeterPresets;
++            Row("Rock Meter: " + PresetName(meters, Profile.RockMeterPreset) + "  (change)",
++                () => Profile.RockMeterPreset = NextPreset(meters, Profile.RockMeterPreset));
++
++            dialog.AddListButton("Back", () => After(() => Reopen(0)));
++            dialog.SelectListIndex(select);
++        }
++
++        private static string PresetName(YARG.Settings.Customization.CustomContent content, System.Guid id)
++        {
++            var preset = content.GetBasePresetById(id);
++            return preset != null ? preset.Name : "Default";
++        }
++
++        // The next of the built-in and your own presets, round and round
++        private static System.Guid NextPreset(YARG.Settings.Customization.CustomContent content, System.Guid id)
++        {
++            var all = new System.Collections.Generic.List<BasePreset>(content.DefaultBasePresets);
++            all.AddRange(content.CustomBasePresets);
++            if (all.Count == 0)
++            {
++                return id;
++            }
++
++            int at = all.FindIndex(p => p.Id == id);
++            return all[(at + 1) % all.Count].Id;
++        }
++
++        private UniTask Reopen(int select)
+         {
+             _profileSidebar.UpdateSidebar(Profile, this);
+-            ShowActions();
++            ShowActions(select);
+             return UniTask.CompletedTask;
+         }
+ 
+@@ -626,7 +789,8 @@ namespace YARG.Menu.ProfileList
+             }
+ 
+             PlayerContainer.DisposePlayer(player);
+-            _profileListMenu.RefreshList();
++            // (Keep the cursor on this profile)
++            _profileListMenu.RefreshList(Profile);
+         }
+ 
+         public void MoveUp()
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 4b90b44..9a656ce 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -162,8 +162,6 @@ namespace YARG.Settings
+                     YARG.Gameplay.VocalBattle.SingOffTurns.EightBars,
+                     YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars
+                 };
+-            // A picture and short bio of the artist when choosing whose part to sing (from Wikipedia)
+-            public ToggleSetting ShowArtistCards { get; } = new(true);
+             public ToggleSetting EnablePracticeSP { get; } = new(false);
+             public SliderSetting PracticeRestartDelay { get; } = new(2f, 0.5f, 5f);
+ 
+@@ -239,7 +237,6 @@ namespace YARG.Settings
+                     DiscordRichPresenceMode.Hide
+                 };
+ 
+-            public ToggleSetting AmIAwesome { get; } = new(false);
+ 
+             #endregion
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index b521298..733cb25 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -39,14 +39,21 @@ namespace YARG.Settings
+                 new HeaderMetadata("Venues"),
+                 nameof(Settings.VenueChoice),
+                 nameof(Settings.VenueCrowd),
++#if !UNITY_ANDROID
++                // (On a phone: the folder is private to the app, and the venues take the place of
++                // the global and default backgrounds; the Venue setting says where pictures go)
+                 new ButtonRowMetadata(nameof(Settings.OpenVenueFolder)),
+                 new FieldMetadata(nameof(Settings.DisableDefaultBackground), isAdvanced: true),
+                 new FieldMetadata(nameof(Settings.DisableGlobalBackgrounds), isAdvanced: true),
++#endif
+                 nameof(Settings.DisablePerSongBackgrounds),
+                 new FieldMetadata(nameof(Settings.WaitForSongVideo), isAdvanced: true),
+ 
+                 new HeaderMetadata("Gameplay"),
++#if !UNITY_ANDROID
++                // (Android delivers input as events; there is nothing to poll)
+                 new FieldMetadata(nameof(Settings.InputPollingFrequency), isAdvanced: true),
++#endif
+                 nameof(Settings.VoiceActivatedVocalStarPower),
+                 new FieldMetadata(nameof(Settings.EnablePracticeSP), isAdvanced: true),
+                 new FieldMetadata(nameof(Settings.PracticeRestartDelay), isAdvanced: true),
+@@ -57,7 +64,6 @@ namespace YARG.Settings
+                 new HeaderMetadata("Vocals"),
+                 nameof(Settings.SingOff),
+                 nameof(Settings.SingOffTurnLength),
+-                nameof(Settings.ShowArtistCards),
+ 
+                 new HeaderMetadata("StatusBar"),
+                 nameof(Settings.ShowBattery),
+@@ -72,7 +78,9 @@ namespace YARG.Settings
+                 nameof(Settings.GamepadGuitarLayout),
+                 nameof(Settings.GamepadNoStrum),
+                 nameof(Settings.ShowControllerButtonNames),
++#if UNITY_ANDROID
+                 nameof(Settings.TouchControls),
++#endif
+ 
+                 new HeaderMetadata("Other"),
+                 nameof(Settings.ReconnectProfiles),
+@@ -82,8 +90,10 @@ namespace YARG.Settings
+                 nameof(Settings.PauseOnFocusLoss),
+                 nameof(Settings.MuteOnFocusLoss),
+                 nameof(Settings.WrapAroundNavigation),
++#if !UNITY_ANDROID
++                // (Discord isn't part of the phone build)
+                 nameof(Settings.DiscordRichPresence),
+-                new FieldMetadata(nameof(Settings.AmIAwesome), isAdvanced: true),
++#endif
+             },
+             new SongManagerTab("SongManager", icon: "Songs")
+             {
+@@ -105,8 +115,11 @@ namespace YARG.Settings
+             },
+             new MetadataTab("Sound", icon: "Sound")
+             {
++#if UNITY_ANDROID
++                // (Phones only: on a computer the output is chosen under Experimental)
+                 new HeaderMetadata("SoundOutput"),
+                 nameof(Settings.SoundOutput),
++#endif
+ 
+                 new HeaderMetadata("Volume"),
+                 new FieldMetadata(nameof(Settings.EnableNormalization), isAdvanced: true),
+@@ -157,12 +170,17 @@ namespace YARG.Settings
+             new MetadataTab("Graphics", icon: "Display", new TrackPreviewBuilder())
+             {
+                 new HeaderMetadata("Display"),
++#if !UNITY_ANDROID
++                // (A phone has no window, resolution or VSync choice: the game fills the screen at
++                // its refresh rate, and FPS Cap is what sets the frame rate)
+                 nameof(Settings.VSync),
++#endif
+                 new FieldMetadata(nameof(Settings.FpsCap)),
+                 new FieldMetadata(nameof(Settings.VenueFpsCap), isAdvanced: true),
++#if !UNITY_ANDROID
+                 nameof(Settings.FullscreenMode),
+                 nameof(Settings.Resolution),
+-                new FieldMetadata(nameof(Settings.FpsStats), isAdvanced: true),
++#endif
+ 
+                 new HeaderMetadata("Graphics"),
+                 nameof(Settings.LowQuality),
+@@ -216,7 +234,9 @@ namespace YARG.Settings
+                     nameof(Settings.CopyCurrentSongTextFilePath),
+                     nameof(Settings.CopyCurrentSongJsonFilePath)),
+                 new ButtonRowMetadata(nameof(Settings.OpenPersistentDataPath)),
++#if !UNITY_ANDROID
+                 new ButtonRowMetadata(nameof(Settings.OpenExecutablePath)),
++#endif
+             },
+             new MetadataTab("LightingPeripherals", icon: "Lighting", new DMXInformationPanelBuilder())
+             {
+@@ -270,6 +290,8 @@ namespace YARG.Settings
+                 nameof(Settings.SaveScoresWithBots),
+                 new HeaderMetadata("Accessibility"),
+                 nameof(Settings.FontScaling),
++#if !UNITY_ANDROID
++                // (On a phone the sound library has one output; Sound > Play Sound Through picks it)
+                 new HeaderMetadata("OutputConfiguration"),
+                 nameof(Settings.OutputDevice),
+                 nameof(Settings.OutputChannelDefault),
+@@ -277,6 +299,7 @@ namespace YARG.Settings
+                 nameof(Settings.OutputChannelMetronome),
+                 nameof(Settings.OutputChannelSfx),
+                 nameof(Settings.OutputChannelVox),
++#endif
+             }
+         };
+ 
+@@ -315,6 +338,15 @@ namespace YARG.Settings
+                 Settings.DefaultsVersion = 1;
+             }
+ 
++#if UNITY_ANDROID
++            // Settings a phone does not show: a value saved by an earlier build would otherwise
++            // stay in force with no way to change it
++            Settings.FullscreenMode.SetValueWithoutNotify(FullScreenMode.FullScreenWindow);
++            Settings.Resolution.SetValueWithoutNotify(null);
++            Settings.DisableGlobalBackgrounds.SetValueWithoutNotify(false);
++            Settings.DisableDefaultBackground.SetValueWithoutNotify(false);
++#endif
++
+             SettingContainer.IsInitialized = true;
+ 
+             // Now that we're done loading, call all of the callbacks
+diff --git a/Assets/Script/Venue/VenueLoader.cs b/Assets/Script/Venue/VenueLoader.cs
+index 6327919..01e2a73 100644
+--- a/Assets/Script/Venue/VenueLoader.cs
++++ b/Assets/Script/Venue/VenueLoader.cs
+@@ -51,6 +51,8 @@ namespace YARG.Venue
+ 
+             if (!SettingsManager.Settings.DisableDefaultBackground.Value && result == null)
+             {
++                // (Not the song's own: tagged as one, it kept the drawn venues away)
++                source = VenueSource.Global;
+                 result = LoadDefaultVenue();
+             }
+ 
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index 5fab337..4633ffd 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -138,6 +138,20 @@
+             "Start": "Start",
+ 
+             "Up": "Up",
++            "SongSetup": "Song Setup",
++            "Venue": "Venue",
++            "MicTest": "Mic Test",
++            "Phones": "Phones",
++            "SongSetupPreview": "Preview",
++            "SongSetupFreestyle": "Freestyle",
++            "SongSetupStart": "Start Here",
++            "SongSetupEnd": "End Here",
++            "SongSetupSlower": "Slower",
++            "SongSetupFaster": "Faster",
++            "SongSetupKeyUp": "Key Up",
++            "SongSetupKeyDown": "Key Down",
++            "GameNetwork": "Game Network",
++            "HotspotSettings": "Hotspot Settings",
+             "Down": "Down",
+             "Left": "Left",
+             "Right": "Right",
+@@ -979,7 +993,7 @@
+         "Button": {
+             "CopyCurrentSongJsonFilePath": "Copy Current Song Json File Path",
+             "CopyCurrentSongTextFilePath": "Copy Current Song Text File Path",
+-            "ExportSongsJson": "Ouvert (JSON)",
++            "ExportSongsJson": "Export (JSON)",
+             "ExportSongsText": "Plain Text",
+             "ExportSongsCsv": "CSV",
+             "OpenCalibrator": "Open Calibrator",
+@@ -1717,10 +1731,6 @@
+                 "Name": "Sing-Off",
+                 "Description": "Turns the vocals into a battle when two or more players sing. On the Vocals instrument the lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. On Harmonies (a song with a part for each artist) each player sings the artist they picked and the two artists' singers face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. A sing-off with turns leaves no high score, since each singer has only half the song. Can also be switched on the screen before a song."
+             },
+-            "ShowArtistCards": {
+-                "Name": "Artist Pictures and Bios",
+-                "Description": "When choosing whose part to sing or rap (Rap Mode, Harmonies, Sing-Off), shows the artist's picture and a short bio on the right. They come from Wikipedia the first time (the artist's name is looked up there) and are kept on the phone after that."
+-            },
+             "SingOffTurnLength": {
+                 "Name": "Sing-Off Turn Length",
+                 "Description": "In a sing-off on the Vocals instrument: how many lines a singer gets before the other takes over.",
+diff --git a/ProjectSettings/ProjectSettings.asset b/ProjectSettings/ProjectSettings.asset
+index 7b967a1..c4d2d77 100644
+--- a/ProjectSettings/ProjectSettings.asset
++++ b/ProjectSettings/ProjectSettings.asset
+@@ -59,8 +59,8 @@ PlayerSettings:
+   iosShowActivityIndicatorOnLoading: -1
+   androidShowActivityIndicatorOnLoading: -1
+   iosUseCustomAppBackgroundBehavior: 0
+-  allowedAutorotateToPortrait: 1
+-  allowedAutorotateToPortraitUpsideDown: 1
++  allowedAutorotateToPortrait: 0
++  allowedAutorotateToPortraitUpsideDown: 0
+   allowedAutorotateToLandscapeRight: 1
+   allowedAutorotateToLandscapeLeft: 1
+   useOSAutorotation: 1
+@@ -72,7 +72,7 @@ PlayerSettings:
+   androidUseSwappy: 0
+   androidDisplayOptions: 1
+   androidBlitType: 0
+-  androidResizeableActivity: 0
++  androidResizeableActivity: 1
+   androidDefaultWindowWidth: 1920
+   androidDefaultWindowHeight: 1080
+   androidMinimumWindowWidth: 400

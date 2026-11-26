@@ -30,7 +30,7 @@ env:
 
 jobs:
   remote-tests:
-    name: Automated tests (phone remote, guitar sound)
+    name: Automated tests (phone remote, guitar sound, singing)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +41,24 @@ jobs:
         run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
       - name: Run tests
         run: dotnet run --project tests/RemoteServerTests -c Release -- "$RUNNER_TEMP/cert.bytes" "$RUNNER_TEMP/demo"
+
+      # The singing tests run the game's own scoring engine and pitch tracker, so they need
+      # the game's source with this repo's patches applied (no art assets).
+      - name: Get YARG source and its scoring engine for the singing tests
+        run: |
+          git init "$PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          git remote add origin "https://github.com/$UPSTREAM_REPO"
+          GIT_LFS_SKIP_SMUDGE=1 git fetch --depth 1 origin "$UPSTREAM_REF"
+          GIT_LFS_SKIP_SMUDGE=1 git checkout FETCH_HEAD
+          GIT_LFS_SKIP_SMUDGE=1 git submodule update --init --depth 1 YARG.Core
+          for p in ../patches/*.patch; do echo "Applying $p"; git apply --whitespace=nowarn "$p"; done
+          for p in "$GITHUB_WORKSPACE"/patches-core/*.patch; do echo "Applying $p to YARG.Core"; git -C YARG.Core apply --whitespace=nowarn "$p"; done
+      # Unity compiles these files as C# 9 against .NET Standard 2.1: catch anything newer here
+      - name: Singing code only uses what Unity has
+        run: dotnet build tests/VocalsApiCheck -c Release
+      - name: Run singing tests (pitch detection, microphone timing, scoring, Challenge Mode)
+        run: dotnet run --project tests/VocalsTests -c Release -p:YargProjectDir="$GITHUB_WORKSPACE/$PROJECT_DIR"
       # A short recording of the generated guitar and bass, to listen to without installing anything
       - uses: actions/upload-artifact@v4
         with:

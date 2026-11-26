@@ -10,9 +10,11 @@
 // rather than the delay growing.
 package in.yarg.resurrected;
 
+import android.content.Context;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Build;
 
@@ -75,6 +77,29 @@ public final class YargVoiceMonitor {
 
     public int getSampleRate() {
         return sampleRate;
+    }
+
+    private int outputId;
+
+    /**
+     * Plays on the output device with this id (the one the game's sound was moved to), or where
+     * Android chooses when 0 or when that device is not there.
+     */
+    public synchronized void setOutput(Context context, int deviceId) {
+        if (deviceId == outputId) return;
+        outputId = deviceId;
+        try {
+            AudioDeviceInfo chosen = null;
+            if (deviceId != 0 && context != null) {
+                AudioManager manager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+                for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                    if (device.getId() == deviceId) chosen = device;
+                }
+            }
+            track.setPreferredDevice(chosen);
+        } catch (Throwable ignored) {
+            // Android's own choice will do
+        }
     }
 
     /** How loud the voice is played: 0 is silent, 1 as recorded; above 1 louder, softly limited. */

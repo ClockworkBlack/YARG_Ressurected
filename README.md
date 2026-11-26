@@ -15,17 +15,27 @@ BASS callbacks, `/storage/emulated/0/YARG/songs`, touch controls, the all-files-
 - the **phone's own mic** for vocals, a **USB mic and the built-in mic at the same time**, plus **other phones as
   controllers and mics** over Wi-Fi (see below),
 - **vocals as a game of their own**: pick an artist's lines on two-singer songs, and a **sing-off** mode,
+- **fairer singing scores** and a **Challenge Mode** for vocals that makes you really sing the song (see below),
 - a controller-type prompt on Android (gamepad / CRKD guitar / other guitar),
+- a **Deep Music Mode** modifier: guitar and bass cover the whole song (see below),
 - CI that publishes the APK as a GitHub Release.
 
 GitHub Actions downloads YARG-DROID at a pinned commit (`UPSTREAM_REF`), applies `patches/*.patch`,
 copies `overlay/` on top, builds the native libraries (`android/native/`), then builds the APK with Unity (game-ci).
 
+**Windows, Mac, Linux and Chromebook:** the same game also builds for Windows x64 (**Actions → Build Windows**, see [windows/README.md](windows/README.md)), macOS (**Actions → Build Mac**, see [mac/README.md](mac/README.md)) and Linux x86_64, which Intel/AMD Chromebooks run too (**Actions → Build Linux (and Chromebook)**, see [linux/README.md](linux/README.md) for step-by-step Chromebook instructions).
+
 `patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 `tests/RemoteServerTests` checks the phone remote server on every build (runs before the Unity build).
+`tests/RemotePageTests` runs the phone page in a real browser (touch, a fake microphone) against that server.
 `tests/GameReaderCheck` runs a song written by the converter through YARG's own song scanner and chart loader.
+`tests/VocalsTests` checks singing: pitch detection, microphone timing and scoring, with the game's own engine.
 
 > Status: **experimental.** Expect the first CI runs to need fixes from the logs.
+
+**Website:** `site/` is a download page and player guide, published to GitHub Pages by
+`.github/workflows/pages.yml` (one time: **Settings → Pages → Source: GitHub Actions**). Its download
+buttons always point at the newest game and Converter builds in Releases.
 
 ## Gamepad (PS5 controller layout, others supported)
 
@@ -130,6 +140,39 @@ Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pau
 Any button can be remapped in the profile's binding menu. For a guitar controller, pick
 **CRKD Guitar** or **Other guitar** instead of Gamepad.
 
+### Finding songs, rap mode, explanations (build 42)
+
+- **Browse by Artist / Genre / Album / Year / Charter**: in the song list open **More Options**
+  (L1 / orange fret) and pick one. A list of every artist (or genre...) in your library comes up,
+  with how many songs each has; pick one to see just those songs. No typing needed.
+- **Rap Mode** (on the screen before a song, for a singer): **Whole song**, **<Artist>'s verses**
+  (on a song with each artist marked, such as converted two-artist songs), or **Trade every 4 / 8
+  / 16 bars**, which splits the song evenly between two singers, a block of bars each, scored head
+  to head like a sing-off.
+- **Light blue explanations**: on the screen before a song, the option under the cursor (each
+  modifier such as All Taps, each level, Rap Mode, Sing-Off...) is explained in a light blue box
+  on the right. The controller profile list says what the profile's engine (Casual, Precision...)
+  does, and can change the engine and the instrument type.
+- **Left / right** on that screen changes the song speed, 5% at a time.
+- **Gibson Les Paul (CRKD) guitar in the menus**: green fret confirms, red goes back, strum moves
+  up and down, yellow / blue / orange are the other menu buttons, as on the PS5 controller
+  (Cross, Circle, Triangle, Square, L1). R2 / L2 song skipping only listens to gamepads, so the
+  guitar's whammy bar doesn't skip songs.
+
+### Controller extras (build 41)
+
+- **Profiles screen on a controller**: up/down moves through the profiles, **Cross** opens a list
+  for the lit-up profile (Connect, Add Device, Remove Device, note speed, lefty flip, move, more
+  settings, Disconnect), **Triangle** adds a profile.
+- **Add a controller, a mic or another player after picking a song**: the screen where you choose
+  instrument and difficulty has **Add Controller or Mic** and **Add Another Player**.
+- **R2 / L2** skip to the next / previous menu song wherever the music player shows (main menu,
+  settings, profiles). The menu song keeps its place when you go into the song list or a dialog
+  and carries on when you come back, instead of starting a new one.
+- **Square** in the song list adds the song under the cursor to **Favorites** (again to remove).
+  The first time, the menu music switches to your Favorites (change it in Settings > Sound > Menu
+  Music Source). **Filters** moved into **More Options**.
+
 ## Venues and crowd
 
 Songs are played in a venue, with a crowd in front of the stage dancing in time with the music.
@@ -161,8 +204,13 @@ Songs are played in a venue, with a crowd in front of the stage dancing in time 
 - **The crowd** is seen from behind, three rows deep, with mixed skin tones, hair and clothes and
   a strong Black presence; dressed up in the high-class rooms. Groups of neighbors dance simplified
   versions of party dances from the mid-2000s on (Lean wit It, Crank That, Walk It Out, the Jerk,
-  the Dougie, Cat Daddy, the Nae Nae, the Whip, the Dab, Hit the Quan, the Milly Rock, the Woah),
-  change every sixteen beats, and now and then the whole room swag surfs or puts its hands up.
+  the Dougie, Cat Daddy, the Nae Nae, the Whip, the Dab, Hit the Quan, the Milly Rock, the Woah,
+  Shmoney, the Griddy, Hit Dem Folks, the Wobble, the Stanky Leg, the Running Man, the Shimmy, the
+  Shoot, the Tootsie Slide, the Renegade), plus nodding, fist pumps and jumping. Each group
+  changes dance every sixteen beats on its own bar, blending into the new move, and now and then
+  the whole room swag surfs, jumps or puts its hands up. In slow songs people sway and hold their
+  phones up as lights. Every part of the body moves on a spring, so the head and forearms follow
+  the body a moment later and swing through, instead of snapping from pose to pose.
   Turn it off with **Settings > General > Dancing Crowd**.
 
 Everything here is drawn by code from simple shapes, so it is cartoon-like rather than realistic.
@@ -319,9 +367,129 @@ this phone can only listen to one microphone at a time, a message says so when t
 then a second phone as a mic (next section) is the way. Hearing yourself through the speakers is
 only offered for "This phone's mic".
 
+**Sound and USB mics.** A USB microphone with a headphone jack (a Fifine AM8, for one) is also a
+sound card, and Android sends all sound to it the moment it is plugged in. The game doesn't let
+it: on **Automatic** the sound goes to Bluetooth, wired headphones, the TV or the phone speaker
+instead (whichever is connected, in that order). To hear the game through headphones plugged
+into the microphone, pick **USB Device** in **Settings > Sound > Play Sound Through**; the other
+choices there are **Phone Speaker**, **TV (HDMI)** (through a USB-C hub's HDMI port),
+**Bluetooth** and **Wired Headphones**. The microphone keeps working. Your own voice is never
+played back while the game plays out loud on the phone speaker or a TV (the mic would hear it
+again). A message says where the sound went, or that what
+you picked isn't connected (the sound then stays where Android puts it until it is plugged in).
+Playing somewhere other than Android's choice adds a few hundredths of a second of delay, so run
+**Settings > Calibration** once more for that setup.
+
 Not tried on a phone yet: all of this builds and the song files are checked against the game's
 own reader, but the sing-off board, the artist names, the level hints and the two-microphone
 recording have not been seen running.
+
+## Singing: fairer scores, and Challenge Mode
+
+### What changed for every singer
+
+- **Your pitch is read better.** The game now finds your pitch 50 times a second (it was 25) with a
+  newer method. In the automated tests it is within half a cent of the true note on average, where
+  the original was 4 cents flat. Breath, "shhh" and room noise are never mistaken for a note, and
+  they can no longer hold a note you have stopped singing. It is used by "This phone's mic", the
+  Built-in / USB / Headset mics and phone mics over Wi-Fi alike, and by the Mic Test.
+  (**Settings > Sound > Improved Singing Detection**; turn it off to get the original back.)
+- **You are judged by when you sang, not by when the sound reached the game.** A microphone is
+  always a little late, and the original scoring held every sound against the notes playing when
+  the sound *arrived*. A trained singer could only be credited about three quarters of a phrase
+  that way; now it is 98%. This also covers phone mics over Wi-Fi: each packet of sound is
+  counted, so jitter and lost packets no longer shift your timing.
+  If you only score when you sing ahead of the notes (a Bluetooth microphone will do this), raise
+  **Settings > Sound > Microphone Delay**.
+- **Each phrase tells you how much of it you sang**: "AWESOME! 84%". 95% or more is "PERFECT!",
+  and three in a row are counted ("3x PERFECT!").
+- **Changing the key on the Song Setup screen now moves the notes you have to sing too.** Before,
+  the song moved and the scoring did not, so nothing you sang could match.
+- **Faster song speeds are scored properly** (at 150% speed a perfect singer used to be credited
+  two thirds of a phrase at most).
+- **Spoken lines count syllables from your voice alone.** With breath and consonants no longer
+  taken for the voice, the gaps between syllables are heard as they are (see "Spoken and rapped
+  lines" above).
+- Small fixes: no "miss" sound for every tambourine note you let go by; restarting a section in
+  practice no longer counts a held note twice.
+
+One thing to know: because the game no longer loses a quarter of what you sing, **normal vocals are
+easier to pass than before**. That is what Challenge Mode is for.
+
+### Challenge Mode
+
+Turn it on where you pick your level: **Modifiers > Challenge Mode**. It stays on for that profile
+until you turn it off, and the level list then shows what each level asks for ("Challenge: within
+40 cents, 80% of the line, every note"). With several singers, the first singer's modifiers apply
+to all of them, as with the other vocal modifiers. A phone that joins as a singer has a
+**Challenge mode** checkbox on its join screen. It works with Harmonies and in a sing-off.
+
+Normal vocals only ask you to hit part of each line: on Expert, 58% of it, and you can leave out
+any notes you like. Challenge Mode asks for the song:
+
+| | In tune within (full credit / some credit) | Of each line | Notes you may leave out |
+|---|---|---|---|
+| Easy | 90 / 150 cents | 60% | 2 per line |
+| Medium | 72 / 120 cents | 70% | 1 per line |
+| Hard | 54 / 90 cents | 75% | 1 per line |
+| Expert | 40 / 70 cents | 80% | none |
+| *Expert without it* | *48 / 80 cents* | *58%* | *any* |
+
+(100 cents is one semitone, the step from one piano key to the next. For scale: studies of
+singing count a note as accurate within 50 cents, and trained listeners start to notice a note
+held about 25 cents off. [1](https://livelab.mcmaster.ca/app/uploads/2021/07/DemorestPfordresher_2015_MPSpecial.pdf)
+[2](https://www.voicescience.org/articles/how-to-sing-in-tune/))
+
+- **Every note counts.** A note is "left out" if less than 30% of it was sung in tune. One note
+  too many and the line is lost, however well the rest went. (Notes shorter than about a tenth
+  of a second are too quick to judge alone; they still count towards the line.)
+- **The start and end of a note are forgiven** (a tenth of a second each): the time a consonant
+  takes, finding the pitch, leaving a moment early to breathe. Each edge is scored by the best you
+  reach inside it, so sliding up into a note, or letting it sag as you let go, costs nothing. What
+  is forgiven is limited by what you sang, though: one stray moment on pitch is not a whole note.
+- **Only a voice counts.** Breath and noise never hold a note, and spoken parts need you to speak
+  every word. (The syllable check for spoken lines, which normally starts at Medium, is also on
+  for Easy in Challenge Mode.)
+- **Any octave is fine**, as always: low voices can sing high songs.
+- **The original singer steps back.** On songs with a separate vocal track, the recorded singer
+  drops to 35% volume (**Settings > Sound > Lead Singer Volume In Challenge Mode**), so you carry
+  the tune, and the mic cannot simply hear the right notes from the speaker.
+- **The screen is honest.** The line meter fills with what you really sang: it turns green when
+  that is enough and red when the line is lost. The needle sits where your voice is instead of
+  snapping to the note. The percentage on the results screen is what you sang, not 100% for every
+  line you passed.
+- **Same points per line** as without it, so scores compare, and stars are harder to earn.
+
+What it cannot do is check the words. Humming the tune note for note, in time and in tune, passes.
+
+For the real thing, **wear headphones, or sing into a second phone** (see the phone remote below).
+A phone's loudspeaker is a finger's width from its mic, so with the song playing out loud the mic
+hears the band as well as you. Hold the mic close either way.
+
+### How the numbers were chosen
+
+By having made-up singers of known skill sing made-up songs (pop, fast and slow) through the real
+pitch detector and the real scoring. Lines cleared, from the automated tests:
+
+| Singer | Expert | Easy Challenge | Medium Challenge | Hard Challenge | Expert Challenge |
+|---|---|---|---|---|---|
+| Trained (within 8 cents, on time) | 100% | 100% | 100% | 100% | 100% |
+| Good amateur (within 22 cents, a wrong note now and then) | 98% | 98% | 98% | 98% | 88% |
+| Average karaoke singer (within 42 cents, some wrong and missed notes) | 40% | 88% | 60% | 34% | 6% |
+| Trained, but sings only 70% of each line | 100% | 100% | 66% | 10% | 0% |
+| Trained, but leaves out the highest note of each line | 98% | 96% | 88% | 86% | 8% |
+| Hums one note | 2% | 4% | 2% | 2% | 0% |
+| Makes noise | 0% | 0% | 0% | 0% | 0% |
+
+("Expert" is Expert without Challenge Mode, with the new microphone timing. Easy Challenge is
+wider on pitch than plain Expert, which is why the karaoke singer does better there.)
+
+A trained singer still clears Expert Challenge with a microphone 30 ms earlier or later than the
+game assumes, and over Wi-Fi with jitter and lost packets. These are models, not people: real
+voices and real rooms are messier, and none of this has been tried on a phone yet. If a level
+feels wrong, the numbers are in one table (`GetChallengeLevel` in
+`patches-core/0003-vocals-challenge-mode.patch`), and `tests/VocalsTests` prints these tables for
+any numbers you try (`-- readme`, `-- grid`, `-- robust`). The same tests run on every build.
 
 ## Phone remote: friends' phones as guitars and mics
 
@@ -358,6 +526,29 @@ Notes:
 - Each build makes a new self-signed certificate, so guests see the warning again after an update.
 - Anyone on the same Wi-Fi can open the page, so use it on networks you trust.
 - Wi-Fi adds a little delay. Run YARG's calibration with a phone if timing feels off.
+- A phone that drops off the Wi-Fi joins again by itself as the same player, mid-song too.
+- If a guest has the page open twice (say, the QR code scanned again), the newest tab plays. The other
+  says so at the top; tap there, or go back to that tab, to play from it instead.
+
+## Deep Music Mode: guitar and bass cover the whole song
+
+For playing without a drum kit or a singer, songs made with the YARG Converter carry a second
+guitar part and a second bass part that cover everything:
+
+- **Guitar** adds the vocals and the beat's melody (a chime, a keys loop) to the guitar notes.
+  In a rap song that means the rapped syllables plus the chime or piano loop under them.
+- **Bass** adds the drum hits between its notes: a kick plays the bass note that is sounding,
+  a snare, clap or hat the fret next to it.
+
+To play them, turn on **Deep Music Mode** in the **Modifiers** list when choosing your
+difficulty (it is offered on guitar and bass). Each player chooses for themselves, so one person
+can play the normal guitar while another plays Deep Music Mode bass. Songs without these parts
+(anything not made by the converter) play as normal with the modifier on.
+
+The parts sit in the song's co-op guitar and rhythm slots, so the song list also shows those
+instruments for converted songs: picking **Co-op Guitar** or **Rhythm** plays the Deep Music
+Mode guitar or bass directly. Convert a song again with the latest converter to add the parts
+to songs converted earlier.
 
 ## Guitar sound on your notes
 
@@ -372,9 +563,18 @@ Guitar Sound On Notes** to Clean, Rock or Heavy, and the game makes that track w
 2. **It gives every note of your chart a pitch**: the note the song is on, in an octave chosen so
    the line goes up when the frets go up and repeats when they repeat. Two- and three-fret notes
    become power chords on the harmony's root.
-3. **It plays the chart on a modelled electric guitar** (or bass, for a bass player): plucked
-   strings through an amplifier and speaker cabinet, with hammer-ons softer than picked notes,
-   vibrato on long notes and strummed chords. Three sounds: Clean, Rock, Heavy.
+3. **It plays the chart on a real electric guitar** (or bass, for a bass player). The notes are
+   recordings of a real guitar and a real bass, taken straight from the instruments, every note
+   several times over. They are played the way a hand plays them: the same note twice in a row is
+   a different take each time, hammer-ons use softly played takes with no hard pick attack and
+   run on from the note before, a picked note stops the one before it as the pick lands, and
+   chords are strummed across the strings. Every take is balanced first so that the note itself,
+   not its overtones, carries the sound: a thin take through an amplifier is what makes a
+   guitar sound like a beep.
+4. **It puts that guitar through an amplifier**: valve stages that overdrive the way valves do,
+   a power stage, then a real speaker cabinet (measurements of a Marshall 4x12 with Greenback
+   speakers, and of a 4x12 with a Vintage 30, each with a microphone in front) and a little room.
+   Three sounds: **Clean**, **Rock** (overdrive) and **Heavy** (high gain).
 
 The result is added to the song as its guitar (or bass) track, so the game treats it like the
 real thing: it sounds exactly on the notes whatever your audio delay (including Bluetooth),
@@ -389,6 +589,15 @@ at any speed. A wrong strum still makes the game's own "clunk".
 - Loading takes a few seconds longer. Songs over 20 minutes are skipped.
 - Every build's release includes `guitar-sound-demo.wav`: the three guitar sounds and the bass,
   recorded by the automated tests.
+- The recorded notes are two files in the game's `StreamingAssets/guitar-voice` folder (about
+  6 MB). If they cannot be read, a modelled string stands in so there is still a guitar; the
+  log says so.
+
+The guitar is FreePats' *Electric Guitar FSBS (direct)*, a Fender recorded from its output jack;
+the bass is Karoryfer Samples' *Growlybass*, a Squier Jazz Bass played hard; the speaker cabinets
+were measured by Jester Dyne Productions. All are public domain (CC0). How the note files and
+the cabinets are made from them, and how the sound was tuned, is in
+[tools/string-bank](tools/string-bank/README.md).
 
 ## Song Setup: speed, key, a section of the song, freestyle
 
@@ -469,3 +678,11 @@ Only play songs you own (for example, charts ripped from your own Rock Band DLC)
 ## Licenses
 YARG is LGPL-3.0, and these patches use the same license. Android groundwork by putudarma (YARG-DROID) and JordanSanchez06. BASS is free for non-commercial use only
 ([un4seen license](https://www.un4seen.com/bass.html#license)), so don't sell builds.
+
+The recorded guitar and bass notes (`overlay/Assets/StreamingAssets/guitar-voice`) are made from
+public-domain (CC0 1.0) recordings: [Electric Guitar FSBS (direct)](https://freepats.zenvoid.org/ElectricGuitar/clean-electric-guitar.html)
+from the FreePats project, and [Growlybass](https://shop.karoryfer.com/pages/free-growlybass) by Karoryfer Samples.
+The speaker cabinets the guitar amplifier plays through (`GuitarVoiceCabinets.cs`) are from the
+public-domain (CC0 1.0) *Emerald Pack* and *Brutal Pack* cabinet measurements by
+[Jester Dyne Productions](https://www.jester-dyne-productions.com/) (Bastian Karschewski).
+Thank you to all three.

@@ -147,6 +147,7 @@ public final class StemCheck {
         stems.melodicEnergy = StemTest.energy(melodic);
         stems.bassEnergy = StemTest.energy(mono[StemSplitter.BASS]);
         stems.mixEnergy = StemTest.energy(song.audio);
+        StemTest.addVocals(stems, mono[StemSplitter.VOCALS], mono[StemSplitter.DRUMS], song.sampleRate);
         Features mix = StemTest.analyze(song.audio, song.sampleRate);
         SongWriter.Result plain = SongWriter.analyze(mix, null, null);
         SongWriter.Result split = SongWriter.analyze(mix, null, null, stems);

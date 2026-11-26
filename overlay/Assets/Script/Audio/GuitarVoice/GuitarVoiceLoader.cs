@@ -6,10 +6,11 @@
 //
 // When the setting is on and a song has no separate track for the instrument a player picked,
 // this builds one while the song loads: it listens to the song (GuitarVoiceAnalysis), plays the
-// player's chart on a modelled guitar or bass in tune with it (GuitarVoiceSynth), and adds the
-// result to the song as that instrument's track. From there the game treats it like any real
-// guitar track: it sounds as the notes go by, drops out on a miss, bends with the whammy bar,
-// follows the Guitar / Bass volume sliders, practice speed and seeking.
+// player's chart in tune with it on a recorded guitar or bass through a modelled amplifier
+// (GuitarVoiceSynth), and adds the result to the song as that instrument's track. From there
+// the game treats it like any real guitar track: it sounds as the notes go by, drops out on a
+// miss, bends with the whammy bar, follows the Guitar / Bass volume sliders, practice speed
+// and seeking.
 
 using System;
 using System.Collections.Generic;
@@ -22,8 +23,10 @@ using YARG.Audio.BASS;
 using YARG.Core;
 using YARG.Core.Audio;
 using YARG.Core.Chart;
+using YARG.Core.Game;
 using YARG.Core.Logging;
 using YARG.Core.Song;
+using YARG.Helpers;
 using YARG.Menu.SongSetup;
 using YARG.Player;
 using YARG.Settings;
@@ -46,6 +49,61 @@ namespace YARG.Audio.GuitarVoice
         public static bool Enabled =>
             SettingsManager.Settings.GuitarVoice.Value != GuitarVoiceMode.Off || SongSetupState.Freestyle;
 
+        // The recorded notes ship with the game as two files in StreamingAssets
+        private const string STRINGS_FOLDER = "guitar-voice";
+        private const string GUITAR_STRINGS = "guitar.bank";
+        private const string BASS_STRINGS = "bass.bank";
+
+        private static readonly object StringsLock = new();
+        private static StringBank _guitarStrings, _bassStrings;
+        private static bool _guitarStringsRead, _bassStringsRead;
+
+        /// <summary>
+        /// The recorded notes of the guitar (or the bass), read from the game's files the first
+        /// time they are needed and kept. Null if the file is missing or damaged: the modelled
+        /// string then stands in, so there is still a guitar. Safe to call from a worker thread.
+        /// </summary>
+        public static StringBank Strings(bool bass)
+        {
+            lock (StringsLock)
+            {
+                if (bass ? _bassStringsRead : _guitarStringsRead)
+                {
+                    return bass ? _bassStrings : _guitarStrings;
+                }
+
+                StringBank bank = null;
+                string path = Path.Combine(PathHelper.StreamingAssetsPath ?? "", STRINGS_FOLDER,
+                    bass ? BASS_STRINGS : GUITAR_STRINGS);
+                try
+                {
+                    var watch = Stopwatch.StartNew();
+                    bank = StringBank.Load(path);
+                    // (the path goes first: a text argument at the end of this call would be
+                    // taken for the logger's own "which file is calling" argument)
+                    YargLogger.LogFormatInfo("Guitar voice: read {0}: {1} recorded notes in {2} ms",
+                        path, bank.Recordings.Length, watch.ElapsedMilliseconds);
+                }
+                catch (Exception e)
+                {
+                    YargLogger.LogException(e, "Guitar voice: could not read the recorded notes at " + path
+                        + "; using the modelled string instead");
+                }
+
+                if (bass)
+                {
+                    _bassStrings = bank;
+                    _bassStringsRead = true;
+                }
+                else
+                {
+                    _guitarStrings = bank;
+                    _guitarStringsRead = true;
+                }
+                return bank;
+            }
+        }
+
         /// <summary>
         /// Adds a generated track for every guitar-family instrument in play that the song has no
         /// separate audio for. Returns the stems that were added. Safe to call from a worker thread.
@@ -65,7 +123,8 @@ namespace YARG.Audio.GuitarVoice
             bool freestyleGuitar = false, freestyleBass = false;
 
             // Which tracks are wanted, and from which chart (the hardest one in play)
-            var wanted = new Dictionary<SongStem, (Instrument Instrument, Difficulty Difficulty)>();
+            // (With the modifiers too: Deep Music Mode plays a different part of the chart)
+            var wanted = new Dictionary<SongStem, (Instrument Instrument, Difficulty Difficulty, Modifier Modifiers)>();
             foreach (var player in players)
             {
                 if (player == null || player.SittingOut)
@@ -115,7 +174,7 @@ namespace YARG.Audio.GuitarVoice
                 var difficulty = player.Profile.CurrentDifficulty;
                 if (!wanted.TryGetValue(stem, out var current) || difficulty > current.Difficulty)
                 {
-                    wanted[stem] = (instrument, difficulty);
+                    wanted[stem] = (instrument, difficulty, player.Profile.CurrentModifiers);
                 }
             }
 
@@ -144,11 +203,11 @@ namespace YARG.Audio.GuitarVoice
                 : mode == GuitarVoiceMode.Heavy ? GuitarVoiceTone.Heavy
                 : GuitarVoiceTone.Rock;
 
-            foreach (var (stem, (instrument, difficulty)) in wanted)
+            foreach (var (stem, (instrument, difficulty, modifiers)) in wanted)
             {
                 try
                 {
-                    if (!chart.GetFiveFretTrack(instrument).TryGetDifficulty(difficulty, out var track)
+                    if (!chart.GetFiveFretTrack(instrument, modifiers, difficulty).TryGetDifficulty(difficulty, out var track)
                         || track.Notes.Count == 0)
                     {
                         continue;
@@ -168,7 +227,8 @@ namespace YARG.Audio.GuitarVoice
 
                     // A little under the song's own loudness, so it sits in the mix like a band member
                     float target = Math.Min(0.2f, Math.Max(0.04f, harmony.Rms * (bass ? 0.7f : 0.6f)));
-                    var rendered = GuitarVoiceSynth.Render(notes, seconds, tone, bass, harmony.Cents, target);
+                    var rendered = GuitarVoiceSynth.Render(notes, seconds, tone, bass, harmony.Cents, target,
+                        Strings(bass));
                     var wav = GuitarVoiceSynth.ToWav(rendered, GuitarVoiceSynth.SAMPLE_RATE, 2);
 
                     // The mixer owns the stream from here on
@@ -192,7 +252,8 @@ namespace YARG.Audio.GuitarVoice
                 try
                 {
                     GuitarFreestyle.Prepare(harmony, tone, SongSetupState.KeyShiftFor(song),
-                        freestyleGuitar, freestyleBass);
+                        freestyleGuitar, freestyleBass,
+                        freestyleGuitar ? Strings(false) : null, freestyleBass ? Strings(true) : null);
                 }
                 catch (Exception e)
                 {

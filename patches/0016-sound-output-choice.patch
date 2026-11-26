@@ -1,0 +1,82 @@
+diff --git a/Assets/Script/Audio/Bass/BassAudioManager.cs b/Assets/Script/Audio/Bass/BassAudioManager.cs
+index d57b69c..71144fc 100644
+--- a/Assets/Script/Audio/Bass/BassAudioManager.cs
++++ b/Assets/Script/Audio/Bass/BassAudioManager.cs
+@@ -195,6 +195,9 @@ namespace YARG.Audio.BASS
+                 Bass.UpdatePeriod, Bass.DeviceBufferLength, Bass.PlaybackBufferLength, PlaybackLatency);
+ 
+             YargLogger.LogFormatInfo("Current Device: {0}", Bass.GetDeviceInfo(Bass.CurrentDevice).Name);
++
++            // Android: play through the output picked in the settings, if it isn't where Android sends the sound
++            AndroidOutput.OnBassReady();
+         }
+ 
+         protected override bool SetOutputDevice(string name)
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index fb4d65a..c7120aa 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -212,6 +212,18 @@ namespace YARG.Settings
+             public ToggleSetting PauseOnFocusLoss { get; } = new(true);
+             public ToggleSetting MuteOnFocusLoss { get; } = new(false);
+ 
++            // Android: which output the game plays through (a USB microphone otherwise takes the sound)
++            public DropdownSetting<YARG.Audio.SoundOutputDevice> SoundOutput { get; }
++                = new(YARG.Audio.SoundOutputDevice.Automatic, YARG.Audio.AndroidOutput.Apply)
++                {
++                    YARG.Audio.SoundOutputDevice.Automatic,
++                    YARG.Audio.SoundOutputDevice.PhoneSpeaker,
++                    YARG.Audio.SoundOutputDevice.Tv,
++                    YARG.Audio.SoundOutputDevice.Usb,
++                    YARG.Audio.SoundOutputDevice.Bluetooth,
++                    YARG.Audio.SoundOutputDevice.Headphones
++                };
++
+             public ToggleSetting WrapAroundNavigation { get; } = new(true);
+ 
+             public DropdownSetting<DiscordRichPresenceMode> DiscordRichPresence { get; }
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 6890632..5622855 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -104,6 +104,9 @@ namespace YARG.Settings
+             },
+             new MetadataTab("Sound", icon: "Sound")
+             {
++                new HeaderMetadata("SoundOutput"),
++                nameof(Settings.SoundOutput),
++
+                 new HeaderMetadata("Volume"),
+                 new FieldMetadata(nameof(Settings.EnableNormalization), isAdvanced: true),
+                 nameof(Settings.MasterMusicVolume),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index fb0944e..a4f6dbb 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -938,6 +938,7 @@
+             "Other": "Other",
+             "Display": "Display",
+             "Volume": "Volume",
++            "SoundOutput": "Output",
+             "Graphics": "Graphics",
+             "Camera": "Camera",
+             "SongFolders": "Song Folders",
+@@ -1573,6 +1574,18 @@
+                 "Name": "Pause On Focus Loss",
+                 "Description": "Pauses the game if it tabbed out/loses focus in the middle of a song."
+             },
++            "SoundOutput": {
++                "Name": "Play Sound Through",
++                "Description": "Where the game's sound comes out. Automatic: wherever Android sends it, except a USB microphone: Android sends all sound to one the moment it is plugged in, so then the sound goes to Bluetooth, wired headphones, the TV or the phone speaker instead (whichever is connected, in that order). Pick USB Device to hear the game through headphones plugged into the microphone, or Phone Speaker, TV (HDMI), Bluetooth or Headphones to always play there. If what you picked isn't connected, the sound stays on the usual output until it is. Playing somewhere other than where Android sends it adds a few hundredths of a second of delay, so run the audio calibration again after changing this.",
++                "Dropdown": {
++                    "Automatic": "Automatic",
++                    "PhoneSpeaker": "Phone Speaker",
++                    "Tv": "TV (HDMI)",
++                    "Usb": "USB Device",
++                    "Bluetooth": "Bluetooth",
++                    "Headphones": "Wired Headphones"
++                }
++            },
+             "MuteOnFocusLoss": {
+                 "Name": "Mute On Focus Loss",
+                 "Description": "Mutes all game audio when the game is tabbed out/loses focus, including menu music. Audio is restored when focus returns."

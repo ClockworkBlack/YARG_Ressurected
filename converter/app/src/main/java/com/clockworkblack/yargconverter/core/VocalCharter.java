@@ -64,6 +64,8 @@ public final class VocalCharter {
         /** True when the separated voice was used; false when the words were spread by guesswork. */
         public boolean heard;
         public int lines, sungLines, spokenLines, words;
+        /** What most of the song's clear-cut lines are: a borderline line goes the same way. */
+        public boolean mostlySung;
         /** Lines given to the first singer, the second, and both. */
         public final int[] partLines = new int[3];
 
@@ -112,11 +114,17 @@ public final class VocalCharter {
         Chart chart = new Chart();
         if (lines == null) return chart;
         float gate = voice != null ? voice.gate() : 0f;
+        // A first look at every line, so borderline lines can follow the rest of the song
+        int[] verdict = voice != null ? clearVerdicts(lines, duration, voice, gate) : new int[lines.size()];
+        boolean songLean = mostlySung(verdict);
+        chart.mostlySung = songLean;
         long floor = 0;
         double previousEnd = 0;
         boolean anyHeard = false;
         for (int i = 0; i < lines.size(); i++) {
             Lrc.Line line = lines.get(i);
+            // "[Chorus x 2]", "(instrumental)": notes in the lyrics file, not words to sing
+            if (isAnnotation(line.text)) continue;
             List<String> words = words(line.text);
             if (words.isEmpty()) continue;
             double start = line.time;
@@ -143,7 +151,8 @@ public final class VocalCharter {
 
             // What is sung on each word, and is this line sung at all?
             List<Note> notes = new ArrayList<>();
-            boolean sung = heard && pitchLine(voice, gate, words, frameStart, frameEnd, wordStart, wordEnd, notes, runs);
+            boolean leanSung = twinVerdict(lines, verdict, i, songLean);
+            boolean sung = heard && pitchLine(voice, gate, words, frameStart, frameEnd, wordStart, wordEnd, notes, leanSung, runs);
             if (!sung) {
                 notes.clear();
                 for (int k = 0; k < n; k++) {
@@ -393,6 +402,132 @@ public final class VocalCharter {
         return true;
     }
 
+    /** Measurements of a stretch of voice, for judging sung against rapped (and for the build's logs). */
+    public static final class Delivery {
+        /** Share of the sounding time spent holding a note (see {@link #heldShare}). */
+        public double held;
+        /** Share of the sounding time with a clear note in it at all. */
+        public double voiced;
+        /** Share of the voiced time within a semitone of the local middle note: steady even with vibrato. */
+        public double steady;
+        /** Seconds of sound. */
+        public double seconds;
+
+        @Override
+        public String toString() {
+            return String.format(java.util.Locale.US, "held %.2f voiced %.2f steady %.2f over %.1fs", held, voiced, steady, seconds);
+        }
+    }
+
+    /** Measures the voice between two times. */
+    public static Delivery measure(VocalAnalyzer.Voice v, double fromSeconds, double toSeconds) {
+        return measure(v, v.gate(), v.frameAt(fromSeconds), Math.min(v.frames(), v.frameAt(toSeconds) + 1));
+    }
+
+    static Delivery measure(VocalAnalyzer.Voice v, float gate, int a, int b) {
+        Delivery d = new Delivery();
+        d.held = heldShare(v, gate, a, b);
+        int sounding = 0, voiced = 0, steady = 0;
+        float[] window = new float[21];
+        for (int f = a; f < b; f++) {
+            if (v.level[f] <= gate) continue;
+            sounding++;
+            if (Float.isNaN(v.midi[f])) continue;
+            voiced++;
+            int k = 0;
+            for (int g = Math.max(a, f - 10); g <= Math.min(b - 1, f + 10); g++) {
+                if (!Float.isNaN(v.midi[g]) && v.level[g] > gate) window[k++] = v.midi[g];
+            }
+            Arrays.sort(window, 0, k);
+            if (Math.abs(v.midi[f] - window[k / 2]) <= 1.0f) steady++;
+        }
+        d.voiced = sounding == 0 ? 0 : (double) voiced / sounding;
+        d.steady = voiced == 0 ? 0 : (double) steady / voiced;
+        d.seconds = sounding / v.fps;
+        return d;
+    }
+
+    /** The one rule for sung against rapped or spoken, from a stretch's measurements, with nothing else known. */
+    public static boolean judgeSung(Delivery d) {
+        return d.held >= HELD_SHARE;
+    }
+
+    /**
+     * The same, in a song: a line that is clearly one or the other is that, and a borderline line
+     * (a sung line full of slides, a rapped line that leans into a few notes) goes the way most of
+     * the song goes.
+     */
+    public static boolean judgeSung(Delivery d, boolean songMostlySung) {
+        if (d.held >= HELD_SHARE) return true;
+        if (d.held < BORDER_SHARE) return false;
+        return songMostlySung;
+    }
+
+    /** Below this share of held notes a line is rapped or spoken, whatever the rest of the song does. */
+    static final double BORDER_SHARE = 0.15;
+
+    static final int UNCLEAR = 0, CLEARLY_SUNG = 1, CLEARLY_RAPPED = 2;
+
+    /**
+     * For every lyric line: clearly sung, clearly rapped, or in between, measured from its time
+     * stamp to the next one (at most six seconds).
+     */
+    static int[] clearVerdicts(List<Lrc.Line> lines, double duration, VocalAnalyzer.Voice v, float gate) {
+        int[] out = new int[lines.size()];
+        for (int i = 0; i < lines.size(); i++) {
+            Lrc.Line l = lines.get(i);
+            if (l.text.trim().isEmpty() || isAnnotation(l.text) || l.time >= duration) continue;
+            double end = Math.min(i + 1 < lines.size() ? lines.get(i + 1).time : duration, l.time + 6.0);
+            if (end <= l.time + 0.5) continue;
+            Delivery d = measure(v, gate, v.frameAt(l.time), Math.min(v.frames(), v.frameAt(end) + 1));
+            if (d.seconds < 0.5) continue;
+            out[i] = d.held >= HELD_SHARE ? CLEARLY_SUNG : d.held < BORDER_SHARE ? CLEARLY_RAPPED : UNCLEAR;
+        }
+        return out;
+    }
+
+    /**
+     * Whether the song is a sung one. It takes a clear majority: rap, once separated from the
+     * beat, often holds a few notes, so a song with sung hooks and rapped verses must not tip a
+     * rapped verse over into singing.
+     */
+    static boolean mostlySung(int[] verdict) {
+        int sung = 0, rapped = 0;
+        for (int v : verdict) {
+            if (v == CLEARLY_SUNG) sung++;
+            else if (v == CLEARLY_RAPPED) rapped++;
+        }
+        return sung >= 3 && sung >= 2 * rapped;
+    }
+
+    /**
+     * Which way a borderline line leans: the same words elsewhere in the song (a chorus comes
+     * round again), going with most of those that were clear, or else the song as a whole.
+     */
+    public static boolean twinVerdict(List<Lrc.Line> lines, int[] verdict, int index, boolean songLean) {
+        String text = normalised(lines.get(index).text);
+        int sung = 0, rapped = 0;
+        if (text.length() >= 4) {
+            for (int j = 0; j < lines.size(); j++) {
+                if (j == index || verdict[j] == UNCLEAR || !normalised(lines.get(j).text).equals(text)) continue;
+                if (verdict[j] == CLEARLY_SUNG) sung++;
+                else rapped++;
+            }
+        }
+        // The repeats that were clear decide by majority; with none, or a tie, the song does
+        return sung == rapped ? songLean : sung > rapped;
+    }
+
+    private static String normalised(String text) {
+        return text == null ? "" : text.toLowerCase(java.util.Locale.US).replaceAll("[^a-z0-9]+", " ").trim();
+    }
+
+    /** A lyric line that is only a note to the reader: "[Chorus x 2]", "(Instrumental)". */
+    static boolean isAnnotation(String text) {
+        String t = text == null ? "" : text.trim();
+        return t.length() >= 2 && t.matches("^[\\[(].*[\\])]$");
+    }
+
     /** A line is sung when at least this much of its sounding time is spent on held notes. */
     static final double HELD_SHARE = 0.30;
 
@@ -598,10 +733,16 @@ public final class VocalCharter {
      * @return true and fills {@code out} when the line is sung
      */
     private static boolean pitchLine(VocalAnalyzer.Voice v, float gate, List<String> words, int[] frameStart, int[] frameEnd,
+                                     double[] wordStart, double[] wordEnd, List<Note> out, boolean leanSung, boolean runs) {
+        int from0 = frameStart[0], to0 = Math.min(frameEnd[words.size() - 1], v.frames());
+        if (!judgeSung(measure(v, gate, from0, to0), leanSung)) return false;
+        return pitchWords(v, gate, words, frameStart, frameEnd, wordStart, wordEnd, out, runs);
+    }
+
+    private static boolean pitchWords(VocalAnalyzer.Voice v, float gate, List<String> words, int[] frameStart, int[] frameEnd,
                                      double[] wordStart, double[] wordEnd, List<Note> out, boolean runs) {
         int n = words.size();
         int from = frameStart[0], to = Math.min(frameEnd[n - 1], v.frames());
-        if (heldShare(v, gate, from, to) < HELD_SHARE) return false;
 
         float[] median = new float[n];
         float[] buf = new float[64];

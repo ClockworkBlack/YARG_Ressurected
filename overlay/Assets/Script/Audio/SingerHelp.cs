@@ -5,6 +5,8 @@
 //    hears it again and the two howl at each other. So the voice is only played back while
 //    headphones (wired, USB or Bluetooth) are connected, and silenced otherwise. The setting
 //    itself is not touched: plug headphones in and it is back at the volume you chose.
+//    A USB microphone counts as "USB audio" too, so the voice is also silenced whenever the
+//    game plays out loud on the phone speaker or a TV (see AndroidOutput), whatever is plugged in.
 //
 // 2. A reason. On a song with no vocals part, a singer's instrument list is simply empty (only
 //    Sit Out and Disconnect). When that screen opens for such a song, a message says why and what
@@ -100,8 +102,9 @@ namespace YARG.Audio
             }
 
             // Sent every time, not only when headphones come and go: a microphone added since
-            // starts out silent until told (setting the same level again costs nothing)
-            bool mute = !_headphones;
+            // starts out silent until told (setting the same level again costs nothing). Silent
+            // while the game plays out loud (phone speaker or TV), where the mic would hear it.
+            bool mute = !_headphones || AndroidOutput.PlaysOutLoud;
             float volume = mute ? 0f : SettingsManager.Settings.VocalMonitoring.Value;
             foreach (var player in PlayerContainer.Players)
             {

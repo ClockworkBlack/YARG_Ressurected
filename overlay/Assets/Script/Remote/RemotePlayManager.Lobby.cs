@@ -22,12 +22,16 @@ namespace YARG.Remote
 
         private static bool InGameplay => SceneManager.GetSceneByName("Gameplay").isLoaded;
 
+        // Players are not added or removed while a song is playing, nor while the host is choosing
+        // instruments and levels for them (that screen goes through the players one by one)
+        private static bool PlayersLocked => InGameplay || YARG.Menu.DifficultySelect.DifficultySelectMenu.Current != null;
+
         private PhoneState FindPhone(RemoteClient client)
         {
             return _phones.TryGetValue(client, out var phone) ? phone : null;
         }
 
-        private void SetRole(RemoteClient client, string role, string difficulty)
+        private void SetRole(RemoteClient client, string role, string difficulty, bool? challenge = null)
         {
             var phone = FindPhone(client);
             if (phone == null)
@@ -37,9 +41,10 @@ namespace YARG.Remote
 
             phone.Role = role;
             phone.Difficulty = difficulty;
+            phone.Challenge = challenge;
             phone.RolePending = true;
 
-            if (role != "none" && InGameplay)
+            if (role != "none" && PlayersLocked)
             {
                 client.SendText("rolewait");
             }
@@ -57,7 +62,7 @@ namespace YARG.Remote
         // Players can't be added in the middle of a song, so requests wait for the menus.
         private void ApplyPendingRoles()
         {
-            if (_phones.IsEmpty || InGameplay)
+            if (_phones.IsEmpty || PlayersLocked)
             {
                 return;
             }
@@ -178,6 +183,21 @@ namespace YARG.Remote
             player.Profile.CurrentDifficulty = difficulty;
             player.Profile.DifficultyFallback = difficulty;
 
+            // A singer can ask for Vocals Challenge Mode on the phone's join screen. (With
+            // several singers, the one who picks the modifiers on the host decides for all,
+            // as with the other vocal modifiers.)
+            if (vocals && phone.Challenge.HasValue)
+            {
+                if (phone.Challenge.Value)
+                {
+                    player.Profile.AddSingleModifier(YARG.Core.Game.Modifier.VocalsChallenge);
+                }
+                else
+                {
+                    player.Profile.RemoveModifiers(YARG.Core.Game.Modifier.VocalsChallenge);
+                }
+            }
+
             bool micReady = true;
             if (vocals && !(player.Bindings.Microphone is RemoteMicDevice))
             {
@@ -207,7 +227,7 @@ namespace YARG.Remote
             // usually reconnects within seconds.
             var player = phone.AutoPlayer;
             phone.AutoPlayer = null;
-            if (player == null || InGameplay)
+            if (player == null || PlayersLocked)
             {
                 return;
             }
@@ -485,6 +505,16 @@ namespace YARG.Remote
         private string _wifiQrContent;
         private string _urlQrContent;
         private float _nextLobbyRefresh;
+        private bool _lobbySchemeOn;
+
+        /// <summary>Opens PLAY WITH PHONES (from a menu's controller button).</summary>
+        public static void OpenPhones()
+        {
+            if (Instance != null && !InGameplay)
+            {
+                Instance.OpenLobby();
+            }
+        }
 
         private void OpenLobby()
         {
@@ -494,6 +524,19 @@ namespace YARG.Remote
             }
             _lobby.SetActive(true);
             _nextLobbyRefresh = 0f;
+
+            // The controller works this screen while it is open, not the menu hidden behind it
+            if (YARG.Menu.Navigation.Navigator.Instance != null && !_lobbySchemeOn)
+            {
+                YARG.Menu.Navigation.Navigator.Instance.PushScheme(new YARG.Menu.Navigation.NavigationScheme(
+                    new List<YARG.Menu.Navigation.NavigationScheme.Entry>
+                    {
+                        new(YARG.Core.Input.MenuAction.Red, "Menu.Common.Close", CloseLobby),
+                        new(YARG.Core.Input.MenuAction.Green, "Menu.Common.GameNetwork", ToggleHotspot),
+                        new(YARG.Core.Input.MenuAction.Yellow, "Menu.Common.HotspotSettings", OpenHotspotSettings),
+                    }, false, () => _lobbySchemeOn = false));
+                _lobbySchemeOn = true;
+            }
         }
 
         private void CloseLobby()
@@ -501,6 +544,12 @@ namespace YARG.Remote
             if (_lobby != null)
             {
                 _lobby.SetActive(false);
+            }
+
+            if (_lobbySchemeOn && YARG.Menu.Navigation.Navigator.Instance != null)
+            {
+                _lobbySchemeOn = false;
+                YARG.Menu.Navigation.Navigator.Instance.PopScheme();
             }
         }
 
@@ -693,6 +742,11 @@ namespace YARG.Remote
             root.anchorMax = Vector2.one;
             root.offsetMin = Vector2.zero;
             root.offsetMax = Vector2.zero;
+            // Over the VENUE, SONG SETUP and MIC TEST bars (94 to 96), which showed through it
+            var lobbyCanvas = _lobby.AddComponent<Canvas>();
+            lobbyCanvas.overrideSorting = true;
+            lobbyCanvas.sortingOrder = 97;
+            _lobby.AddComponent<GraphicRaycaster>();
             _lobby.AddComponent<Image>().color = new Color(0.03f, 0.04f, 0.08f, 0.96f); // also blocks touches behind it
 
             var title = MakeText(root, new Vector2(0.5f, 0.93f), new Vector2(1600f, 90f), 54, TextAlignmentOptions.Center);

@@ -51,6 +51,8 @@ namespace YARG.Remote
         private readonly Stream _stream;
         private readonly object _writeLock = new object();
         private volatile bool _closed;
+        private volatile bool _replaced;
+        private int _closeReported;
 
         public int Number { get; internal set; }
         public string Key { get; internal set; } = "";
@@ -59,6 +61,36 @@ namespace YARG.Remote
         public string RemoteAddress { get; }
         public bool IsClosed => _closed;
         public bool HasJoined => Number > 0;
+
+        /// <summary>
+        /// The same phone connected again, so this connection is finished: nothing more from it
+        /// reaches the game, and it closes once the phone lets go of it.
+        /// </summary>
+        public bool IsReplaced => _replaced;
+
+        /// <summary>True the first time only: the game hears of each phone leaving once.</summary>
+        internal bool ClaimCloseReport() => Interlocked.Exchange(ref _closeReported, 1) == 0;
+
+        /// <summary>
+        /// Ends a connection the same phone has replaced. The page is told why ("replaced"), so a
+        /// second tab of the same phone stays off instead of taking the connection back (the two
+        /// would otherwise take it from each other every few seconds). The socket is only shut
+        /// for sending: the message and then the end of the stream reach the page in order, and
+        /// the connection's own thread closes it when the page lets go (or goes quiet).
+        /// </summary>
+        internal void Retire()
+        {
+            _replaced = true;
+            SendText("replaced");
+            try
+            {
+                _tcp.Client.Shutdown(SocketShutdown.Send);
+            }
+            catch (Exception)
+            {
+                Close();
+            }
+        }
 
         internal RemoteClient(TcpClient tcp, Stream stream, bool secure, string remoteAddress)
         {
@@ -170,6 +202,7 @@ namespace YARG.Remote
         private readonly Action<string> _log;
 
         private readonly List<RemoteClient> _clients = new List<RemoteClient>();
+        private readonly object _joinLock = new object();
         private readonly Dictionary<string, int> _numbersByKey = new Dictionary<string, int>();
         private int _lastNumber;
 
@@ -238,7 +271,7 @@ namespace YARG.Remote
                     int count = 0;
                     foreach (var client in _clients)
                     {
-                        if (client.HasJoined && !client.IsClosed)
+                        if (client.HasJoined && !client.IsClosed && !client.IsReplaced)
                         {
                             count++;
                         }
@@ -425,14 +458,19 @@ namespace YARG.Remote
             {
                 if (client != null)
                 {
-                    lock (_clients)
+                    // In step with Join: a phone that reconnects at this very moment is announced
+                    // after this connection's close, never before it
+                    lock (_joinLock)
                     {
-                        _clients.Remove(client);
-                    }
-                    client.Close();
-                    if (client.HasJoined)
-                    {
-                        SafeCall(() => _handler.OnClientClosed(client));
+                        lock (_clients)
+                        {
+                            _clients.Remove(client);
+                        }
+                        client.Close();
+                        if (client.HasJoined)
+                        {
+                            ReportClosed(client);
+                        }
                     }
                 }
 
@@ -700,6 +738,12 @@ namespace YARG.Remote
 
         private void Dispatch(RemoteClient client, int opcode, byte[] data, int count)
         {
+            // A connection the same phone has replaced: the game already heard it close
+            if (client.IsReplaced)
+            {
+                return;
+            }
+
             if (opcode == 0x2)
             {
                 if (client.HasJoined)
@@ -741,36 +785,60 @@ namespace YARG.Remote
         private void Join(RemoteClient client, string rawKey, string rawName)
         {
             string key = SanitizeKey(rawKey);
-            RemoteClient previous = null;
 
-            lock (_clients)
+            // One join (or close) at a time, so the game hears of each phone in order
+            lock (_joinLock)
             {
-                // A phone reconnecting before its old socket timed out: drop the old one.
-                foreach (var other in _clients)
+                RemoteClient previous = null;
+
+                lock (_clients)
                 {
-                    if (other != client && other.HasJoined && other.Key == key && !other.IsClosed)
+                    // A phone reconnecting before its old socket timed out: drop the old one.
+                    foreach (var other in _clients)
                     {
-                        previous = other;
-                        break;
+                        if (other != client && other.HasJoined && other.Key == key && !other.IsClosed &&
+                            !other.IsReplaced)
+                        {
+                            previous = other;
+                            break;
+                        }
                     }
+
+                    if (!_numbersByKey.TryGetValue(key, out int number))
+                    {
+                        number = ++_lastNumber;
+                        _numbersByKey[key] = number;
+                    }
+
+                    client.Key = key;
+                    client.Name = SanitizeName(rawName, number);
+                    client.Number = number;
                 }
 
-                if (!_numbersByKey.TryGetValue(key, out int number))
+                if (previous != null)
                 {
-                    number = ++_lastNumber;
-                    _numbersByKey[key] = number;
+                    previous.Retire();
+                    // The game hears that the old connection is gone before it hears of the new
+                    // one, so the phone's controller is handed over in order: the old one is
+                    // removed (its player keeps a place for it), then the new one is added and
+                    // finds that player. The other way round, mid-song, the player was left with
+                    // no controller and got a twin after the song.
+                    ReportClosed(previous);
+                    _log($"Phone {previous.Number} '{previous.Name}' connected again; the old connection is closed");
                 }
 
-                client.Key = key;
-                client.Name = SanitizeName(rawName, number);
-                client.Number = number;
+                client.SendText($"welcome\n{client.Number}\n{(client.Secure ? 1 : 0)}\n{(TlsConfigured ? 1 : 0)}\n{client.Name}");
+                _log($"Phone {client.Number} '{client.Name}' joined from {client.RemoteAddress} ({(client.Secure ? "https" : "http")})");
+                SafeCall(() => _handler.OnClientHello(client));
             }
+        }
 
-            previous?.Close();
-
-            client.SendText($"welcome\n{client.Number}\n{(client.Secure ? 1 : 0)}\n{(TlsConfigured ? 1 : 0)}\n{client.Name}");
-            _log($"Phone {client.Number} '{client.Name}' joined from {client.RemoteAddress} ({(client.Secure ? "https" : "http")})");
-            SafeCall(() => _handler.OnClientHello(client));
+        private void ReportClosed(RemoteClient client)
+        {
+            if (client.ClaimCloseReport())
+            {
+                SafeCall(() => _handler.OnClientClosed(client));
+            }
         }
 
         public static string SanitizeKey(string key)

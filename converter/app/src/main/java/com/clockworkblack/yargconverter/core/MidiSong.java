@@ -21,6 +21,8 @@ import java.util.List;
  *   EVENTS       practice sections
  *   PART GUITAR  four difficulties (Easy from note 60, Medium 72, Hard 84, Expert 96; green first)
  *   PART BASS    the same
+ *   PART GUITAR COOP, PART RHYTHM  the same: Deep Music Mode's guitar and bass, which YARG
+ *                Resurrected's Deep Music Mode modifier plays in place of guitar and bass
  *   PART VOCALS  every line: note 105 spans a phrase, a lyric sits on each sung note
  *   HARM1/HARM2  the first and second singer's lines, when the song has two
  */
@@ -140,6 +142,8 @@ public final class MidiSong {
         tracks.add(events(r));
         tracks.add(instrument("PART GUITAR", r.chart));
         if (r.bassChart != null) tracks.add(instrument("PART BASS", r.bassChart));
+        if (r.deepChart != null) tracks.add(instrument("PART GUITAR COOP", r.deepChart));
+        if (r.deepBassChart != null) tracks.add(instrument("PART RHYTHM", r.deepBassChart));
         VocalCharter.Chart v = r.vocals;
         if (v != null && !v.phrases.isEmpty()) {
             tracks.add(vocals("PART VOCALS", v, -1, true));

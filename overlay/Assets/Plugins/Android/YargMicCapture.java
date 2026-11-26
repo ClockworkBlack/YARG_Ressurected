@@ -35,6 +35,11 @@ public final class YargMicCapture {
     private final short[] ring;
     private int writeAt;
     private int filled;
+    // A running count of the samples recorded, and where in that count the chunk last handed
+    // out began. Sound is sometimes thrown away (see pump() and flush()); with these the game
+    // can tell how much, and still knows exactly when each sound it does get was made.
+    private long written;
+    private long lastTakeFirst = -1;
     private final Object lock = new Object();
     private volatile boolean running = true;
     private volatile boolean dead;
@@ -43,6 +48,8 @@ public final class YargMicCapture {
     /** The voice played back to the singer ("Vocal Monitoring"), made when it is first turned up. */
     private volatile YargVoiceMonitor monitor;
     private volatile float monitorGain;
+    private volatile int monitorOutput;
+    private Context appContext;
 
     private YargMicCapture(AudioRecord record, int sampleRate, int chunkSamples, int wantedKind) {
         this.record = record;
@@ -165,6 +172,7 @@ public final class YargMicCapture {
                     }
                     int chunkSamples = Math.max(64, rate * chunkMilliseconds / 1000);
                     YargMicCapture capture = new YargMicCapture(record, rate, chunkSamples, kind);
+                    capture.appContext = context.getApplicationContext();
                     capture.thread.start();
                     return capture;
                 }
@@ -229,6 +237,7 @@ public final class YargMicCapture {
                     if (writeAt == ring.length) writeAt = 0;
                 }
                 filled = Math.min(ring.length, filled + got);
+                written += got;
                 // If the game has stopped taking sound, keep only the newest bit: singing must
                 // never be judged on something sung a moment ago.
                 int most = chunk * 4;
@@ -258,6 +267,7 @@ public final class YargMicCapture {
         short[] out = new short[chunk];
         synchronized (lock) {
             if (filled < chunk) return out;
+            lastTakeFirst = written - filled;
             int from = writeAt - filled;
             if (from < 0) from += ring.length;
             for (int i = 0; i < chunk; i++) {
@@ -268,6 +278,17 @@ public final class YargMicCapture {
             filled -= chunk;
         }
         return out;
+    }
+
+    /**
+     * Where the chunk last returned by {@link #take} began, counted in samples since recording
+     * started (-1 before the first chunk). A jump from the end of one chunk to the start of the
+     * next is sound that was thrown away in between.
+     */
+    public long getLastTakeFirst() {
+        synchronized (lock) {
+            return lastTakeFirst;
+        }
     }
 
     /** Forgets the sound that is waiting (at the start of a song). */
@@ -305,9 +326,17 @@ public final class YargMicCapture {
         YargVoiceMonitor m = monitor;
         if (m == null && gain > 0f) {
             m = YargVoiceMonitor.open(sampleRate, 0);
+            if (m != null) m.setOutput(appContext, monitorOutput);
             monitor = m;
         }
         if (m != null) m.setGain(gain);
+    }
+
+    /** Plays the voice back on this output device (0: where Android chooses), as the game's sound. */
+    public void setMonitorOutput(int deviceId) {
+        monitorOutput = deviceId;
+        YargVoiceMonitor m = monitor;
+        if (m != null) m.setOutput(appContext, deviceId);
     }
 
     /** Whether the voice is played back over Bluetooth (which adds a delay of its own). */

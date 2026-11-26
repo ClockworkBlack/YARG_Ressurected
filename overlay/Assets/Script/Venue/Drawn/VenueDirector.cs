@@ -17,6 +17,13 @@ namespace YARG.Venue.Drawn
         private DrawnCrowd _crowd;
         private int _beatIndex;
 
+        // What to draw again when the screen changes shape (a Fold opened or closed, the phone
+        // turned): circles and people are laid out for the shape they were drawn on
+        private DrawnVenue _venue;
+        private bool _drawStage;
+        private bool _drawCrowd;
+        private float _aspect;
+
         /// <param name="backgroundImage">The game's own background picture; the venue is drawn right over it.</param>
         /// <param name="drawStage">False when a picture or video of yours is the backdrop and only the crowd is wanted.</param>
         public static VenueDirector Show(RawImage backgroundImage, GameManager gameManager, DrawnVenue venue, bool drawStage)
@@ -40,27 +47,48 @@ namespace YARG.Venue.Drawn
 
             var director = holder.AddComponent<VenueDirector>();
             director._gameManager = gameManager;
-
-            if (drawStage)
-            {
-                var stage = VenueShapes.Holder(rect, "Stage", 0f, 0f, 1f, 1f);
-                director._stage = stage.gameObject.AddComponent<DrawnStage>();
-                director._stage.Build(venue);
-            }
-
-            if (crowd)
-            {
-                var people = VenueShapes.Holder(rect, "Crowd", 0f, 0f, 1f, 1f);
-                director._crowd = people.gameObject.AddComponent<DrawnCrowd>();
-                director._crowd.Build(venue);
-            }
+            director._venue = venue;
+            director._drawStage = drawStage;
+            director._drawCrowd = crowd;
+            director.Draw();
 
             ToastManager.ToastInformation($"{venue.Name}\nInspired by {venue.InspiredBy}");
             return director;
         }
 
+        private static float ScreenAspect => Screen.height > 0 ? Screen.width / (float) Screen.height : 16f / 9f;
+
+        private void Draw()
+        {
+            var rect = (RectTransform) transform;
+            if (_stage != null) Destroy(_stage.gameObject);
+            if (_crowd != null) Destroy(_crowd.gameObject);
+            _stage = null;
+            _crowd = null;
+            _aspect = ScreenAspect;
+
+            if (_drawStage)
+            {
+                var stage = VenueShapes.Holder(rect, "Stage", 0f, 0f, 1f, 1f);
+                _stage = stage.gameObject.AddComponent<DrawnStage>();
+                _stage.Build(_venue);
+            }
+
+            if (_drawCrowd)
+            {
+                var people = VenueShapes.Holder(rect, "Crowd", 0f, 0f, 1f, 1f);
+                _crowd = people.gameObject.AddComponent<DrawnCrowd>();
+                _crowd.Build(_venue);
+            }
+        }
+
         private void Update()
         {
+            if (Mathf.Abs(ScreenAspect - _aspect) > 0.01f)
+            {
+                Draw();
+            }
+
             float beat = CurrentBeat();
             if (_stage != null) _stage.Animate(beat);
             if (_crowd != null) _crowd.Animate(beat);

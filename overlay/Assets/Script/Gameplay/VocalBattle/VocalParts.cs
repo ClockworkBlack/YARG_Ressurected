@@ -87,6 +87,29 @@ namespace YARG.Gameplay.VocalBattle
         /// </summary>
         public static string LevelHint(EnginePreset preset, Difficulty difficulty)
         {
+            return LevelHint(preset, difficulty, false);
+        }
+
+        /// <summary>
+        /// The same, for a singer with the Challenge Mode modifier on (<paramref name="challenge"/>):
+        /// its rules do not come from the engine preset.
+        /// </summary>
+        public static string LevelHint(EnginePreset preset, Difficulty difficulty, bool challenge)
+        {
+            if (challenge)
+            {
+                var level = EnginePreset.VocalsPreset.GetChallengeLevel(difficulty);
+                int cents = (int) Math.Round(level.PitchWindowPerfect * 100f);
+                int ofLine = (int) Math.Round(level.PhraseHitPercent * 100.0);
+                string skips = level.MaxNoteMisses <= 0
+                    ? "every note"
+                    : level.MaxNoteMisses == 1
+                        ? "all but 1 note"
+                        : "all but " + level.MaxNoteMisses.ToString(CultureInfo.InvariantCulture) + " notes";
+                return "Challenge: within " + cents.ToString(CultureInfo.InvariantCulture) + " cents, " +
+                    ofLine.ToString(CultureInfo.InvariantCulture) + "% of the line, " + skips;
+            }
+
             var vocals = (preset ?? EnginePreset.Default).Vocals;
             float window;
             float share;

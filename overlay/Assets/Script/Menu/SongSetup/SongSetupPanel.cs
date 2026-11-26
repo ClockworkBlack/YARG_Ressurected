@@ -1,7 +1,8 @@
 // The Song Setup screen.
 //
 // On the instrument / difficulty screen (after picking a song) a "SONG SETUP" bar appears at the
-// bottom. Tapping it opens this screen, where you can, while listening to the song:
+// bottom. Tapping it, or the controller's Song Setup button (shown in the help bar), opens this
+// screen, where you can, while listening to the song:
 //
 //   - change its speed (50% to 200%) and its key (12 semitones down to 12 up);
 //   - pick a stretch of it on a bar of the whole song, by dragging the two yellow ends, and tap
@@ -16,6 +17,7 @@
 // fractions of the screen so it fits both the folded and the unfolded display.
 
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
@@ -23,6 +25,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using YARG.Audio.BASS;
 using YARG.Core.Audio;
+using YARG.Core.Input;
 using YARG.Core.Song;
 using YARG.Menu.DifficultySelect;
 using YARG.Menu.Navigation;
@@ -55,7 +58,8 @@ namespace YARG.Menu.SongSetup
 
     public sealed class SongSetupPanel : MonoBehaviour
     {
-        private const float MIN_SPEED = 0.5f;
+        // (The same range as Left / Right on the instrument screen)
+        private const float MIN_SPEED = 0.25f;
         private const float MAX_SPEED = 2.0f;
         private const float SPEED_STEP = 0.05f;
         private const int   MAX_KEY = 12;
@@ -112,8 +116,25 @@ namespace YARG.Menu.SongSetup
 
         private string _lastBarText;
 
+        private static SongSetupPanel _instance;
+        private bool _schemeOn;
+
+        /// <summary>True while the instrument screen is up and the setup screen can be opened.</summary>
+        public static bool CanOpen => _instance != null && _instance._canvas != null &&
+            DifficultySelectMenu.Current != null && !_instance._panel.activeSelf;
+
+        /// <summary>Opens the setup screen (the controller's Song Setup button).</summary>
+        public static void OpenFromMenu()
+        {
+            if (CanOpen)
+            {
+                Safely(_instance.Open);
+            }
+        }
+
         private void Awake()
         {
+            _instance = this;
             try
             {
                 Build();
@@ -155,11 +176,16 @@ namespace YARG.Menu.SongSetup
 
             if (!open)
             {
-                if (!_openBar.activeSelf)
+                // Out of the way of the venue list, which it would otherwise cover
+                bool showBar = !YARG.Venue.Drawn.VenuePicker.PanelOpen;
+                if (_openBar.activeSelf != showBar)
                 {
-                    _openBar.SetActive(true);
+                    _openBar.SetActive(showBar);
                 }
-                UpdateOpenBar(menu);
+                if (showBar)
+                {
+                    UpdateOpenBar(menu);
+                }
                 return;
             }
 
@@ -176,7 +202,7 @@ namespace YARG.Menu.SongSetup
             string section = SongSetupState.TryGetSpan(song, out double a, out double b)
                 ? $"{Clock(a)} to {Clock(b)}"
                 : "whole song";
-            string text = $"<b>SONG SETUP</b>  Tap for speed, key, section and freestyle  |  "
+            string text = $"<b>SONG SETUP</b>  Speed, key, section and freestyle  |  "
                 + $"{Mathf.RoundToInt(menu.ShownSongSpeed * 100f)}%  |  key {Signed(Mathf.RoundToInt(key))}  |  {section}"
                 + (SongSetupState.Freestyle ? "  |  <color=#FFD84D>freestyle on</color>" : "");
             if (text != _lastBarText)
@@ -198,6 +224,8 @@ namespace YARG.Menu.SongSetup
             SongSetupState.Use(song);
             _song = song;
             _speed = Mathf.Clamp(menu.ShownSongSpeed, MIN_SPEED, MAX_SPEED);
+            // (What is shown here is what the song will use)
+            menu.ShownSongSpeed = _speed;
             _key = Mathf.RoundToInt(SongSetupState.KeyShift);
             _length = Math.Max(1.0, song.SongLengthSeconds);
             if (SongSetupState.HasSpan)
@@ -221,7 +249,24 @@ namespace YARG.Menu.SongSetup
 
             _openBar.SetActive(false);
             _panel.SetActive(true);
-            Navigator.Instance.DisableMenuInputs = true;
+
+            // The controller works this screen while it is open (and the screen under it waits)
+            if (Navigator.Instance != null && !_schemeOn)
+            {
+                Navigator.Instance.PushScheme(new NavigationScheme(new List<NavigationScheme.Entry>
+                {
+                    new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Close", () => Safely(Close)),
+                    new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.SongSetupPreview", () => Safely(TogglePreview)),
+                    new NavigationScheme.Entry(MenuAction.Yellow, "Menu.Common.SongSetupFreestyle", () => Safely(ToggleFreestyle)),
+                    new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.SongSetupStart", () => Safely(() => SetStart(PreviewPosition, false))),
+                    new NavigationScheme.Entry(MenuAction.Orange, "Menu.Common.SongSetupEnd", () => Safely(() => SetEnd(PreviewPosition, false))),
+                    new NavigationScheme.Entry(MenuAction.Left, "Menu.Common.SongSetupSlower", () => Safely(() => SetSpeed(_speed - SPEED_STEP))),
+                    new NavigationScheme.Entry(MenuAction.Right, "Menu.Common.SongSetupFaster", () => Safely(() => SetSpeed(_speed + SPEED_STEP))),
+                    new NavigationScheme.Entry(MenuAction.Up, "Menu.Common.SongSetupKeyUp", () => Safely(() => SetKey(_key + 1))),
+                    new NavigationScheme.Entry(MenuAction.Down, "Menu.Common.SongSetupKeyDown", () => Safely(() => SetKey(_key - 1))),
+                }, false, () => _schemeOn = false));
+                _schemeOn = true;
+            }
 
             StartLoading(song);
             RefreshLabels();
@@ -232,9 +277,10 @@ namespace YARG.Menu.SongSetup
             DropPreview();
             _panel.SetActive(false);
             _lastBarText = null;
-            if (Navigator.Instance != null)
+            if (_schemeOn && Navigator.Instance != null)
             {
-                Navigator.Instance.DisableMenuInputs = false;
+                _schemeOn = false;
+                Navigator.Instance.PopScheme();
             }
         }
 
@@ -246,6 +292,7 @@ namespace YARG.Menu.SongSetup
         {
             DropPreview();
             _loadingSong = song;
+            _previewMissing = false;
             float speed = _speed;
             double volume = Math.Max(0.5, SettingsManager.Settings.PreviewVolume.Value);
             _loading = Task.Run(() => song.LoadAudio(speed, volume, SongStem.Crowd));
@@ -283,6 +330,8 @@ namespace YARG.Menu.SongSetup
 
         private double Now => Time.realtimeSinceStartupAsDouble;
 
+        private bool _previewMissing;
+
         private double PreviewPosition => _playing ? _position + (Now - _positionClock) * _speed : _position;
 
         private void UpdatePreview()
@@ -307,6 +356,13 @@ namespace YARG.Menu.SongSetup
                         _playWhenLoaded = false;
                         PlayFrom(_position);
                     }
+                    RefreshLabels();
+                }
+                else
+                {
+                    // The song's audio would not load: say so instead of "Loading..." for ever
+                    _playWhenLoaded = false;
+                    _previewMissing = true;
                     RefreshLabels();
                 }
             }
@@ -340,6 +396,11 @@ namespace YARG.Menu.SongSetup
 
             if (_mixer == null)
             {
+                if (_previewMissing)
+                {
+                    return;
+                }
+
                 // Still loading: start as soon as it is ready
                 _playWhenLoaded = true;
                 RefreshLabels();
@@ -566,6 +627,7 @@ namespace YARG.Menu.SongSetup
                 : $"Section  <b>{Clock(_start)} to {Clock(_end)}</b> ({Clock(_end - _start)} long, played on repeat as practice)";
 
             _previewButton.text = _playing ? "Stop preview"
+                : _previewMissing ? "No preview"
                 : _playWhenLoaded ? "Loading..."
                 : "Play preview";
             _freestyleButton.text = SongSetupState.Freestyle

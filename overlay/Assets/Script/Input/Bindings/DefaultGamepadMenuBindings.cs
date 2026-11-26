@@ -12,6 +12,8 @@ namespace YARG.Input
     /// A gamepad that belongs to a profile is skipped here: its profile's own menu bindings are used.
     /// Which button confirms / goes back follows Settings > General > Controller Layout
     /// (PlayStation by default: Cross confirms, Circle goes back), read at each press.
+    /// Phones joined through the remote are the exception: their buttons are colors, so OK is
+    /// always green and Back always red (see <see cref="ControllerLayout.ToMenuActionFor"/>).
     /// </summary>
     public sealed class DefaultGamepadMenuBindings : IDisposable
     {
@@ -91,7 +93,7 @@ namespace YARG.Input
                     if (device == null || _isOwnedByProfile(device) || _pressed.ContainsKey(index)) return;
 
                     var menuAction = bind.Button is { } button
-                        ? ControllerLayout.ToMenuAction(button)
+                        ? ControllerLayout.ToMenuActionFor(device, button)
                         : bind.Direction;
                     _pressed[index] = menuAction;
                     InputManager.OnMenuAction(menuAction, true);

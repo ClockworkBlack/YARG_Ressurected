@@ -88,6 +88,7 @@ namespace YARG.Remote
             public RemoteClient Client;
             public string Role;
             public string Difficulty;
+            public bool? Challenge; // vocals: asked for Challenge Mode (null = did not say)
             public bool RolePending;
             public YARG.Player.YargPlayer AutoPlayer;
         }
@@ -136,6 +137,66 @@ namespace YARG.Remote
             return 0;
         }
 
+        /// <summary>
+        /// The hold time (seconds) of a phone's controller page, if this profile plays through
+        /// one; 0 otherwise. Unlike <see cref="GetInputDelaySeconds"/> it never answers for a
+        /// microphone.
+        /// </summary>
+        public static double GetPadDelaySeconds(YARG.Input.ProfileBindings bindings)
+        {
+            var instance = Instance;
+            if (instance == null || bindings == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                foreach (var pair in instance._phones)
+                {
+                    var phone = pair.Value;
+                    if (phone.Pad != null && bindings.InputDevices.Contains(phone.Pad))
+                    {
+                        return phone.HoldMs / 1000.0;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// The network hold (ms) measured for the phone that feeds <paramref name="mic"/>: a bit
+        /// more than that connection's usual delay. A default if the phone is not connected.
+        /// </summary>
+        public static double GetMicNetworkHoldMs(RemoteMicDevice mic)
+        {
+            var instance = Instance;
+            if (instance == null || mic == null)
+            {
+                return RemoteMics.DEFAULT_NETWORK_HOLD_MS;
+            }
+
+            try
+            {
+                foreach (var pair in instance._phones)
+                {
+                    if (RemoteMics.IsFedBy(mic, pair.Key))
+                    {
+                        return pair.Value.HoldMs;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+            return RemoteMics.DEFAULT_NETWORK_HOLD_MS;
+        }
+
         private RemoteServer _server;
         private volatile int _tlsState; // 0 = unknown/testing, 1 = works, -1 = broken or no certificate
         private List<string> _addresses = new List<string>();
@@ -145,6 +206,7 @@ namespace YARG.Remote
         private TextMeshProUGUI _text;
         private RectTransform _panel;
         private string _lastText;
+        private float _lastRoom;
 
         private void Awake()
         {
@@ -279,12 +341,14 @@ namespace YARG.Remote
                         _mainThread.Enqueue(() => MarkRolePending(client));
                     }
                     break;
-                case "role": // role \n <guitar|bass|vocals|none> \n <easy|medium|hard|expert>
+                case "role": // role \n <guitar|bass|vocals|none> \n <easy|medium|hard|expert> [\n <1|0> challenge]
                     if (parts.Length > 2)
                     {
                         string role = parts[1];
                         string difficulty = parts[2];
-                        _mainThread.Enqueue(() => SetRole(client, role, difficulty));
+                        // Singers can ask for Vocals Challenge Mode; absent means "leave it as it is"
+                        bool? challenge = parts.Length > 3 ? parts[3] == "1" : (bool?) null;
+                        _mainThread.Enqueue(() => SetRole(client, role, difficulty, challenge));
                     }
                     break;
                 case "micoff":
@@ -325,6 +389,15 @@ namespace YARG.Remote
                     break;
                 case 2: // mic audio: [2][16-bit mono PCM, little endian]
                     RemoteMics.Feed(client, data, 1, count - 1);
+                    break;
+                // Mic audio with the phone's running sample count, so the host can tell when
+                // packets were dropped: [3][index of the first sample u32 LE][16-bit mono PCM LE]
+                case 3:
+                    if (count >= 5)
+                    {
+                        long first = (uint) (data[1] | (data[2] << 8) | (data[3] << 16) | (data[4] << 24));
+                        RemoteMics.Feed(client, data, 5, count - 5, first);
+                    }
                     break;
             }
         }
@@ -702,16 +775,23 @@ namespace YARG.Remote
                 return;
             }
 
+            // Never wider than the screen (a Fold's inner screen is nearly square): the text wraps
+            // onto a second line instead of running off both sides
+            float room = ((RectTransform) _canvas.transform).rect.width - 80f;
             string text = BuildOverlayText();
-            if (text == _lastText)
+            if (text == _lastText && Mathf.Approximately(room, _lastRoom))
             {
                 return;
             }
             _lastText = text;
+            _lastRoom = room;
 
             _text.text = text;
-            var size = _text.GetPreferredValues(text);
-            _panel.sizeDelta = new Vector2(size.x + 56f, size.y + 20f);
+            _text.textWrappingMode = TextWrappingModes.Normal;
+            var size = _text.GetPreferredValues(text, Mathf.Max(200f, room - 56f), 0f);
+            float width = Mathf.Min(size.x + 56f, room);
+            size = _text.GetPreferredValues(text, width - 56f, 0f);
+            _panel.sizeDelta = new Vector2(width, size.y + 20f);
         }
 
         private string BuildOverlayText()

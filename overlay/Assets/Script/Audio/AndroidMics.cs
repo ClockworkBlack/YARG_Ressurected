@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using UnityEngine;
 using YARG.Audio.PitchDetection;
+using YARG.Audio.Vocals;
 using YARG.Core.Audio;
 using YARG.Core.Logging;
 using YARG.Input;
@@ -190,10 +191,13 @@ namespace YARG.Audio
         }
     }
 
-    public sealed class AndroidMicDevice : MicDevice
+    public sealed class AndroidMicDevice : MicDevice, IVoiceMic
     {
         private const float MIC_HIT_INPUT_THRESHOLD = 25f;
         private const float RETRY_SECONDS = 2f;
+
+        // Sound reaches the game a chunk (40 ms) at a time, and is fetched once a video frame
+        private const int DELIVERY_MS = RECORD_PERIOD_MS + 17;
 
         private readonly int _kind;
         private readonly string _name;
@@ -216,11 +220,53 @@ namespace YARG.Audio
         // The voice played back ("Vocal Monitoring"); set by the game and by SingerHelp
         private float _monitorGain;
         private bool _checkedBluetooth;
+        private int _monitorOutput = -1;
+
+        // The new voice analysis (see Vocals/VoiceInput.cs), used while "Improved Singing
+        // Detection" is on. With it off, this class listens the way it always did.
+        private VoiceInput _voiceInput;
+        private readonly List<VoiceInputFrame> _voiceFrames = new List<VoiceInputFrame>();
+        private float[] _voiceSamples = new float[2048];
+        private bool _useVoiceInput;
+        private bool _strict;
+        private double _holdSeconds;
+
+        // The recorder's count of the sample the next chunk should begin at (below 0: not known).
+        // The recorder throws sound away when the game was too busy to fetch it; a jump in the
+        // count says how much, so the timing of everything after it stays right.
+        private long _nextSample = -1;
 
         internal AndroidMicDevice(string displayName, int kind, string name) : base(displayName)
         {
             _kind = kind;
             _name = name;
+        }
+
+        /// <summary>
+        /// Called by the vocals player when a song starts (main thread). See <see cref="IVoiceMic"/>.
+        /// </summary>
+        public double BeginSong(bool strict)
+        {
+            double extra = SettingsManager.Settings.MicrophoneDelay.Value / 1000.0;
+
+            _strict = strict;
+            _useVoiceInput = SettingsManager.Settings.ImprovedSingingDetection.Value;
+            if (!_useVoiceInput)
+            {
+                return extra;
+            }
+
+            double analysis = _voiceInput != null ? _voiceInput.AnalysisSeconds : 0.021;
+            _holdSeconds = VoiceMicTiming.DeviceHoldSeconds(analysis, DELIVERY_MS);
+            if (_voiceInput != null)
+            {
+                _voiceInput.Reset();
+                _voiceInput.Strict = strict;
+                _voiceInput.HoldSeconds = _holdSeconds;
+            }
+            _nextSample = -1;
+
+            return _holdSeconds + VoiceMicTiming.DEVICE_CAPTURE_SECONDS + extra;
         }
 
         /// <summary>Opens the microphone if it isn't open (or went away), trying again every couple of seconds.</summary>
@@ -278,9 +324,14 @@ namespace YARG.Audio
                 int chunkSamples = _capture.Call<int>("getChunkSamples");
                 _pitchDetector = new PitchTracker(sampleRate);
                 _chunk = new float[Math.Max(64, chunkSamples)];
+                _voiceInput = sampleRate >= 8000
+                    ? new VoiceInput(sampleRate) { Strict = _strict, HoldSeconds = _holdSeconds }
+                    : null;
+                _nextSample = -1;
                 _openedAt = Time.unscaledTime;
                 _warnedOpen = false;
                 _checkedBluetooth = false;
+                _monitorOutput = -1;
                 ApplyMonitor();
                 _lastPitch = null;
                 _lastAmplitude = null;
@@ -352,6 +403,12 @@ namespace YARG.Audio
                         continue;
                     }
 
+                    if (_useVoiceInput && _voiceInput != null)
+                    {
+                        ListenWithVoiceInput(samples, _capture.Call<long>("getLastTakeFirst"));
+                        continue;
+                    }
+
                     int count = Math.Min(samples.Length, _chunk.Length);
                     for (int s = 0; s < count; s++)
                     {
@@ -363,6 +420,14 @@ namespace YARG.Audio
                     }
 
                     CalculatePitchAndAmplitude(_chunk);
+                }
+
+                // The voice comes out where the game's sound does (Settings > Sound Output)
+                int output = AndroidOutput.DeviceId;
+                if (output != _monitorOutput)
+                {
+                    _monitorOutput = output;
+                    _capture.Call("setMonitorOutput", output);
                 }
 
                 // Bluetooth plays the voice back late; say so once it is playing
@@ -393,6 +458,48 @@ namespace YARG.Audio
                 Close();
             }
 #endif
+        }
+
+        // The new analysis: every result is stamped with the moment its sound arrived, counted
+        // in samples, so it does not matter that the sound is fetched a video frame at a time.
+        private void ListenWithVoiceInput(short[] samples, long firstSample)
+        {
+            // Sound the recorder threw away since the last chunk (the game stuttered, or was
+            // not listening for a moment) is counted as silence. Below zero: the count started
+            // again, and so does the timing.
+            long missing = 0;
+            if (firstSample >= 0)
+            {
+                if (_nextSample >= 0)
+                {
+                    missing = firstSample >= _nextSample ? firstSample - _nextSample : -1;
+                }
+
+                _nextSample = firstSample + samples.Length;
+            }
+
+            if (_voiceSamples.Length < samples.Length)
+            {
+                _voiceSamples = new float[samples.Length];
+            }
+
+            for (int s = 0; s < samples.Length; s++)
+            {
+                _voiceSamples[s] = samples[s] / 32768f;
+            }
+
+            _voiceFrames.Clear();
+            _voiceInput.Feed(new ReadOnlySpan<float>(_voiceSamples, 0, samples.Length), InputManager.CurrentInputTime,
+                SettingsManager.Settings.MicrophoneSensitivity.Value, _voiceFrames, missing);
+
+            for (int i = 0; i < _voiceFrames.Count; i++)
+            {
+                var frame = _voiceFrames[i];
+
+                // A pitch of 0 means "sound, but no sung tone" (see MicInputContext)
+                _frameQueue.Enqueue(new MicOutputFrame(frame.Time, frame.IsHit,
+                    frame.IsHit ? -1f : frame.PitchHz, frame.LevelDb));
+            }
         }
 
         // Same as BassMicDevice.CalculatePitchAndAmplitude, but the samples are already floats.
@@ -457,6 +564,8 @@ namespace YARG.Audio
             _lastPitch = null;
             _lastAmplitude = null;
             _pitchDetector?.Reset();
+            _voiceInput?.Reset();
+            _nextSample = -1;
             // Have the microphone running before the first line, not after it
             EnsureOpen();
             Flush();
@@ -467,6 +576,18 @@ namespace YARG.Audio
         public override bool DequeueOutputFrame(out MicOutputFrame frame)
         {
             Pump();
+
+            // The new analysis stamps a frame with the moment it is due (see VoiceInput), which
+            // can be a little ahead: hand it over when that moment has come
+            if (_useVoiceInput)
+            {
+                if (!_frameQueue.TryPeek(out frame) || frame.Time > InputManager.InputUpdateTime)
+                {
+                    frame = default;
+                    return false;
+                }
+            }
+
             return _frameQueue.TryDequeue(out frame);
         }
 

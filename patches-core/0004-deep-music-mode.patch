@@ -1,0 +1,100 @@
+diff --git a/YARG.Core/Chart/SongChart.cs b/YARG.Core/Chart/SongChart.cs
+index ec9e14c..a12381f 100644
+--- a/YARG.Core/Chart/SongChart.cs
++++ b/YARG.Core/Chart/SongChart.cs
+@@ -3,6 +3,7 @@ using System.Collections.Generic;
+ using System.Linq;
+ using Melanchall.DryWetMidi.Core;
+ using YARG.Core.Chart.Events;
++using YARG.Core.Game;
+ using YARG.Core.Logging;
+ using YARG.Core.Parsing;
+ 
+@@ -259,6 +260,31 @@ namespace YARG.Core.Chart
+             };
+         }
+ 
++        /// <summary>
++        /// The 5-fret track a player plays with the given modifiers. With Deep Music Mode
++        /// (YARG Resurrected), guitar plays the co-op guitar part and bass the rhythm part, where
++        /// YARG Converter keeps its whole-song covers, when the song has notes there at this
++        /// difficulty; otherwise the normal part.
++        /// </summary>
++        public InstrumentTrack<GuitarNote> GetFiveFretTrack(Instrument instrument, Modifier modifiers, Difficulty difficulty)
++        {
++            if ((modifiers & Modifier.DeepMusicMode) != 0)
++            {
++                var deep = instrument switch
++                {
++                    Instrument.FiveFretGuitar => FiveFretCoop,
++                    Instrument.FiveFretBass => FiveFretRhythm,
++                    _ => null
++                };
++                if (deep != null && deep.TryGetDifficulty(difficulty, out var notes) && notes.Notes.Count > 0)
++                {
++                    return deep;
++                }
++            }
++
++            return GetFiveFretTrack(instrument);
++        }
++
+         public InstrumentTrack<GuitarNote> GetSixFretTrack(Instrument instrument)
+         {
+             return instrument switch
+diff --git a/YARG.Core/Game/Modifier.cs b/YARG.Core/Game/Modifier.cs
+index cd906c0..72ea39f 100644
+--- a/YARG.Core/Game/Modifier.cs
++++ b/YARG.Core/Game/Modifier.cs
+@@ -22,7 +22,13 @@ namespace YARG.Core.Game
+ 
+         // YARG Resurrected: Vocals Challenge Mode. Unlike the others it does not change the
+         // chart; it changes how strictly the singing is judged (see VocalsPreset.GetChallengeLevel).
+-        VocalsChallenge = 1 << 12
++        VocalsChallenge = 1 << 12,
++
++        // YARG Resurrected: guitar and bass cover the whole song. Guitar plays the co-op guitar
++        // part and bass the rhythm part, where YARG Converter writes charts that add the vocals
++        // and the beat's melody to the guitar, and the drums to the bass (for playing with no
++        // drum or vocal chart). Songs without those parts play as normal.
++        DeepMusicMode = 1 << 13
+     }
+ 
+     public static class ModifierConflicts
+@@ -55,6 +61,13 @@ namespace YARG.Core.Game
+                     Modifier.RangeCompress |
+                     Modifier.OpensToGreens,
+ 
++                // Deep Music Mode swaps guitar and bass for parts kept in these slots, so it
++                // means nothing when playing them directly.
++                Instrument.FiveFretCoopGuitar or
++                Instrument.FiveFretRhythm or
++                Instrument.Keys =>
++                    Modifier.DeepMusicMode,
++
+                 _ => Modifier.None
+             };
+ 
+@@ -74,7 +87,8 @@ namespace YARG.Core.Game
+                     Modifier.HoposToTaps   |
+                     Modifier.TapsToHopos   |
+                     Modifier.RangeCompress |
+-                    Modifier.OpensToGreens,
++                    Modifier.OpensToGreens |
++                    Modifier.DeepMusicMode,
+ 
+                 GameMode.FourLaneDrums or
+                 GameMode.FiveLaneDrums or
+diff --git a/YARG.Core/Replays/Analyzer/ReplayAnalyzer.cs b/YARG.Core/Replays/Analyzer/ReplayAnalyzer.cs
+index d531cd2..982732d 100644
+--- a/YARG.Core/Replays/Analyzer/ReplayAnalyzer.cs
++++ b/YARG.Core/Replays/Analyzer/ReplayAnalyzer.cs
+@@ -230,7 +230,7 @@ namespace YARG.Core.Replays.Analyzer
+                 case GameMode.FiveFretGuitar:
+                 {
+                     // Reset the notes
+-                    var notes = _chart.GetFiveFretTrack(profile.CurrentInstrument)
++                    var notes = _chart.GetFiveFretTrack(profile.CurrentInstrument, profile.CurrentModifiers, profile.CurrentDifficulty)
+                         .GetDifficulty(profile.CurrentDifficulty).Clone();
+                     profile.ApplyModifiers(notes, _chart.SyncTrack);
+                     foreach (var note in notes.Notes)

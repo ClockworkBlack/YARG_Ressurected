@@ -1,0 +1,936 @@
+diff --git a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
+index dd8f59a..cacce03 100644
+--- a/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
++++ b/YARG.Core/Engine/Vocals/Engines/YargVocalsEngine.cs
+@@ -9,6 +9,47 @@ namespace YARG.Core.Engine.Vocals.Engines
+ {
+     public class YargVocalsEngine : VocalsEngine
+     {
++        /// <summary>
++        /// Vocals Challenge Mode: a note shorter than this never fails a phrase on its own
++        /// (it is too short to be sung separately); it still counts towards the phrase total.
++        /// </summary>
++        public const double MIN_JUDGED_NOTE_SECONDS = 0.11;
++
++        /// <summary>
++        /// Vocals Challenge Mode: the forgiven edges of a note can add at most this many times
++        /// what the singer's inputs earned by themselves. A very short note may only get one or
++        /// two readings from a real voice, so this is generous; it is there so that a single
++        /// reading cannot stand for a note several times its length.
++        /// </summary>
++        public const double FORGIVEN_LIMIT = 2.0;
++
++        // Vocals Challenge Mode: the notes of the current phrase and how much of each was sung.
++        // All lists are parallel. Unused (and empty) unless EngineParameters.UsesNoteTracking.
++        private readonly List<VocalNote> _trackedNotes = new();
++        private readonly List<uint> _trackedStart = new();
++        private readonly List<uint> _trackedEnd = new();
++        private readonly List<double> _trackedStartTime = new();
++        private readonly List<double> _trackedEndTime = new();
++        private readonly List<bool> _trackedWhole = new();
++        // Credit given to the phrase for the note so far
++        private readonly List<double> _trackedHit = new();
++        // What the inputs earned by themselves, with nothing forgiven, and how far they reach
++        private readonly List<double> _trackedReal = new();
++        private readonly List<uint> _trackedRealTo = new();
++        // The start of the note: how far the inputs made inside the grace time reach, the best
++        // of them, and what they earned by themselves
++        private readonly List<uint> _trackedStartTo = new();
++        private readonly List<float> _trackedStartBest = new();
++        private readonly List<double> _trackedStartReal = new();
++        // The end of the note: where the first input made inside the grace time begins
++        // (NO_TICK: there was none), the best of them, and what they earned by themselves
++        private readonly List<uint> _trackedEndFrom = new();
++        private readonly List<float> _trackedEndBest = new();
++        private readonly List<double> _trackedEndReal = new();
++        private const uint NO_TICK = uint.MaxValue;
++        private int _trackedJudged;
++        private int _lastTrackedIndex = -1;
++
+         public YargVocalsEngine(InstrumentDifficulty<VocalNote> chart, SyncTrack syncTrack,
+             VocalsEngineParameters engineParameters, bool isBot)
+             : base(chart, syncTrack, engineParameters, isBot)
+@@ -49,7 +90,11 @@ namespace YARG.Core.Engine.Vocals.Engines
+         /// <summary>Syllables heard so far in the current phrase (for the HUD and for tests).</summary>
+         public int PhraseSyllables => _phraseSyllables;
+ 
+-        /// <summary>From Medium up (by the preset's pitch window), spoken lines are checked for syllables.</summary>
++        /// <summary>
++        /// From Medium up (by the preset's pitch window), spoken lines are checked for syllables.
++        /// Vocals Challenge Mode's Easy is tight enough on pitch to fall under this as well, and
++        /// that is meant: in Challenge Mode the words have to be spoken on every level but Beginner.
++        /// </summary>
+         private bool SpokenLinesAreChecked => !IsBot && EngineParameters.PitchWindow < 1.6f;
+ 
+         public override void Reset(bool keepCurrentButtons = false)
+@@ -58,6 +103,7 @@ namespace YARG.Core.Engine.Vocals.Engines
+             _lastSyllableTime = double.NegativeInfinity;
+             _syllablePitch = 0f;
+             _phraseSyllables = 0;
++            ClearNoteTracking();
+             base.Reset(keepCurrentButtons);
+         }
+ 
+@@ -148,6 +194,7 @@ namespace YARG.Core.Engine.Vocals.Engines
+             {
+                 // Bots are queued extra updates to account for in-between "inputs"
+                 PitchSang = singNote.PitchAtSongTime(songTime);
++                SangUnpitched = false;
+                 HasSang = true;
+                 OnSing?.Invoke(true);
+             }
+@@ -183,7 +230,15 @@ namespace YARG.Core.Engine.Vocals.Engines
+             else if (action is VocalsAction.Pitch)
+             {
+                 HasSang = true;
+-                PitchSang = gameInput.Axis;
++
++                // Below zero (or not a number): sound without a tone.
++                // The last real pitch is kept (for the needle).
++                float pitch = gameInput.Axis;
++                SangUnpitched = !(pitch >= 0f) || float.IsInfinity(pitch);
++                if (!SangUnpitched)
++                {
++                    PitchSang = pitch;
++                }
+ 
+                 OnSing?.Invoke(true);
+             }
+@@ -205,16 +260,40 @@ namespace YARG.Core.Engine.Vocals.Engines
+             UpdateBot(time);
+ 
+             var phrase = Notes[NoteIndex];
+-            PhraseTicksTotal ??= GetTicksInPhrase(phrase);
++            if (PhraseTicksTotal == null)
++            {
++                PhraseTicksTotal = GetTicksInPhrase(phrase);
++                if (EngineParameters.UsesNoteTracking)
++                {
++                    BeginNoteTracking(phrase);
++                }
++            }
+ 
+             CheckForNoteHit();
+ 
+-            // Check for the end of a phrase
+-            if (CurrentTick > phrase.TickEnd)
++            if (EngineParameters.UsesNoteTracking)
++            {
++                JudgeTrackedNotes(false);
++            }
++
++            // Check for the end of a phrase.
++            // (Vocals Challenge Mode goes by the clock, at the moment its queued update is set
++            // for, so that an update which happens to fall in the last tick cannot close the
++            // phrase a moment sooner on one machine than on another.)
++            bool phraseIsOver = EngineParameters.UsesNoteTracking
++                ? CurrentTime >= GetPhraseCloseTime(phrase)
++                : CurrentTick > phrase.TickEnd;
++            if (phraseIsOver)
+             {
+                 bool hasNotes = PhraseTicksTotal.Value != 0;
+                 bool isLastPhrase = NoteIndex == Notes.Count - 1;
+ 
++                // Vocals Challenge Mode: settle every note first (this can still add credit)
++                if (EngineParameters.UsesNoteTracking)
++                {
++                    JudgeTrackedNotes(true);
++                }
++
+                 // A spoken line hummed through, or babbled over, keeps only part of its credit
+                 if (SpokenLinesAreChecked && hasNotes)
+                 {
+@@ -234,7 +313,31 @@ namespace YARG.Core.Engine.Vocals.Engines
+                 }
+ 
+                 bool hit = percentHit >= EngineParameters.PhraseHitPercent;
+-                if (hit)
++
++                // Vocals Challenge Mode: enough of the phrase is not enough if notes were skipped
++                bool lostToSkippedNotes = false;
++                if (hit && IsPhraseLost)
++                {
++                    hit = false;
++                    lostToSkippedNotes = true;
++                }
++
++                LastPhrasePercent = Math.Min(percentHit, 1.0);
++                LastPhraseNotesMissed = PhraseNotesMissed;
++                LastPhraseLostToNotes = lostToSkippedNotes;
++
++                if (hit && EngineParameters.UsesNoteTracking)
++                {
++                    // Vocals Challenge Mode keeps an honest count: only what was sung.
++                    // (Outside of it a hit phrase counts in full, as it always has.)
++                    var ticksHit = Math.Min((uint) Math.Round(PhraseTicksHit), PhraseTicksTotal.Value);
++
++                    EngineStats.TicksHit += ticksHit;
++                    EngineStats.TicksMissed += PhraseTicksTotal.Value - ticksHit;
++
++                    HitNote(phrase);
++                }
++                else if (hit)
+                 {
+                     EngineStats.TicksHit += PhraseTicksTotal.Value;
+                     HitNote(phrase);
+@@ -251,10 +354,19 @@ namespace YARG.Core.Engine.Vocals.Engines
+ 
+                 PhraseTicksHit = 0;
+                 PhraseTicksTotal = null;
++                PhraseNotesMissed = 0;
++                ClearNoteTracking();
+ 
+                 if (hasNotes)
+                 {
+-                    OnPhraseHit?.Invoke(percentHit / EngineParameters.PhraseHitPercent, hit, isLastPhrase);
++                    double shownPercent = percentHit / EngineParameters.PhraseHitPercent;
++                    if (lostToSkippedNotes)
++                    {
++                        // Keep the rating just under "full" so the result does not read as a hit
++                        shownPercent = Math.Min(shownPercent, 0.99);
++                    }
++
++                    OnPhraseHit?.Invoke(shownPercent, hit, isLastPhrase);
+                 }
+ 
+                 UpdateCarriedNote(phrase);
+@@ -275,7 +387,11 @@ namespace YARG.Core.Engine.Vocals.Engines
+             }
+ 
+             HasSang = false;
+-            if (!IsBot)
++
++            // Syllables are counted from the voice alone: with a microphone that reports
++            // breath and consonants as "sound without a tone", the gaps between the voiced
++            // readings are exactly where one syllable ends and the next begins
++            if (!IsBot && !SangUnpitched)
+             {
+                 CountSyllable();
+             }
+@@ -292,8 +408,22 @@ namespace YARG.Core.Engine.Vocals.Engines
+ 
+             var phrase = Notes[NoteIndex];
+ 
++            if (EngineParameters.UsesNoteTracking)
++            {
++                CheckSingingHitTracked(phrase, lastSingTick);
++                return;
++            }
++
+             // Get the note that we should currently be targeting
+             var note = GetNoteInPhraseAtSongTick(phrase, CurrentTick);
++
++            if (IsSoundThatCannotCount(note))
++            {
++                LastSingTick = lastSingTick;
++                OnHit?.Invoke(false);
++                return;
++            }
++
+             if (note is null)
+             {
+                 // If we're not on a note, we cannot be hitting a note
+@@ -325,6 +455,299 @@ namespace YARG.Core.Engine.Vocals.Engines
+             }
+         }
+ 
++        /// <summary>
++        /// Sound without a tone (breath, a consonant, noise) only means something on a spoken
++        /// note, and in Vocals Challenge Mode not even there. Anywhere else it is as if nothing
++        /// was heard, so that it does not come between the sung readings before and after it.
++        /// </summary>
++        private bool IsSoundThatCannotCount(VocalNote? note)
++        {
++            return SangUnpitched && (note is null || !note.IsNonPitched || EngineParameters.VoicedOnly);
++        }
++
++        // ---- Vocals Challenge Mode: note-by-note scoring ----
++        //
++        // The normal scoring above only adds up how much of a phrase was sung. Here every note
++        // keeps its own tally as well, so a phrase can be refused when notes were skipped, and
++        // the credit is exact: it never reaches outside the note, and an input just after a
++        // note still counts for the end of that note.
++        //
++        // The two edges of a note are forgiven (EdgeGrace seconds each): singers slide into a
++        // note and leave it a moment early to breathe or to reach the next one.
++        //   - Start: an input on the note inside the grace time counts from the note's start.
++        //   - End: an input on the note inside the last grace time counts to the note's end.
++        // Each edge is paid at the best input made inside it, so an input that is only just
++        // on the note can never earn less than one that misses. And what is forgiven is
++        // limited by what the inputs earned by themselves (FORGIVEN_LIMIT): one lucky reading
++        // does not make a note.
++
++        private void ClearNoteTracking()
++        {
++            _trackedNotes.Clear();
++            _trackedStart.Clear();
++            _trackedEnd.Clear();
++            _trackedStartTime.Clear();
++            _trackedEndTime.Clear();
++            _trackedWhole.Clear();
++            _trackedHit.Clear();
++            _trackedReal.Clear();
++            _trackedRealTo.Clear();
++            _trackedStartTo.Clear();
++            _trackedStartBest.Clear();
++            _trackedStartReal.Clear();
++            _trackedEndFrom.Clear();
++            _trackedEndBest.Clear();
++            _trackedEndReal.Clear();
++            _trackedJudged = 0;
++            _lastTrackedIndex = -1;
++        }
++
++        private void BeginNoteTracking(VocalNote phrase)
++        {
++            ClearNoteTracking();
++            PhraseNotesMissed = 0;
++
++            if (CarriedVocalNote != null)
++            {
++                TrackNote(phrase, CarriedVocalNote);
++            }
++
++            var childNotes = phrase.ChildNotes;
++            for (int i = 0; i < childNotes.Count; i++)
++            {
++                if (!childNotes[i].IsPercussion)
++                {
++                    TrackNote(phrase, childNotes[i]);
++                }
++            }
++        }
++
++        private void TrackNote(VocalNote phrase, VocalNote note)
++        {
++            // The same bounds as GetTicksForNote: only the part of the note inside the phrase
++            uint start = Math.Max(note.Tick, phrase.Tick);
++            uint end = Math.Min(note.TotalTickEnd, phrase.TickEnd);
++            if (start >= end)
++            {
++                return;
++            }
++
++            _trackedNotes.Add(note);
++            _trackedStart.Add(start);
++            _trackedEnd.Add(end);
++            _trackedStartTime.Add(SyncTrack.TickToTime(start));
++            _trackedEndTime.Add(SyncTrack.TickToTime(end));
++            // A note cut in two by the phrase's bounds is not judged as a note of its own
++            _trackedWhole.Add(note.Tick >= phrase.Tick && note.TotalTickEnd <= phrase.TickEnd);
++            _trackedHit.Add(0);
++            _trackedReal.Add(0);
++            _trackedRealTo.Add(start);
++            _trackedStartTo.Add(start);
++            _trackedStartBest.Add(0f);
++            _trackedStartReal.Add(0);
++            _trackedEndFrom.Add(NO_TICK);
++            _trackedEndBest.Add(0f);
++            _trackedEndReal.Add(0);
++        }
++
++        private void CheckSingingHitTracked(VocalNote phrase, uint lastSingTick)
++        {
++            // The stretch of the song this input can answer for: back to the previous input,
++            // but never further than one input period.
++            double maxLeniency = 1.0 / EngineParameters.ApproximateVocalFps;
++            uint reachBack = Math.Max(SyncTrack.TimeToTick(CurrentTime - maxLeniency), lastSingTick);
++
++            var note = GetNoteInPhraseAtSongTick(phrase, CurrentTick);
++
++            if (IsSoundThatCannotCount(note))
++            {
++                LastSingTick = lastSingTick;
++                OnHit?.Invoke(false);
++                return;
++            }
++
++            int index = -1;
++            if (note != null)
++            {
++                // By identity: notes compare equal by value, and two notes can be alike
++                for (int i = 0; i < _trackedNotes.Count; i++)
++                {
++                    if (ReferenceEquals(_trackedNotes[i], note))
++                    {
++                        index = i;
++                        break;
++                    }
++                }
++            }
++
++            // The end of the note before this one, if this input reaches back into it
++            if (_lastTrackedIndex >= 0 && _lastTrackedIndex != index)
++            {
++                CreditTrackedNote(_lastTrackedIndex, reachBack, true);
++            }
++
++            if (note is null)
++            {
++                // If we're not on a note, we cannot be hitting a note
++                OnHit?.Invoke(false);
++                return;
++            }
++
++            OnTargetNoteChanged?.Invoke(note);
++
++            // (Work the result out first: "OnHit?.Invoke(...)" skips its arguments when
++            // nothing is listening.)
++            bool hitting;
++            if (index < 0)
++            {
++                // Not a note of this phrase's tally (it lies outside the phrase's bounds)
++                hitting = CanVocalNoteBeHit(note, out _);
++            }
++            else
++            {
++                _lastTrackedIndex = index;
++                hitting = CreditTrackedNote(index, reachBack, false);
++            }
++
++            OnHit?.Invoke(hitting);
++        }
++
++        /// <returns>Whether the current input hits the note.</returns>
++        private bool CreditTrackedNote(int index, uint reachBack, bool isTail)
++        {
++            uint start = _trackedStart[index];
++            uint end = _trackedEnd[index];
++
++            if (isTail && (CurrentTick <= end || reachBack >= end))
++            {
++                return false;
++            }
++
++            if (!CanVocalNoteBeHit(_trackedNotes[index], out float hitPercent))
++            {
++                return false;
++            }
++
++            // What this input earns by itself
++            uint realTo = Math.Min(CurrentTick, end);
++            uint realFrom = Math.Min(Math.Max(Math.Max(reachBack, start), _trackedRealTo[index]), realTo);
++            double real = (realTo - realFrom) * hitPercent;
++            _trackedReal[index] += real;
++            _trackedRealTo[index] = realTo;
++
++            double grace = EngineParameters.EdgeGrace;
++
++            // Soon enough after the note's start: the note counts from its start
++            if (!isTail && CurrentTime - _trackedStartTime[index] <= grace)
++            {
++                _trackedStartTo[index] = Math.Max(_trackedStartTo[index], realTo);
++                _trackedStartBest[index] = Math.Max(_trackedStartBest[index], hitPercent);
++                _trackedStartReal[index] += real;
++            }
++
++            // Close enough to the note's end: the note will count to its end
++            if (grace > 0 && CurrentTime >= _trackedEndTime[index] - grace)
++            {
++                if (_trackedEndFrom[index] == NO_TICK)
++                {
++                    _trackedEndFrom[index] = realFrom;
++                }
++
++                _trackedEndBest[index] = Math.Max(_trackedEndBest[index], hitPercent);
++                _trackedEndReal[index] += real;
++            }
++
++            SettleTrackedNote(index, false);
++            return true;
++        }
++
++        /// <summary>
++        /// Brings the credit given for a note up to date. The forgiven end of a note is only
++        /// added once the note is over (<paramref name="noteIsOver"/>).
++        /// </summary>
++        private void SettleTrackedNote(int index, bool noteIsOver)
++        {
++            uint start = _trackedStart[index];
++            uint end = _trackedEnd[index];
++            double ticks = end - start;
++            double real = _trackedReal[index];
++
++            // The start, from the note's first tick to the last input made inside the grace
++            // time, at the best of those inputs (in place of what they earned by themselves)
++            double forgiven = Math.Max(0.0,
++                (_trackedStartTo[index] - start) * (double) _trackedStartBest[index] - _trackedStartReal[index]);
++
++            // The end, from the first input made inside the last grace time to the last tick
++            if (noteIsOver && _trackedEndFrom[index] != NO_TICK)
++            {
++                uint startTo = _trackedStartTo[index];
++                uint endFrom = _trackedEndFrom[index];
++                double startBest = _trackedStartBest[index];
++                double endBest = _trackedEndBest[index];
++                if (startTo > endFrom)
++                {
++                    // A short note: the two edges overlap, and the part they share is paid
++                    // once (at the better of the two). Every input on such a note lies in
++                    // one edge or the other, so this is the whole note's pay.
++                    double pay = (startTo - start) * startBest + (end - endFrom) * endBest -
++                        (startTo - endFrom) * Math.Min(startBest, endBest);
++                    forgiven = Math.Max(0.0, pay - real);
++                }
++                else
++                {
++                    forgiven += Math.Max(0.0, (end - endFrom) * endBest - _trackedEndReal[index]);
++                }
++            }
++
++            double credit = Math.Min(real + Math.Min(forgiven, real * FORGIVEN_LIMIT), ticks);
++
++            // A bot sings everything, whatever the frame rate it is updated at
++            if (IsBot && noteIsOver)
++            {
++                credit = ticks;
++            }
++
++            // (Every part of this only ever grows, so credit is never taken back)
++            if (credit > _trackedHit[index])
++            {
++                PhraseTicksHit += credit - _trackedHit[index];
++                _trackedHit[index] = credit;
++            }
++        }
++
++        /// <summary>
++        /// Counts the notes that are over and were not sung enough. During the phrase a note is
++        /// judged once no input can add to it any more; at the end of the phrase all are.
++        /// </summary>
++        private void JudgeTrackedNotes(bool phraseOver)
++        {
++            double maxLeniency = 1.0 / EngineParameters.ApproximateVocalFps;
++            while (_trackedJudged < _trackedNotes.Count)
++            {
++                int index = _trackedJudged;
++                if (!phraseOver && CurrentTime - maxLeniency <= _trackedEndTime[index])
++                {
++                    break;
++                }
++
++                // The note is over: add its forgiven end
++                SettleTrackedNote(index, true);
++
++                bool longEnough = _trackedEndTime[index] - _trackedStartTime[index] >= MIN_JUDGED_NOTE_SECONDS;
++                uint ticks = _trackedEnd[index] - _trackedStart[index];
++                double sungPercent = _trackedHit[index] / ticks;
++                bool counted = EngineParameters.NoteHitPercent <= 0 || !longEnough || !_trackedWhole[index] ||
++                    sungPercent >= EngineParameters.NoteHitPercent;
++                if (!counted)
++                {
++                    PhraseNotesMissed++;
++                }
++
++                _trackedJudged++;
++                OnNoteJudged?.Invoke(_trackedNotes[index], sungPercent, counted);
++            }
++        }
++
+         private void CheckPercussionHit()
+         {
+             var phrase = Notes[NoteIndex];
+@@ -360,12 +783,26 @@ namespace YARG.Core.Engine.Vocals.Engines
+         protected override bool CanVocalNoteBeHit(VocalNote note, out float hitPercent)
+         {
+             // If it is non-pitched, it is always hittable
++            // (in Vocals Challenge Mode only with a voice, not with noise)
+             if (note.IsNonPitched)
+             {
++                if (SangUnpitched && EngineParameters.VoicedOnly)
++                {
++                    hitPercent = 0f;
++                    return false;
++                }
++
+                 hitPercent = 1f;
+                 return true;
+             }
+ 
++            // Sound without a tone cannot hit a pitched note
++            if (SangUnpitched)
++            {
++                hitPercent = 0f;
++                return false;
++            }
++
+             var expectedPitch = note.PitchAtSongTime(CurrentTime);
+ 
+             // Formula for calculating the distance to the expected pitch, while ignoring octaves
+diff --git a/YARG.Core/Engine/Vocals/VocalsEngine.cs b/YARG.Core/Engine/Vocals/VocalsEngine.cs
+index 629f86c..bcfd1bf 100644
+--- a/YARG.Core/Engine/Vocals/VocalsEngine.cs
++++ b/YARG.Core/Engine/Vocals/VocalsEngine.cs
+@@ -24,6 +24,16 @@ namespace YARG.Core.Engine.Vocals
+ 
+         public PhraseHitEvent? OnPhraseHit;
+ 
++        /// <summary>
++        /// Vocals Challenge Mode: called once for every note when it is over.
++        /// </summary>
++        /// <param name="note">The note.</param>
++        /// <param name="sungPercent">The part of it that was sung (0 to 1).</param>
++        /// <param name="counted">Whether that is enough for the note to count.</param>
++        public delegate void NoteJudgedEvent(VocalNote note, double sungPercent, bool counted);
++
++        public NoteJudgedEvent? OnNoteJudged;
++
+         /// <summary>
+         /// Whether or not the player/bot has hit their mic in the current update.
+         /// </summary>
+@@ -39,6 +49,52 @@ namespace YARG.Core.Engine.Vocals
+         /// </summary>
+         public float PitchSang { get; protected set; }
+ 
++        /// <summary>
++        /// A pitch input below zero means "the mic hears sound, but no sung tone" (breath,
++        /// consonants, noise). It can only count for spoken (non-pitched) notes.
++        /// </summary>
++        public const float UNPITCHED_INPUT = -1f;
++
++        /// <summary>
++        /// Whether the latest sing input was sound without a tone (see <see cref="UNPITCHED_INPUT"/>).
++        /// </summary>
++        protected bool SangUnpitched;
++
++        /// <summary>
++        /// Vocals Challenge Mode: how many notes of the current phrase have ended without
++        /// enough of them being sung. Always 0 outside of challenge mode.
++        /// </summary>
++        public int PhraseNotesMissed { get; protected set; }
++
++        /// <summary>
++        /// Vocals Challenge Mode: whether the current phrase can no longer be hit, because
++        /// more notes were skipped than the difficulty allows.
++        /// </summary>
++        public bool IsPhraseLost => EngineParameters.NoteHitPercent > 0 &&
++            PhraseNotesMissed > EngineParameters.MaxNoteMisses;
++
++        /// <summary>
++        /// Whether the latest sing input was sound without a tone (breath, noise).
++        /// </summary>
++        public bool IsSoundWithoutTone => SangUnpitched;
++
++        /// <summary>
++        /// The part (0 to 1) of the phrase that ended last that was sung. Unlike the value
++        /// given to <see cref="OnPhraseHit"/> it is not divided by the pass mark.
++        /// </summary>
++        public double LastPhrasePercent { get; protected set; }
++
++        /// <summary>
++        /// Vocals Challenge Mode: how many notes were skipped in the phrase that ended last.
++        /// </summary>
++        public int LastPhraseNotesMissed { get; protected set; }
++
++        /// <summary>
++        /// Vocals Challenge Mode: whether the phrase that ended last had enough of it sung
++        /// but was lost because notes were skipped.
++        /// </summary>
++        public bool LastPhraseLostToNotes { get; protected set; }
++
+         /// <summary>
+         /// The amount of ticks in the current phrase.
+         /// </summary>
+@@ -72,10 +128,21 @@ namespace YARG.Core.Engine.Vocals
+         public override void Reset(bool keepCurrentButtons = false)
+         {
+             HasSang = false;
++            HasHit = false;
+             PitchSang = 0f;
++            SangUnpitched = false;
++
++            // A note carried over from the phrase the last run stopped in would be counted
++            // twice when that phrase comes round again (practice loops, replay seeks)
++            CarriedVocalNote = null;
++            EngineStats.HasCarryNote = false;
+ 
+             PhraseTicksTotal = null;
+             PhraseTicksHit = 0;
++            PhraseNotesMissed = 0;
++            LastPhrasePercent = 0;
++            LastPhraseNotesMissed = 0;
++            LastPhraseLostToNotes = false;
+ 
+             LastSingTick = 0;
+ 
+@@ -125,6 +192,32 @@ namespace YARG.Core.Engine.Vocals
+                     QueueUpdateTime(time, "Bot Input");
+                 }
+             }
++
++            // Vocals Challenge Mode: close each phrase at a fixed moment (right after its last
++            // tick) instead of whenever the next update happens to come. The result of a
++            // phrase then depends only on the inputs, not on the frame rate.
++            if (EngineParameters.UsesNoteTracking && NoteIndex < Notes.Count)
++            {
++                double closeTime = GetPhraseCloseTime(Notes[NoteIndex]);
++                if (IsTimeBetween(closeTime, previousTime, nextTime))
++                {
++                    QueueUpdateTime(closeTime, "Vocal Phrase End");
++                }
++            }
++        }
++
++        /// <summary>
++        /// A hair past the first tick after a phrase, so rounding cannot land the update on
++        /// the phrase's own last tick.
++        /// </summary>
++        protected const double PHRASE_CLOSE_MARGIN = 0.0005;
++
++        /// <summary>
++        /// Vocals Challenge Mode: the moment a phrase is closed and judged.
++        /// </summary>
++        protected double GetPhraseCloseTime(VocalNote phrase)
++        {
++            return SyncTrack.TickToTime(phrase.TickEnd + 1) + PHRASE_CLOSE_MARGIN;
+         }
+ 
+         protected override void HitNote(VocalNote note)
+diff --git a/YARG.Core/Engine/Vocals/VocalsEngineParameters.cs b/YARG.Core/Engine/Vocals/VocalsEngineParameters.cs
+index 6f05a03..22720f0 100644
+--- a/YARG.Core/Engine/Vocals/VocalsEngineParameters.cs
++++ b/YARG.Core/Engine/Vocals/VocalsEngineParameters.cs
+@@ -40,9 +40,59 @@ namespace YARG.Core.Engine.Vocals
+         /// </summary>
+         public readonly int PointsPerPhrase;
+ 
++        // YARG Resurrected: Vocals Challenge Mode. With the default values below, scoring is
++        // exactly what it was without them.
++
++        /// <summary>
++        /// Whether these parameters are the Vocals Challenge Mode ones (for display only).
++        /// </summary>
++        public readonly bool IsChallenge;
++
++        /// <summary>
++        /// The part of a single note (0 to 1) that has to be sung for that note to count.
++        /// 0 turns the per-note rule off.
++        /// </summary>
++        public readonly double NoteHitPercent;
++
++        /// <summary>
++        /// How many notes of a phrase may fall short of <see cref="NoteHitPercent"/> with the
++        /// phrase still counting as hit. Only used when <see cref="NoteHitPercent"/> is above 0.
++        /// </summary>
++        public readonly int MaxNoteMisses;
++
++        /// <summary>
++        /// The seconds at each end of a note that are forgiven: a note first hit within this
++        /// time of its start is credited from its start (a consonant and finding the pitch take
++        /// that long), and a note held until this close to its end is credited to its end.
++        /// 0 turns this off.
++        /// </summary>
++        public readonly double EdgeGrace;
++
++        /// <summary>
++        /// Whether spoken (non-pitched) notes need a voiced sound. When false, any sound
++        /// that is loud enough counts for them.
++        /// </summary>
++        public readonly bool VoicedOnly;
++
++        /// <summary>
++        /// Whether the note-by-note bookkeeping of Vocals Challenge Mode is in use.
++        /// </summary>
++        public bool UsesNoteTracking => NoteHitPercent > 0 || EdgeGrace > 0;
++
+         public VocalsEngineParameters(HitWindowSettings hitWindow, int maxMultiplier, float[] starMultiplierThresholds, float[] soloBonusStarMultiplierThresholds,
+             float pitchWindow, float pitchWindowPerfect, double phraseHitPercent, double approximateVocalFps,
+             bool singToActivateStarPower, int pointsPerPhrase)
++            : this(hitWindow, maxMultiplier, starMultiplierThresholds, soloBonusStarMultiplierThresholds,
++                pitchWindow, pitchWindowPerfect, phraseHitPercent, approximateVocalFps,
++                singToActivateStarPower, pointsPerPhrase,
++                isChallenge: false, noteHitPercent: 0, maxNoteMisses: 0, edgeGrace: 0, voicedOnly: false)
++        {
++        }
++
++        public VocalsEngineParameters(HitWindowSettings hitWindow, int maxMultiplier, float[] starMultiplierThresholds, float[] soloBonusStarMultiplierThresholds,
++            float pitchWindow, float pitchWindowPerfect, double phraseHitPercent, double approximateVocalFps,
++            bool singToActivateStarPower, int pointsPerPhrase,
++            bool isChallenge, double noteHitPercent, int maxNoteMisses, double edgeGrace, bool voicedOnly)
+             : base(hitWindow, maxMultiplier, 0, 0, starMultiplierThresholds, soloBonusStarMultiplierThresholds, enableLanes: false)
+         {
+             PitchWindow = pitchWindow;
+@@ -51,6 +101,12 @@ namespace YARG.Core.Engine.Vocals
+             ApproximateVocalFps = approximateVocalFps;
+             SingToActivateStarPower = singToActivateStarPower;
+             PointsPerPhrase = pointsPerPhrase;
++
++            IsChallenge = isChallenge;
++            NoteHitPercent = noteHitPercent;
++            MaxNoteMisses = maxNoteMisses;
++            EdgeGrace = edgeGrace;
++            VoicedOnly = voicedOnly;
+         }
+ 
+         public VocalsEngineParameters(ref FixedArrayStream stream, int version)
+@@ -62,6 +118,16 @@ namespace YARG.Core.Engine.Vocals
+             ApproximateVocalFps = stream.Read<double>(Endianness.Little);
+             SingToActivateStarPower = stream.ReadBoolean();
+             PointsPerPhrase = stream.Read<int>(Endianness.Little);
++
++            // Replays from before Vocals Challenge Mode keep the defaults (all off)
++            if (version >= 16)
++            {
++                IsChallenge = stream.ReadBoolean();
++                NoteHitPercent = stream.Read<double>(Endianness.Little);
++                MaxNoteMisses = stream.Read<int>(Endianness.Little);
++                EdgeGrace = stream.Read<double>(Endianness.Little);
++                VoicedOnly = stream.ReadBoolean();
++            }
+         }
+ 
+         public override void Serialize(BinaryWriter writer)
+@@ -74,6 +140,12 @@ namespace YARG.Core.Engine.Vocals
+             writer.Write(ApproximateVocalFps);
+             writer.Write(SingToActivateStarPower);
+             writer.Write(PointsPerPhrase);
++
++            writer.Write(IsChallenge);
++            writer.Write(NoteHitPercent);
++            writer.Write(MaxNoteMisses);
++            writer.Write(EdgeGrace);
++            writer.Write(VoicedOnly);
+         }
+     }
+ }
+diff --git a/YARG.Core/Game/Modifier.cs b/YARG.Core/Game/Modifier.cs
+index f11f03f..cd906c0 100644
+--- a/YARG.Core/Game/Modifier.cs
++++ b/YARG.Core/Game/Modifier.cs
+@@ -18,7 +18,11 @@ namespace YARG.Core.Game
+         NoDynamics    = 1 << 8,
+         NoVocalPercussion = 1 << 9,
+         RangeCompress = 1 << 10,
+-        OpensToGreens = 1 << 11
++        OpensToGreens = 1 << 11,
++
++        // YARG Resurrected: Vocals Challenge Mode. Unlike the others it does not change the
++        // chart; it changes how strictly the singing is judged (see VocalsPreset.GetChallengeLevel).
++        VocalsChallenge = 1 << 12
+     }
+ 
+     public static class ModifierConflicts
+@@ -80,7 +84,8 @@ namespace YARG.Core.Game
+ 
+                 GameMode.Vocals =>
+                     Modifier.UnpitchedOnly |
+-                    Modifier.NoVocalPercussion,
++                    Modifier.NoVocalPercussion |
++                    Modifier.VocalsChallenge,
+ 
+                 GameMode.ProKeys =>
+                     Modifier.RangeCompress |
+diff --git a/YARG.Core/Game/Presets/EnginePreset.Instruments.cs b/YARG.Core/Game/Presets/EnginePreset.Instruments.cs
+index ecbba1c..230dcdf 100644
+--- a/YARG.Core/Game/Presets/EnginePreset.Instruments.cs
++++ b/YARG.Core/Game/Presets/EnginePreset.Instruments.cs
+@@ -283,11 +283,67 @@ namespace YARG.Core.Game
+                     HitPercentM = HitPercentM,
+                     HitPercentH = HitPercentH,
+                     HitPercentX = HitPercentX,
++                    PercussionHitWindow = PercussionHitWindow,
++                };
++            }
++
++            /// <summary>
++            /// What Vocals Challenge Mode (YARG Resurrected) asks for at one difficulty.
++            /// </summary>
++            public readonly struct ChallengeLevel
++            {
++                /// <summary>Furthest from the note (semitones) that still earns anything.</summary>
++                public readonly float PitchWindow;
++
++                /// <summary>Furthest from the note (semitones) that earns full credit.</summary>
++                public readonly float PitchWindowPerfect;
++
++                /// <summary>The part of a phrase that has to be sung.</summary>
++                public readonly double PhraseHitPercent;
++
++                /// <summary>The part of each note that has to be sung for the note to count.</summary>
++                public readonly double NoteHitPercent;
++
++                /// <summary>Notes of a phrase that may be skipped.</summary>
++                public readonly int MaxNoteMisses;
++
++                /// <summary>Seconds at each end of a note that are forgiven.</summary>
++                public readonly double EdgeGrace;
++
++                public ChallengeLevel(float pitchWindow, float pitchWindowPerfect, double phraseHitPercent,
++                    double noteHitPercent, int maxNoteMisses, double edgeGrace)
++                {
++                    PitchWindow = pitchWindow;
++                    PitchWindowPerfect = pitchWindowPerfect;
++                    PhraseHitPercent = phraseHitPercent;
++                    NoteHitPercent = noteHitPercent;
++                    MaxNoteMisses = maxNoteMisses;
++                    EdgeGrace = edgeGrace;
++                }
++            }
++
++            /// <summary>
++            /// The Vocals Challenge Mode rules. They do not depend on the engine preset: the
++            /// point of the mode is that everyone at a difficulty is held to the same standard.
++            /// </summary>
++            public static ChallengeLevel GetChallengeLevel(Difficulty difficulty)
++            {
++                return difficulty switch
++                {
++                    // Chosen with the synthetic singers in tests/VocalsTests (see the README):
++                    // a trained singer clears every level; a good amateur clears Hard and about
++                    // three phrases in four on Expert; an average karaoke singer clears Easy.
++                    Difficulty.Beginner => new ChallengeLevel(2.50f, 1.50f, 0.45, 0.25, 3, 0.15),
++                    Difficulty.Easy     => new ChallengeLevel(1.50f, 0.90f, 0.60, 0.30, 2, 0.12),
++                    Difficulty.Medium   => new ChallengeLevel(1.20f, 0.72f, 0.70, 0.30, 1, 0.12),
++                    Difficulty.Hard     => new ChallengeLevel(0.90f, 0.54f, 0.75, 0.30, 1, 0.10),
++                    Difficulty.Expert   => new ChallengeLevel(0.70f, 0.40f, 0.80, 0.30, 0, 0.10),
++                    _                   => throw new InvalidOperationException("Unreachable")
+                 };
+             }
+ 
+             public VocalsEngineParameters Create(float[] starMultiplierThresholds, float[] soloBonusStarMultiplierThresholds, Difficulty difficulty,
+-                float updatesPerSecond, bool singToActivateStarPower)
++                float updatesPerSecond, bool singToActivateStarPower, bool challenge = false)
+             {
+                 // Hit window is in semitones (max. difference between correct pitch and sung pitch).
+                 var (pitchWindow, hitPercent, pointsPerPhrase) = difficulty switch
+@@ -303,6 +359,27 @@ namespace YARG.Core.Game
+                 var hitWindow = new HitWindowSettings(
+                     PercussionHitWindow, PercussionHitWindow, 1, false, 0, 0, 0, 0, 0);
+ 
++                if (challenge)
++                {
++                    var level = GetChallengeLevel(difficulty);
++                    return new VocalsEngineParameters(
++                        hitWindow,
++                        DEFAULT_MAX_MULTIPLIER,
++                        starMultiplierThresholds,
++                        soloBonusStarMultiplierThresholds,
++                        level.PitchWindow,
++                        level.PitchWindowPerfect,
++                        level.PhraseHitPercent,
++                        updatesPerSecond,
++                        singToActivateStarPower,
++                        pointsPerPhrase,
++                        isChallenge: true,
++                        noteHitPercent: level.NoteHitPercent,
++                        maxNoteMisses: level.MaxNoteMisses,
++                        edgeGrace: level.EdgeGrace,
++                        voicedOnly: true);
++                }
++
+                 return new VocalsEngineParameters(
+                     hitWindow,
+                     DEFAULT_MAX_MULTIPLIER,
+diff --git a/YARG.Core/Replays/ReplayIO.cs b/YARG.Core/Replays/ReplayIO.cs
+index a4c88bc..9146808 100644
+--- a/YARG.Core/Replays/ReplayIO.cs
++++ b/YARG.Core/Replays/ReplayIO.cs
+@@ -29,7 +29,7 @@ namespace YARG.Core.Replays
+         private static readonly EightCC REPLAY_MAGIC_HEADER_OLD = new('Y', 'A', 'R', 'G', 'P', 'L', 'A', 'Y');
+         private static readonly EightCC REPLAY_MAGIC_HEADER = new('Y', 'A', 'R', 'E', 'P', 'L', 'A', 'Y');
+ 
+-        public static readonly (int OLD_MIN, int METADATA_MIN, int DATA_MIN, int CURRENT) REPLAY_VERSIONS = (4, 6, 9, 15);
++        public static readonly (int OLD_MIN, int METADATA_MIN, int DATA_MIN, int CURRENT) REPLAY_VERSIONS = (4, 6, 9, 16);
+         private const int ENGINE_VERSION = 5;
+ 
+         public static (ReplayReadResult Result, ReplayInfo Info, ReplayData Data) TryDeserialize(string path, ReplayReadOptions replayOptions)

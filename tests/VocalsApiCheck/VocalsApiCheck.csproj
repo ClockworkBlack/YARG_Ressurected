@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Compile only, never run: the singing code that has no Unity in it, against the API set
+         Unity guarantees (.NET Standard 2.1) with Unity 6's language version. A call that only
+         exists in newer .NET fails here instead of in the APK build. (tests/VocalsTests runs the
+         same files, but on a newer .NET.) -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>VocalsApiCheck</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../overlay/Assets/Script/Audio/Vocals/*.cs" LinkBase="Vocals" />
+  </ItemGroup>
+
+</Project>

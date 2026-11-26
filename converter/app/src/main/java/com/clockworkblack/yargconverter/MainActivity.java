@@ -489,6 +489,22 @@ public final class MainActivity extends Activity implements ConversionService.Li
         log.setTextIsSelectable(true);
         root.addView(log);
 
+        root.addView(section("Change a song's notes"));
+        TextView editInfo = new TextView(this);
+        editInfo.setText("Add or take away notes in a song that is already converted, without converting it again.");
+        editInfo.setPadding(0, 0, 0, dp(4));
+        root.addView(editInfo);
+        root.addView(button("Edit a converted song's notes", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!hasStorageAccess()) {
+                    requestStorageAccess();
+                    return;
+                }
+                startActivity(new Intent(MainActivity.this, EditorActivity.class));
+            }
+        }));
+
         scroll.setBackgroundColor(INK);
         getWindow().setStatusBarColor(INK);
         getWindow().setNavigationBarColor(INK);
@@ -1137,7 +1153,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
         if (Build.VERSION.SDK_INT >= 30) {
             new AlertDialog.Builder(this)
                     .setTitle("Allow access to the YARG folder")
-                    .setMessage("To place songs in Internal storage/YARG/songs, turn on \"Allow access to manage all files\" for YARG Converter on the next screen, then come back and press Convert again.")
+                    .setMessage("To place songs in Internal storage/YARG/songs, turn on \"Allow access to manage all files\" for YARG Converter on the next screen, then come back and try again.")
                     .setPositiveButton("Open settings", new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
@@ -2281,6 +2297,15 @@ public final class MainActivity extends Activity implements ConversionService.Li
         }
         sb.append("Guitar chart made from ").append(result.guitarSource).append("\n");
         if (result.rnbNote != null) sb.append(result.rnbNote).append("\n");
+        if (result.instrumentalMeasures > 0) {
+            sb.append(result.instrumentalMeasures).append(result.instrumentalMeasures == 1 ? " measure" : " measures")
+                    .append(" without vocals (intro, breaks) charted from the instruments\n");
+        }
+        if (result.deepChart != null || result.deepBassChart != null) {
+            sb.append("Deep Music Mode charts included (turn on the Deep Music Mode modifier in YARG): guitar +")
+                    .append(result.deepGuitarNotesAdded).append(" notes from the vocals and other instruments, bass +")
+                    .append(result.drumNotesInBass).append(" drum hits on Expert\n");
+        }
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
                 result.noteCount(GuitarCharter.EASY), result.noteCount(GuitarCharter.MEDIUM),
                 result.noteCount(GuitarCharter.HARD), result.noteCount(GuitarCharter.EXPERT)));
@@ -2340,8 +2365,8 @@ public final class MainActivity extends Activity implements ConversionService.Li
 
     /**
      * Runs the separation model over the parked audio and measures the guitar, the pitched
-     * instruments together, the bass and the voice as they come out. Only the measurements are
-     * kept; the separated audio itself is not stored.
+     * instruments together, the vocals, the drums, the bass and the voice as they come out. Only
+     * the measurements are kept; the separated audio itself is not stored.
      */
     private SongWriter.Stems separate(File pcmFile, long frames, boolean rnb, boolean timeWords) throws Exception {
         // With word timing installed and lyrics to time, the voice is also kept at 16 kHz for it
@@ -2352,20 +2377,24 @@ public final class MainActivity extends Activity implements ConversionService.Li
         final float[] rsL = words ? new float[to16k.capacityFor(StemSplitter.SEGMENT)] : null;
         final float[] rsR = words ? new float[to16k.capacityFor(StemSplitter.SEGMENT)] : null;
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
-        // R&B mode charts the guitar from the voice, so the vocals are measured like an instrument too
-        final AudioAnalyzer vocals = rnb ? new AudioAnalyzer(StemSplitter.SAMPLE_RATE) : null;
         final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        // The vocals measured like an instrument: R&B mode charts the guitar from them, and songs
+        // the voice carries chart guitar from them too
+        final AudioAnalyzer vocals = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        final AudioAnalyzer drums = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer bass = new AudioAnalyzer(StemSplitter.SAMPLE_RATE, true);
         final VocalAnalyzer voice = new VocalAnalyzer(StemSplitter.SAMPLE_RATE);
         final float[] vox = new float[StemSplitter.SEGMENT];
-        final double[] energy = new double[4];
+        final double[] energy = new double[6];
         final float[] g = new float[StemSplitter.SEGMENT];
         final float[] m = new float[StemSplitter.SEGMENT];
+        final float[] v = new float[StemSplitter.SEGMENT];
+        final float[] dr = new float[StemSplitter.SEGMENT];
         final float[] b = new float[StemSplitter.SEGMENT];
         int threads = modelThreads();
         // The four or five listeners each take a separated instrument; they run side by side on
         // cores the model is not using at that moment, instead of one after another
-        final java.util.concurrent.ExecutorService listeners = java.util.concurrent.Executors.newFixedThreadPool(4);
+        final java.util.concurrent.ExecutorService listeners = java.util.concurrent.Executors.newFixedThreadPool(5);
         final long started = System.currentTimeMillis();
         ConversionService.setTextAndProgress("Loading the separation model…", 0);
 
@@ -2396,29 +2425,36 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 public void accept(float[] mixLeft, float[] mixRight, float[][][] stems, int count) {
                     float[][] gt = stems[StemSplitter.GUITAR], ot = stems[StemSplitter.OTHER];
                     float[][] pn = stems[StemSplitter.PIANO], bs = stems[StemSplitter.BASS];
-                    float[][] vc = stems[StemSplitter.VOCALS];
+                    float[][] vc = stems[StemSplitter.VOCALS], ds = stems[StemSplitter.DRUMS];
                     for (int i = 0; i < count; i++) {
                         vox[i] = (vc[0][i] + vc[1][i]) * 0.5f;
                         float gv = (gt[0][i] + gt[1][i]) * 0.5f;
                         float mv = gv + (ot[0][i] + ot[1][i] + pn[0][i] + pn[1][i]) * 0.5f;
+                        float vv = vox[i];
+                        float dv = (ds[0][i] + ds[1][i]) * 0.5f;
                         float bv = (bs[0][i] + bs[1][i]) * 0.5f;
                         float xv = (mixLeft[i] + mixRight[i]) * 0.5f;
                         g[i] = gv;
                         m[i] = mv;
+                        v[i] = vv;
+                        dr[i] = dv;
                         b[i] = bv;
                         energy[0] += gv * gv;
                         energy[1] += mv * mv;
                         energy[2] += bv * bv;
                         energy[3] += xv * xv;
+                        energy[4] += vv * vv;
+                        energy[5] += dv * dv;
                     }
                     final int n = count;
                     List<java.util.concurrent.Callable<Void>> jobs = new ArrayList<>();
                     jobs.add(listen(new Runnable() { @Override public void run() { guitar.feed(g, 0, n); } }));
                     jobs.add(listen(new Runnable() { @Override public void run() { melodic.feed(m, 0, n); } }));
                     jobs.add(listen(new Runnable() { @Override public void run() { bass.feed(b, 0, n); } }));
+                    jobs.add(listen(new Runnable() { @Override public void run() { drums.feed(dr, 0, n); } }));
                     jobs.add(listen(new Runnable() { @Override public void run() {
                         voice.feed(vox, 0, n);
-                        if (vocals != null) vocals.feed(vox, 0, n);
+                        vocals.feed(vox, 0, n);
                         if (to16k != null) {
                             int made = to16k.process(vox, vox, n, rsL, rsR);
                             if (voice16kLength[0] + made > voice16k[0].length) {
@@ -2458,13 +2494,16 @@ public final class MainActivity extends Activity implements ConversionService.Li
         SongWriter.Stems out = new SongWriter.Stems();
         out.guitar = guitar.finish();
         out.melodic = melodic.finish();
+        out.vocals = vocals.finish();
+        out.drums = drums.finish();
         out.bass = bass.finish();
         out.voice = voice.finish();
-        if (vocals != null) out.vocals = vocals.finish();
         out.guitarEnergy = energy[0];
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];
         out.mixEnergy = energy[3];
+        out.vocalsEnergy = energy[4];
+        out.drumsEnergy = energy[5];
         if (words && voice16kLength[0] > 0) {
             // The separation model is closed by now, so its memory is free for this one
             ConversionService.setTextAndProgress("Timing the lyrics word by word…", 0);
