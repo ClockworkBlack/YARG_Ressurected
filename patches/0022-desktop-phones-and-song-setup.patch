@@ -1,5 +1,5 @@
 diff --git a/Assets/Script/Audio/Bass/BassMicDevice.cs b/Assets/Script/Audio/Bass/BassMicDevice.cs
-index ae5a1ce..60949a6 100644
+index ae5a1ce..b88249f 100644
 --- a/Assets/Script/Audio/Bass/BassMicDevice.cs
 +++ b/Assets/Script/Audio/Bass/BassMicDevice.cs
 @@ -133,6 +133,9 @@ namespace YARG.Audio.BASS
@@ -22,16 +22,20 @@ index ae5a1ce..60949a6 100644
                      continue;
                  }
  
-@@ -158,7 +162,7 @@ namespace YARG.Audio.BASS
+@@ -158,7 +162,11 @@ namespace YARG.Audio.BASS
                  return new RecordingHandle(handle, processedHandle, devPeriod, sampleRate);
              }
  
 -            YargLogger.LogError("Failed to start recording at any supported sample rate!");
-+            YargLogger.LogFormatError("Failed to start recording at any supported sample rate! (The sound library says: {0})", reason);
++            // (49 is the library's "access denied", which this version of its C# wrapper has no name for)
++            string why = (int) reason == 49
++                ? "access to the microphone was denied; allow microphone access for desktop apps in the system's privacy settings"
++                : reason.ToString();
++            YargLogger.LogFormatError("Failed to start recording at any supported sample rate! (The sound library says: {0})", why);
              return null;
          }
  
-@@ -458,7 +462,40 @@ namespace YARG.Audio.BASS
+@@ -458,7 +466,40 @@ namespace YARG.Audio.BASS
          }
  #endif
  
@@ -72,6 +76,20 @@ index ae5a1ce..60949a6 100644
          {
              // Copies the data from the recording buffer to the monitor playback buffer.
              if (Bass.StreamPutData(_monitorHandle.Handle, buffer, length) == -1)
+@@ -616,8 +657,12 @@ namespace YARG.Audio.BASS
+ 
+         protected override void DisposeUnmanagedResources()
+         {
+-            _monitorHandle.Dispose();
++            // YARG Resurrected: the recording is stopped first, then the stream it plays into is
++            // closed. The other way round, a buffer that arrived in between was pushed into a
++            // closed stream, and "Error pushing data to monitor stream: Handle" was logged
++            // (seen on a Mac when a microphone was removed).
+             _recordHandle.Dispose();
++            _monitorHandle.Dispose();
+             Bass.CurrentRecordingDevice = _deviceId;
+             Bass.RecordFree();
+ #if UNITY_ANDROID
 diff --git a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
 index 1e8e34c..34471ab 100644
 --- a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
@@ -168,6 +186,24 @@ index 23fd7f5..f575908 100644
                  new NavigationScheme.Entry(MenuAction.Orange, "Menu.Common.Phones", () => YARG.Remote.RemotePlayManager.OpenPhones()),
  #endif
              }, true));
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 396a519..fb8fb95 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -299,7 +299,12 @@ namespace YARG.Menu.ProfileList
+                         YargLogger.LogFormatWarning("Failed to initialize microphone `{0}`.", microphone.name);
+                         DialogManager.Instance.ClearDialog();
+                         DialogManager.Instance.ShowMessage("Microphone Error",
+-                            $"Failed to initialize microphone:\n\n{microphone.name}\n\nPlease try again or choose a different microphone.");
++                            $"Failed to initialize microphone:\n\n{microphone.name}\n\nPlease try again or choose a different microphone." +
++                            // (On a computer the usual reason is the system's own privacy switch)
++                            (Application.isMobilePlatform ? "" :
++                                "\n\nIf no microphone works, check that microphone access is allowed in the system's privacy settings " +
++                                "(Windows: Settings > Privacy & security > Microphone, with desktop apps allowed; " +
++                                "macOS: System Settings > Privacy & Security > Microphone)."));
+                         return;
+                     }
+ 
 diff --git a/Assets/Script/Persistent/GlobalVariables.cs b/Assets/Script/Persistent/GlobalVariables.cs
 index 5f180d5..135ed08 100644
 --- a/Assets/Script/Persistent/GlobalVariables.cs

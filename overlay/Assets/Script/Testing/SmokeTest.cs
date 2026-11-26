@@ -715,13 +715,25 @@ namespace YARG.Testing
                 return null;
             }
 
-            // The system's default microphone first; some of what a system lists cannot record
-            // (on Linux, sound plug-ins are listed next to the real devices)
-            var candidates = devices
-                .OrderBy(d => d.name != null && d.name.IndexOf("default", StringComparison.OrdinalIgnoreCase) >= 0 ? 0
-                    : d.name != null && d.name.IndexOf("pulse", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 2)
-                .Take(6)
-                .ToList();
+            // A build machine's virtual sound card first (it plays the game's own sound back as a
+            // microphone, so there is something to hear), then the system's default microphone.
+            // Some of what a system lists cannot record (on Linux, sound plug-ins are listed
+            // next to the real devices), so the next one is tried when one will not open.
+            static int Rank(string device)
+            {
+                string[] wanted = { "blackhole", "cable output", "monitor", "loopback", "default", "pulse" };
+                for (int i = 0; i < wanted.Length; i++)
+                {
+                    if (device != null && device.IndexOf(wanted[i], StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return i;
+                    }
+                }
+                return wanted.Length;
+            }
+
+            var candidates = devices.OrderBy(d => Rank(d.name)).Take(6).ToList();
+            Note($"Microphones listed: {devices.Count} (" + string.Join(", ", candidates.Select(d => "'" + d.name + "'")) + ")");
 
             foreach (var candidate in candidates)
             {
@@ -757,8 +769,7 @@ namespace YARG.Testing
                 return mic;
             }
 
-            Note($"Microphone: none of the {devices.Count} listed could be opened (not checked): " +
-                string.Join(", ", candidates.Select(d => "'" + d.name + "'")));
+            Note("Microphone: none of those listed could be opened (not checked)");
             return null;
         }
 

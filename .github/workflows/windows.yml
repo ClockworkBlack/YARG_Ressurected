@@ -192,6 +192,26 @@ jobs:
           path: dist
       - name: Virtual sound card (the song only moves on while its audio plays)
         uses: LABSN/sound-ci-helpers@v1
+      # The play test opens a microphone the way a singer's profile does. On this machine
+      # Windows' privacy switch for microphones is off ("access denied"), so turn it on for
+      # desktop programs, as it is on a player's own PC.
+      - name: Let desktop programs use the microphone
+        shell: pwsh
+        run: |
+          $paths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone",
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone",
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged"
+          )
+          foreach ($path in $paths) {
+            try {
+              if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+              Set-ItemProperty -Path $path -Name Value -Value Allow -ErrorAction Stop
+              Write-Host "Microphone access allowed in $path"
+            } catch {
+              Write-Host "Could not change $path : $_"
+            }
+          }
       - name: Unpack the game
         run: |
           cd "$RUNNER_TEMP"
