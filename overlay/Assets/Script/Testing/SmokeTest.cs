@@ -212,7 +212,9 @@ namespace YARG.Testing
                 GlobalVariables.State.CurrentSong = song;
                 GlobalVariables.State.SongSpeed = 1f;
 
-                // The instrument screen, and Song Setup on it
+                // The instrument screen, and Song Setup on it (once the messages about the
+                // phone have gone from the corner of the screen)
+                await UniTask.Delay(TimeSpan.FromSeconds(6), ignoreTimeScale: true);
                 if (!await CheckSongSetup())
                 {
                     return;

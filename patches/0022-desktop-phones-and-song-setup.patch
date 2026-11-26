@@ -1,3 +1,77 @@
+diff --git a/Assets/Script/Audio/Bass/BassMicDevice.cs b/Assets/Script/Audio/Bass/BassMicDevice.cs
+index ae5a1ce..60949a6 100644
+--- a/Assets/Script/Audio/Bass/BassMicDevice.cs
++++ b/Assets/Script/Audio/Bass/BassMicDevice.cs
+@@ -133,6 +133,9 @@ namespace YARG.Audio.BASS
+ #nullable disable
+         {
+             var devPeriod = Bass.GetConfig(Configuration.DevicePeriod);
++            // YARG Resurrected: the sound library's reason is kept, so the error below can say
++            // why a microphone would not start (it was only in the trace log, which is off)
++            var reason = Errors.OK;
+             foreach (int sampleRate in _sampleRates)
+             {
+ #if UNITY_ANDROID
+@@ -142,7 +145,8 @@ namespace YARG.Audio.BASS
+ #endif
+                 if (handle == 0)
+                 {
+-                    YargLogger.LogFormatTrace("Failed to start clean recording at {0} Hz: {1}!", sampleRate, Bass.LastError);
++                    reason = Bass.LastError;
++                    YargLogger.LogFormatTrace("Failed to start clean recording at {0} Hz: {1}!", sampleRate, reason);
+                     continue;
+                 }
+ 
+@@ -158,7 +162,7 @@ namespace YARG.Audio.BASS
+                 return new RecordingHandle(handle, processedHandle, devPeriod, sampleRate);
+             }
+ 
+-            YargLogger.LogError("Failed to start recording at any supported sample rate!");
++            YargLogger.LogFormatError("Failed to start recording at any supported sample rate! (The sound library says: {0})", reason);
+             return null;
+         }
+ 
+@@ -458,7 +462,40 @@ namespace YARG.Audio.BASS
+         }
+ #endif
+ 
++        // YARG Resurrected: set once an error in the recording has been logged, so a fault that
++        // comes back with every buffer does not fill the log
++        private bool _recordErrorLogged;
++
+         private bool ProcessRecordData(int handle, IntPtr buffer, int length, IntPtr user)
++        {
++            // YARG Resurrected: the sound library can call this before Create() has finished
++            // setting the microphone up. On a Mac the first call came before the monitor stream
++            // existed, and the exception that followed stopped the recording: the microphone was
++            // then silent until the game was restarted. There is nothing to do with the sound
++            // yet, but the recording must go on.
++            if (_monitorHandle == null || _recordHandle == null)
++            {
++                return true;
++            }
++
++            try
++            {
++                return ProcessRecordedSound(buffer, length);
++            }
++            catch (Exception e)
++            {
++                // Returning false, or letting the exception out, would stop the recording for
++                // good; one bad buffer should not take the microphone away for the session.
++                if (!_recordErrorLogged)
++                {
++                    _recordErrorLogged = true;
++                    YargLogger.LogException(e, "Error while listening to the microphone");
++                }
++                return true;
++            }
++        }
++
++        private bool ProcessRecordedSound(IntPtr buffer, int length)
+         {
+             // Copies the data from the recording buffer to the monitor playback buffer.
+             if (Bass.StreamPutData(_monitorHandle.Handle, buffer, length) == -1)
 diff --git a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
 index 1e8e34c..34471ab 100644
 --- a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
