@@ -98,7 +98,7 @@ index 4883d4d..6f37e40 100644
              if (SettingsManager.Settings.DiscordRichPresence.Value == DiscordRichPresenceMode.Hide)
              {
 diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
-index b2bf664..f5b41d4 100644
+index b2bf664..bb97bf9 100644
 --- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
 +++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
 @@ -82,8 +82,9 @@ namespace YARG.Menu.DifficultySelect
@@ -145,8 +145,13 @@ index b2bf664..f5b41d4 100644
              ChangePlayer(0);
  
              _loadingPhrase.text = RichTextUtils.StripRichTextTags(
-@@ -216,6 +226,18 @@ namespace YARG.Menu.DifficultySelect
+@@ -214,8 +224,23 @@ namespace YARG.Menu.DifficultySelect
+             }
+         }
  
++        // What the player has now, marked in the lists of instruments, levels and parts
++        private static string CurrentMark(bool current) => current ? "  <color=#FFD84D>(current)</color>" : string.Empty;
++
          private void UpdateForPlayer()
          {
 +            // Everyone left (phones that disconnected): nothing to choose for
@@ -164,7 +169,34 @@ index b2bf664..f5b41d4 100644
              // Set player text
              var profile = CurrentPlayer.Profile;
              _text.text = $"<sprite name=\"{profile.GameMode.ToResourceName()}\"> {profile.Name}";
-@@ -845,7 +867,7 @@ namespace YARG.Menu.DifficultySelect
+@@ -528,7 +553,7 @@ namespace YARG.Menu.DifficultySelect
+             foreach (var instrument in _possibleInstruments)
+             {
+                 bool selected = CurrentPlayer.Profile.CurrentInstrument == instrument;
+-                CreateItem(instrument.ToLocalizedName(), selected, () =>
++                CreateItem(instrument.ToLocalizedName() + CurrentMark(selected), selected, () =>
+                 {
+                     var preferredInstrument = CurrentPlayer.Profile.PreferredInstrument;
+                     CurrentPlayer.Profile.CurrentInstrument = instrument;
+@@ -564,7 +589,7 @@ namespace YARG.Menu.DifficultySelect
+                     : null;
+                 _nextHintTitle = difficulty.ToLocalizedName();
+                 _nextHint = hint ?? ExplainDifficulty(difficulty, CurrentPlayer.Profile.GameMode);
+-                CreateItem(hint, difficulty.ToLocalizedName(), selected, () =>
++                CreateItem(hint, difficulty.ToLocalizedName() + CurrentMark(selected), selected, () =>
+                 {
+                     CurrentPlayer.Profile.CurrentDifficulty
+                         = CurrentPlayer.Profile.DifficultyFallback
+@@ -768,7 +793,7 @@ namespace YARG.Menu.DifficultySelect
+                 {
+                     _nextHint = "Harmony part " + (i + 1) + ". Part 1 is usually the lead.";
+                 }
+-                CreateItem(YARG.Gameplay.VocalBattle.VocalParts.Label(GlobalVariables.State.CurrentSong, i), selected, () =>
++                CreateItem(YARG.Gameplay.VocalBattle.VocalParts.Label(GlobalVariables.State.CurrentSong, i) + CurrentMark(selected), selected, () =>
+                 {
+                     CurrentPlayer.Profile.HarmonyIndex = (byte) capture;
+ 
+@@ -845,7 +870,7 @@ namespace YARG.Menu.DifficultySelect
                  }
  
                  // Ensure all vocal players have the same modifiers active
@@ -173,7 +205,7 @@ index b2bf664..f5b41d4 100644
                  {
                      // Call the player with the selected modifiers, the "primary player"
                      var primaryPlayer = PlayerContainer.Players[_vocalModifierSelectIndex];
-@@ -1091,7 +1113,9 @@ namespace YARG.Menu.DifficultySelect
+@@ -1091,7 +1116,9 @@ namespace YARG.Menu.DifficultySelect
  
          private void NudgeSpeed(float change)
          {
@@ -239,6 +271,89 @@ index c301a61..c8ef7c1 100644
                  }
              }
  
+diff --git a/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs b/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs
+index 4b151cc..9acc68e 100644
+--- a/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs
++++ b/Assets/Script/Menu/Navigation/NavigatableBehaviour.cs
+@@ -1,6 +1,7 @@
+ using System;
+ using UnityEngine;
+ using UnityEngine.EventSystems;
++using UnityEngine.UI;
+ 
+ namespace YARG.Menu.Navigation
+ {
+@@ -40,9 +41,70 @@ namespace YARG.Menu.Navigation
+ 
+             Selected = selected;
+             OnSelectionChanged(selected);
++            ShowFocusFrame(selected);
+             SelectionStateChanged?.Invoke(this, selected, selectionOrigin);
+         }
+ 
++        // YARG Resurrected: the item under the cursor gets a bright frame and a bar down its left
++        // side, on top of its own highlight, which on some screens (the profile list, dialogs, the
++        // screen before a song) was hard to make out on a phone.
++        private static readonly Color FocusColor = new(1f, 0.85f, 0.3f, 1f);
++        private const float FRAME = 3f;
++        private const float BAR = 10f;
++        private GameObject _focusFrame;
++
++        private void ShowFocusFrame(bool selected)
++        {
++            if (!selected && _focusFrame == null)
++            {
++                return;
++            }
++
++            if (_focusFrame == null)
++            {
++                if (transform is not RectTransform)
++                {
++                    return;
++                }
++
++                _focusFrame = new GameObject("Focus Frame", typeof(RectTransform));
++                var frame = (RectTransform) _focusFrame.transform;
++                frame.SetParent(transform, false);
++                frame.anchorMin = Vector2.zero;
++                frame.anchorMax = Vector2.one;
++                frame.offsetMin = Vector2.zero;
++                frame.offsetMax = Vector2.zero;
++                // Not part of the item's own layout
++                _focusFrame.AddComponent<LayoutElement>().ignoreLayout = true;
++
++                Edge(frame, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -FRAME), Vector2.zero);
++                Edge(frame, new Vector2(0f, 0f), new Vector2(1f, 0f), Vector2.zero, new Vector2(0f, FRAME));
++                Edge(frame, new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(-FRAME, 0f), Vector2.zero);
++                Edge(frame, new Vector2(0f, 0f), new Vector2(0f, 1f), Vector2.zero, new Vector2(BAR, 0f));
++            }
++
++            if (selected)
++            {
++                // Drawn over the item's own pieces
++                _focusFrame.transform.SetAsLastSibling();
++            }
++            _focusFrame.SetActive(selected);
++        }
++
++        private static void Edge(RectTransform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax)
++        {
++            var edge = new GameObject("Edge", typeof(RectTransform));
++            var rect = (RectTransform) edge.transform;
++            rect.SetParent(parent, false);
++            rect.anchorMin = anchorMin;
++            rect.anchorMax = anchorMax;
++            rect.offsetMin = offsetMin;
++            rect.offsetMax = offsetMax;
++            var image = edge.AddComponent<Image>();
++            image.color = FocusColor;
++            image.raycastTarget = false;
++        }
++
+         protected virtual void OnSelectionChanged(bool selected)
+         {
+             _selectedVisual.SetActive(selected);
 diff --git a/Assets/Script/Menu/Persistent/MusicPlayer.cs b/Assets/Script/Menu/Persistent/MusicPlayer.cs
 index fc872c0..09fe775 100644
 --- a/Assets/Script/Menu/Persistent/MusicPlayer.cs
@@ -337,7 +452,7 @@ index 45eeb1c..23fd7f5 100644
  
          public void AddBotProfile()
 diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
-index 0b069fe..f832965 100644
+index 0b069fe..396a519 100644
 --- a/Assets/Script/Menu/ProfileList/ProfileView.cs
 +++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
 @@ -11,6 +11,7 @@ using YARG.Core.Game;
@@ -475,7 +590,7 @@ index 0b069fe..f832965 100644
              dialog.AddListButton("Engine: " + engineName + "  (change)", () =>
              {
                  // Default, Casual, Precision, Solo Taps: the ones that change this instrument
-@@ -499,22 +546,25 @@ namespace YARG.Menu.ProfileList
+@@ -499,23 +546,31 @@ namespace YARG.Menu.ProfileList
                      choices.Add(YARG.Core.Game.EnginePreset.SoloTaps);
                  int at = choices.FindIndex(e => e.Id == Profile.EnginePreset);
                  Profile.EnginePreset = choices[(at + 1) % choices.Count].Id;
@@ -503,9 +618,15 @@ index 0b069fe..f832965 100644
 -                After(Reopen);
 +                After(() => Reopen(leftyRow));
              });
++            dialog.AddListButton("Profile Settings (highway, calibration, colors, camera...)", () => After(() =>
++            {
++                ShowSettings(0);
++                return UniTask.CompletedTask;
++            }));
              dialog.AddListButton("More Settings and Button Bindings", () => After(() =>
              {
-@@ -546,12 +596,14 @@ namespace YARG.Menu.ProfileList
+                 _profileSidebar.UpdateSidebar(Profile, this);
+@@ -546,12 +601,120 @@ namespace YARG.Menu.ProfileList
                  Disconnect();
                  return UniTask.CompletedTask;
              }));
@@ -514,6 +635,112 @@ index 0b069fe..f832965 100644
          }
  
 -        private UniTask Reopen()
++        /// <summary>
++        /// On a controller: the profile's own settings, which otherwise are only in the panel on the
++        /// right (reachable by touch). Each change shows the list again with the cursor where it was.
++        /// </summary>
++        private void ShowSettings(int select)
++        {
++            var dialog = DialogManager.Instance.ShowList(Profile.Name + "\n<size=55%><line-height=60%>\nProfile Settings</size>");
++            int rows = 0;
++
++            void Row(string text, System.Action change)
++            {
++                int row = rows++;
++                dialog.AddListButton(text, () =>
++                {
++                    change();
++                    After(() =>
++                    {
++                        _profileSidebar.UpdateSidebar(Profile, this);
++                        ShowSettings(row);
++                        return UniTask.CompletedTask;
++                    });
++                });
++            }
++
++            Row($"Highway Length: {Profile.HighwayLength:0.0#}  (longer)",
++                () => Profile.HighwayLength = Mathf.Clamp(Mathf.Round((Profile.HighwayLength + 0.1f) * 10f) / 10f, 0.1f, 10f));
++            Row($"Highway Length: {Profile.HighwayLength:0.0#}  (shorter)",
++                () => Profile.HighwayLength = Mathf.Clamp(Mathf.Round((Profile.HighwayLength - 0.1f) * 10f) / 10f, 0.1f, 10f));
++            Row($"Input Calibration: {Profile.InputCalibrationMilliseconds} ms  (+10)",
++                () => Profile.InputCalibrationMilliseconds += 10);
++            Row($"Input Calibration: {Profile.InputCalibrationMilliseconds} ms  (-10)",
++                () => Profile.InputCalibrationMilliseconds -= 10);
++
++            if (Profile.GameMode is GameMode.FourLaneDrums or GameMode.FiveLaneDrums or GameMode.EliteDrums)
++            {
++                Row("Star Power Activation: " + Profile.StarPowerActivationType.ToLocalizedName() + "  (change)", () =>
++                {
++                    Profile.StarPowerActivationType = Profile.StarPowerActivationType == StarPowerActivationType.RightmostNote
++                        ? StarPowerActivationType.AllNotes
++                        : StarPowerActivationType.RightmostNote;
++                });
++            }
++
++            if (Profile.GameMode is GameMode.FourLaneDrums or GameMode.EliteDrums)
++            {
++                Row("Cymbal Models: " + (Profile.UseCymbalModels ? "On" : "Off"), () => Profile.UseCymbalModels = !Profile.UseCymbalModels);
++            }
++
++            if (Profile.GameMode is GameMode.FiveFretGuitar)
++            {
++                Row("Open Note Lane: " + Profile.OpenLaneDisplayType.ToLocalizedName() + "  (change)", () =>
++                {
++                    Profile.OpenLaneDisplayType = Profile.OpenLaneDisplayType switch
++                    {
++                        OpenLaneDisplayType.Never => OpenLaneDisplayType.IfChartContainsOpens,
++                        OpenLaneDisplayType.IfChartContainsOpens => OpenLaneDisplayType.Always,
++                        _ => OpenLaneDisplayType.Never,
++                    };
++                });
++            }
++
++            if (Profile.GameMode is GameMode.ProKeys)
++            {
++                Row("Range Shifts: " + (Profile.RangeEnabled ? "On" : "Off"), () => Profile.RangeEnabled = !Profile.RangeEnabled);
++            }
++
++            var content = YARG.Settings.Customization.CustomContentManager.ThemePresets;
++            Row("Theme: " + PresetName(content, Profile.ThemePreset) + "  (change)",
++                () => Profile.ThemePreset = NextPreset(content, Profile.ThemePreset));
++            var colors = YARG.Settings.Customization.CustomContentManager.ColorProfiles;
++            Row("Color Profile: " + PresetName(colors, Profile.ColorProfile) + "  (change)",
++                () => Profile.ColorProfile = NextPreset(colors, Profile.ColorProfile));
++            var cameras = YARG.Settings.Customization.CustomContentManager.CameraSettings;
++            Row("Camera: " + PresetName(cameras, Profile.CameraPreset) + "  (change)",
++                () => Profile.CameraPreset = NextPreset(cameras, Profile.CameraPreset));
++            var highways = YARG.Settings.Customization.CustomContentManager.HighwayPresets;
++            Row("Highway Look: " + PresetName(highways, Profile.HighwayPreset) + "  (change)",
++                () => Profile.HighwayPreset = NextPreset(highways, Profile.HighwayPreset));
++            var meters = YARG.Settings.Customization.CustomContentManager.RockMeterPresets;
++            Row("Rock Meter: " + PresetName(meters, Profile.RockMeterPreset) + "  (change)",
++                () => Profile.RockMeterPreset = NextPreset(meters, Profile.RockMeterPreset));
++
++            dialog.AddListButton("Back", () => After(() => Reopen(0)));
++            dialog.SelectListIndex(select);
++        }
++
++        private static string PresetName(YARG.Settings.Customization.CustomContent content, System.Guid id)
++        {
++            var preset = content.GetBasePresetById(id);
++            return preset != null ? preset.Name : "Default";
++        }
++
++        // The next of the built-in and your own presets, round and round
++        private static System.Guid NextPreset(YARG.Settings.Customization.CustomContent content, System.Guid id)
++        {
++            var all = new System.Collections.Generic.List<BasePreset>(content.DefaultBasePresets);
++            all.AddRange(content.CustomBasePresets);
++            if (all.Count == 0)
++            {
++                return id;
++            }
++
++            int at = all.FindIndex(p => p.Id == id);
++            return all[(at + 1) % all.Count].Id;
++        }
++
 +        private UniTask Reopen(int select)
          {
              _profileSidebar.UpdateSidebar(Profile, this);
@@ -522,7 +749,7 @@ index 0b069fe..f832965 100644
              return UniTask.CompletedTask;
          }
  
-@@ -626,7 +678,8 @@ namespace YARG.Menu.ProfileList
+@@ -626,7 +789,8 @@ namespace YARG.Menu.ProfileList
              }
  
              PlayerContainer.DisposePlayer(player);
