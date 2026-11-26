@@ -1103,7 +1103,9 @@ public final class GuitarCharter {
             for (int k = start; k <= Math.min(n - 1, start + 6); k++) loud = Math.max(loud, f.rms[k]);
             if (counted == 0 || loud <= 1e-5f) continue;
             ref /= counted;
-            if (ref < 0.05) continue;
+            // A separated bass is held by how loud it still is, so how far its pitches stand out
+            // does not matter there (at a low E it can read as almost nothing).
+            if (ref < 0.05 && !cx.bass) continue;
             int endFrame = f.frameAt(cx.map.tickToTime(limit));
             int k = start + 6;
             int weak = 0;

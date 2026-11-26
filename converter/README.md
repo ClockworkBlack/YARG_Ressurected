@@ -156,7 +156,7 @@ Typical scores on the 4/4 songs:
 "Right" is below 100% mostly because five frets cannot give every pitch its own position;
 neighbouring pitches share a fret rather than going the wrong way.
 
-For separation, four things are checked on every build:
+For separation, five things are checked on every build:
 
 1. **The plumbing**, with a stand-in model: cutting a song into overlapping segments and joining
    the results gives back every sample exactly once, aligned with the original.
@@ -169,7 +169,19 @@ For separation, four things are checked on every build:
    and chart at least 80% of the sung notes (it charts all of them); the unsung intro, choruses
    and outro must follow the instruments instead. The full band songs, which have singing too,
    must still chart guitar from the guitar.
-4. **The real model** (`model-test/`), downloaded and run through the app's own code on a
+4. **A trap / R&B beat with known answers** (`TrapSong`, `TrapTest`), built like the real rap and
+   R&B songs the converter was tuned on: 808s in dotted eighths that dominate the mix (76% of the
+   sound, drums 1.5%), long 808s that pump while they ring and drop onto their note with a kick
+   click, a song tuned off A = 440 Hz, a quiet flute-like loop that glides between notes, and a
+   vocal line louder than the loop. It must keep each lesson: the tempo is the beat's and not
+   the dotted 808's (without that fix it reads 126.7 BPM for 95), every 808 is charted with no
+   phantom notes inside the long ones and the long ones held, the regular guitar follows the
+   vocals, Deep Music Mode guitar adds the loop (94-100% of its notes) and Deep Music Mode bass
+   the claps. Each of these checks was seen to fail with its fix taken out. Not yet checked
+   there, only measured on real songs: 808 tuning, reading an 808's pitch once it settles, and
+   holding by loudness (the synthetic 808 does not trip them), and frets for the same 808 note,
+   which is a known weak spot on heavily distorted 808s (printed, not checked).
+5. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their
      level) and the six stems add back up to the mix (-22 dB difference). The synthetic
