@@ -104,7 +104,11 @@ measures were charted this way.
 The app listens about 86 times a second and works in five steps.
 
 1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
-   seconds so songs that speed up or slow down stay locked. Each beat is nudged onto the nearest
+   seconds so songs that speed up or slow down stay locked. A dotted or triplet rhythm can pass
+   for the beat (trap 808s in dotted eighths make a 95 BPM song look like 127 BPM), so tempos at
+   3/4, 4/3, 2/3 and 3/2 of the first choice are tried too: one that is nearly as good a beat
+   and makes the song repeat measure by measure much more strongly wins, since songs are built
+   from measures (a beat loop, a riff, a chord change). Each beat is nudged onto the nearest
    note start, bass hits and chord changes say which beat is the "one", and it tells 4/4 from 3/4.
 2. **Note starts.** Every moment where new sound arrives is split into *pitched* sound (guitar,
    bass, voice, keys) and *noisy bursts* (drums). Pitched starts count fully; bare drum hits
@@ -121,6 +125,15 @@ The app listens about 86 times a second and works in five steps.
    verse that comes round again gets the same chart. Expert is written first; Hard, Medium and
    Easy are thinned-out versions of it (eighths, quarters, half notes, adapting to the song's
    speed) on 5, 4 and 3 frets.
+
+**Bass charts** (from the separated bass) read each note's name allowing for the song's own
+tuning, which is often not A = 440 Hz. A long note (a trap 808, a held synth bass) pumps and
+buzzes while it rings; a start on the same note only counts as a new note when the sound gets
+clearly louder again (4 dB) or the note had already faded, and a change of note without a new
+attack needs a sure pitch reading, since a distorted 808 often reads as its own fifth or octave.
+A note that starts with a click has its pitch read a little later, once its tone settles.
+Notes are held for as long as they stay loud (until 15 dB down). Sounds far below the song's
+usual bass level (-24 dB) are other instruments leaking into the bass and are left out.
 
 The **How many notes** choice (Fewer / Standard / More) moves the bar for how strong a sound
 has to be to become a note.

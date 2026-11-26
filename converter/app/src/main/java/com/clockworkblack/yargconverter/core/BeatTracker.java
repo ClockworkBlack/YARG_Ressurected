@@ -188,7 +188,8 @@ public final class BeatTracker {
         int n = env.length;
         int minLag = (int) Math.floor(fps * 60.0 / 240.0);
         int maxLag = (int) Math.ceil(fps * 60.0 / 40.0);
-        int top = Math.min(n - 1, maxLag * 4 + 2);
+        // Long enough to see eight beats of the slowest look-alike tempo (see lookAlike).
+        int top = Math.min(n - 1, maxLag * 12 + 16);
         if (top <= minLag + 2) return -1;
         double[] ac = new double[top + 1];
         for (int lag = 1; lag <= top; lag++) {
@@ -200,9 +201,7 @@ public final class BeatTracker {
         double best = -1;
         int bestLag = -1;
         for (int lag = minLag; lag <= maxLag && lag * 4 <= top; lag++) {
-            double bpm = 60.0 * fps / lag;
-            double z = Math.log(bpm / 120.0) / Math.log(2) / 0.8;
-            double w = Math.exp(-0.5 * z * z);
+            double w = preference(fps, lag);
             // A real beat repeats at 1, 2, 3 and 4 times its length; a 1.5-beat or 3-beat
             // pattern does not, so demanding all four rejects those look-alikes.
             double s = 0;
@@ -214,6 +213,7 @@ public final class BeatTracker {
             }
         }
         if (bestLag < 0) return -1;
+        bestLag = lookAlike(ac, bestLag, minLag, maxLag, fps);
         // Use the longest clear multiple of the lag to sharpen the estimate.
         double period = bestLag;
         int mult = Math.max(1, Math.min(8, top / bestLag));
@@ -234,6 +234,58 @@ public final class BeatTracker {
             }
         }
         return period;
+    }
+
+    /** Look-alike tempos tried against the first choice: 3/4, 4/3, 2/3 and 3/2 of it. */
+    private static final double[] LOOK_ALIKES = {4 / 3.0, 3 / 4.0, 3 / 2.0, 2 / 3.0};
+
+    /**
+     * A dotted or triplet pattern can pass for the beat: trap 808s that play in dotted eighths
+     * (3-3-2) make a song at 95 BPM look like 127 BPM, 4/3 of it. Both repeat at every beat, but
+     * only the real tempo makes the music repeat measure by measure, because songs are built out
+     * of measures (a beat loop, a riff, a chord change). So a look-alike tempo replaces the first
+     * choice when it is nearly as good a beat and makes the song repeat by the measure much more
+     * strongly. Halving and doubling are left to the tempo preference above.
+     *
+     * @return the lag (beat length in frames) to use
+     */
+    static int lookAlike(double[] ac, int lag, int minLag, int maxLag, double fps) {
+        double beat = beatScore(ac, lag);
+        double score = beat * measureScore(ac, lag) * preference(fps, lag);
+        int best = lag;
+        double bestScore = score;
+        for (double r : LOOK_ALIKES) {
+            int alt = (int) Math.round(lag * r);
+            if (alt < minLag || alt > maxLag || alt * 8 + 8 >= ac.length) continue;
+            double altBeat = beatScore(ac, alt);
+            double altScore = altBeat * measureScore(ac, alt) * preference(fps, alt);
+            if (altBeat >= 0.8 * beat && altScore >= 1.5 * score && altScore > bestScore) {
+                best = alt;
+                bestScore = altScore;
+            }
+        }
+        return best;
+    }
+
+    /** How well the lag repeats at 1, 2, 3 and 4 times its length. */
+    private static double beatScore(double[] ac, int lag) {
+        double s = 0;
+        for (int k = 1; k <= 4; k++) s += peakNear(ac, lag * k, k);
+        return s / 4;
+    }
+
+    /** How strongly the song repeats one and two measures on (of 4 or of 3 beats). */
+    private static double measureScore(double[] ac, int lag) {
+        double four = (peakNear(ac, lag * 4, 4) + peakNear(ac, lag * 8, 8)) / 2;
+        double three = (peakNear(ac, lag * 3, 3) + peakNear(ac, lag * 6, 6)) / 2;
+        return Math.max(four, three);
+    }
+
+    /** The preference for tempos near 120 BPM, the same one the first choice is made with. */
+    private static double preference(double fps, int lag) {
+        double bpm = 60.0 * fps / lag;
+        double z = Math.log(bpm / 120.0) / Math.log(2) / 0.8;
+        return Math.exp(-0.5 * z * z);
     }
 
     private static double peakNear(double[] ac, int centre, int spread) {
