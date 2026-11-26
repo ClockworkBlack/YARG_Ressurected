@@ -30,7 +30,11 @@ final class SynthBand {
     /** Every bass note, for scoring bass charts. */
     final List<GuitarNote> bassNotes = new ArrayList<>();
     /** The instruments on their own, as a perfect separation would return them. */
-    float[] drumsTrack, bassTrack, guitarTrack, keysTrack;
+    float[] drumsTrack, bassTrack, guitarTrack, keysTrack, vocalsTrack;
+    /** Start time of every kick and snare hit. */
+    final List<Double> drumHits = new ArrayList<>();
+    /** Start time of every sung note (busy songs only). */
+    final List<Double> sungNotes = new ArrayList<>();
     private int currentBar;
     final List<Double> beats = new ArrayList<>();
     /** Start time of each measure, plus one extra entry for the end. */
@@ -41,7 +45,7 @@ final class SynthBand {
     final List<int[]> sectionStarts = new ArrayList<>();
 
     private final Random rnd;
-    private float[] drums, bass, gtr, pad;
+    private float[] drums, bass, gtr, pad, vox;
     private double[] beatTime;
 
     /** Busier arrangement: sixteenth-note hi-hats, a sung melody over the verse, a fast riff. */
@@ -74,6 +78,7 @@ final class SynthBand {
         bass = new float[n];
         gtr = new float[n];
         pad = new float[n];
+        vox = new float[n];
 
         char prev = 0;
         int sectionBar = 0;
@@ -93,13 +98,14 @@ final class SynthBand {
         // Guitar goes through an amp: soft clipping adds the gritty overtones of distortion.
         for (int i = 0; i < n; i++) {
             gtr[i] = (float) Math.tanh(gtr[i] * 2.2) * 0.33f;
-            audio[i] = drums[i] + bass[i] + gtr[i] + pad[i] + (float) ((rnd.nextDouble() * 2 - 1) * 0.0015);
+            audio[i] = drums[i] + bass[i] + gtr[i] + pad[i] + vox[i] + (float) ((rnd.nextDouble() * 2 - 1) * 0.0015);
         }
         drumsTrack = drums;
         bassTrack = bass;
         guitarTrack = gtr;
         keysTrack = pad;
-        drums = bass = gtr = pad = null;
+        vocalsTrack = vox;
+        drums = bass = gtr = pad = vox = null;
     }
 
     private double at(int bar, double slot16) {
@@ -244,15 +250,16 @@ final class SynthBand {
 
     /** A sung note: soft attack, vibrato, few overtones. Not part of the guitar's "right answers". */
     private void voice(double t, int midi, double len) {
+        sungNotes.add(t);
         int start = (int) Math.round(t * sampleRate);
         int count = (int) (len * sampleRate);
         double f = hz(midi);
         double ph = 0;
-        for (int i = 0; i < count && start + i < pad.length; i++) {
+        for (int i = 0; i < count && start + i < vox.length; i++) {
             double sec = (double) i / sampleRate;
             double env = Math.min(1.0, sec / 0.035) * Math.min(1.0, (count - i) / (0.04 * sampleRate));
             ph += 2 * Math.PI * f * Math.pow(2, 0.3 * Math.sin(2 * Math.PI * 5.2 * sec) / 12.0) / sampleRate;
-            pad[start + i] += (float) (0.16 * env * (Math.sin(ph) + 0.45 * Math.sin(2 * ph) + 0.2 * Math.sin(3 * ph)));
+            vox[start + i] += (float) (0.16 * env * (Math.sin(ph) + 0.45 * Math.sin(2 * ph) + 0.2 * Math.sin(3 * ph)));
         }
     }
 
@@ -285,6 +292,7 @@ final class SynthBand {
     }
 
     private void kick(double t, float amp) {
+        drumHits.add(t);
         int start = (int) Math.round(t * sampleRate);
         int count = (int) (0.16 * sampleRate);
         double ph = 0;
@@ -298,6 +306,7 @@ final class SynthBand {
     }
 
     private void snare(double t) {
+        drumHits.add(t);
         noise(drums, t, 0.16, 0.3f, false);
         int start = (int) Math.round(t * sampleRate);
         int count = (int) (0.1 * sampleRate);

@@ -31,11 +31,14 @@ public final class GuitarCharter {
         public double threshold = 1.0;
         /** False for instruments that play one note at a time (bass). */
         public boolean chords = true;
+        /** True for a separated bass part: notes are held for as long as they stay loud. */
+        public boolean bass;
 
         public Options copy() {
             Options o = new Options();
             o.threshold = threshold;
             o.chords = chords;
+            o.bass = bass;
             return o;
         }
     }
@@ -48,6 +51,11 @@ public final class GuitarCharter {
     private static final float[] FINE_STRENGTH = {0.8f, 0.7f, 0.8f, 9f};
     private static final float[] OFF_STRENGTH = {0f, 0f, 0.3f, 0f};
     private static final int[] LANES = {3, 4, 5, 5};
+
+    /** How many frets a difficulty (Easy..Expert) uses. */
+    public static int lanes(int difficulty) {
+        return LANES[Math.max(0, Math.min(LANES.length - 1, difficulty))];
+    }
     private static final int[] SUSTAIN_MIN_GAP = {384, 384, 384, 288};
     // Expert: strength needed on a measure start, a beat, an eighth and a sixteenth. A full band
     // has something on nearly every subdivision; weak in-between sounds are left out so the chart
@@ -58,6 +66,19 @@ public final class GuitarCharter {
     private static final float PERC_WEIGHT = 0.4f;
     private static final float TONAL_SHARE = 0.20f;
     private static final float TONAL_CONF = 0.30f;
+    /** Pitch confidence needed to count a change of bass note that has no new attack. */
+    private static final float SURE_PITCH = 0.85f;
+    /**
+     * A bass note this far under the song's usual bass level (-24 dB) is other instruments leaking
+     * into the separated bass, in a passage where the bass is not playing.
+     */
+    private static final float BASS_FLOOR = 0.063f;
+    /** A held bass note lasts until it is this much quieter than its start (-15 dB). */
+    private static final float BASS_HOLD = 0.178f;
+    /** A bass note still within this of its own start (-6 dB) is still ringing at full strength. */
+    private static final float STILL_FULL = 0.5f;
+    /** On a bass, how much louder a same-note start must get to be a new note: 4 dB. */
+    private static final float RETRIGGER_RISE = 1.585f;
     /** MIDI pitch above which sounds are charted as single notes (B3). */
     private static final float CHORD_CEILING = 59.5f;
 
@@ -94,7 +115,7 @@ public final class GuitarCharter {
         public final int lane2;
         public final long sustain;
 
-        Note(long tick, int lane, int lane2, long sustain) {
+        public Note(long tick, int lane, int lane2, long sustain) {
             this.tick = tick;
             this.lane = lane;
             this.lane2 = lane2;
@@ -167,6 +188,7 @@ public final class GuitarCharter {
             while (rise > 0 && i - rise < 2 && env[rise - 1] >= 0.3f * v) rise--;
             Onset o = new Onset(f.timeOf(rise), i, (float) (v - threshold));
             describe(f, o, tMean, pMean);
+            if (groupByPitch && !o.tonal) settledPitch(f, o);
             found.add(o);
         }
         if (found.isEmpty()) return found;
@@ -202,11 +224,80 @@ public final class GuitarCharter {
             // By note name (C, C sharp, ...): pitch readings of a bass are often an octave out,
             // but rarely the wrong note. Clear octave jumps are told apart again when frets
             // are handed out.
-            for (Onset o : out) if (o.tonal) o.group = Math.floorMod(Math.round(o.height), 12);
+            // Songs are not always tuned to A = 440 Hz; a bass that sits between two note names
+            // would otherwise be read as one and then the other. The song's own tuning comes from
+            // where its bass notes fall between the note names.
+            double tuning = tuning(out);
+            for (Onset o : out) if (o.tonal) o.group = Math.floorMod(Math.round(o.height - tuning), 12);
+            out = dropRetriggers(f, out);
         } else {
             groupBySound(out);
         }
         return out;
+    }
+
+    /**
+     * A long bass note (a trap 808 above all) pumps and buzzes while it rings, and each small swell
+     * reads as a new note start. On a bass that plays one note at a time, a start on the same note
+     * name as the note before only counts when the sound gets clearly louder again
+     * ({@link #RETRIGGER_RISE}) from the dip just before it; otherwise the note is still ringing.
+     * A change of note (a slide to a new pitch) counts when the pitch reading is sure of it; the
+     * heavy distortion on an 808 often makes the reading jump to the note's fifth or octave.
+     * Starts far below the song's usual bass level are leakage from other instruments.
+     */
+    private static List<Onset> dropRetriggers(Features f, List<Onset> onsets) {
+        int n = f.frames();
+        int before = Math.max(2, (int) Math.round(f.fps * 0.08));
+        int after = Math.max(2, (int) Math.round(f.fps * 0.06));
+        float[] levels = new float[n];
+        int sounding = 0;
+        for (int k = 0; k < n; k++) if (f.rms[k] > 0) levels[sounding++] = f.rms[k];
+        Arrays.sort(levels, 0, sounding);
+        float usual = sounding > 0 ? levels[(int) (sounding * 0.9)] : 0;
+        List<Onset> kept = new ArrayList<>(onsets.size());
+        Onset last = null;
+        float lastPeak = 0;
+        for (Onset o : onsets) {
+            int at = Math.min(n - 1, Math.max(0, o.frame));
+            float loudest = 0;
+            for (int k = at; k <= Math.min(n - 1, at + after); k++) loudest = Math.max(loudest, f.rms[k]);
+            if (loudest < BASS_FLOOR * usual) continue;
+            // An unsure pitch reading is not enough to call it a new note without a new attack.
+            // (Only notes that were kept count as "the note before".)
+            boolean sameNote = last != null && (!o.tonal || !last.tonal || o.group == last.group || o.conf < SURE_PITCH);
+            if (sameNote) {
+                int p = Math.min(n - 1, Math.max(0, o.frame));
+                float dip = Float.MAX_VALUE, peak = 0;
+                for (int k = Math.max(0, p - before); k <= p; k++) dip = Math.min(dip, f.rms[k]);
+                for (int k = p; k <= Math.min(n - 1, p + after); k++) peak = Math.max(peak, f.rms[k]);
+                // A plucked string has already faded by its next pick, so a re-pick on the same
+                // note counts even when it barely gets louder. Only a note that is still at full
+                // strength (an 808, a held synth bass) needs a clear new attack.
+                boolean stillFull = dip >= STILL_FULL * lastPeak;
+                if (stillFull && peak < RETRIGGER_RISE * dip) continue;
+            }
+            kept.add(o);
+            last = o;
+            lastPeak = loudest;
+        }
+        return kept;
+    }
+
+    /**
+     * How far the song's notes sit from A = 440 Hz tuning, in semitones (-0.5 to 0.5): the
+     * average of where each confident pitch falls between two note names, taken on a circle so
+     * that +0.45 and -0.45 count as close together.
+     */
+    static double tuning(List<Onset> onsets) {
+        double x = 0, y = 0;
+        for (Onset o : onsets) {
+            if (!o.tonal || Float.isNaN(o.height)) continue;
+            double angle = 2 * Math.PI * (o.height - Math.round(o.height));
+            x += o.conf * Math.cos(angle);
+            y += o.conf * Math.sin(angle);
+        }
+        if (x == 0 && y == 0) return 0;
+        return Math.atan2(y, x) / (2 * Math.PI);
     }
 
     private static double mean(float[] x) {
@@ -252,6 +343,44 @@ public final class GuitarCharter {
         if (norm > 1e-6 && share >= TONAL_SHARE && o.conf >= TONAL_CONF && !Float.isNaN(o.height)) {
             for (int c = 0; c < 12; c++) print[c] = (float) (print[c] / norm);
             o.print = print;
+            o.tonal = true;
+        }
+    }
+
+    /**
+     * A bass note that starts with a click (a trap 808 with a kick on it) has no clear pitch at
+     * first; its tone settles a little later. Reads the pitch from there instead, up to about a
+     * quarter of a second in, so the note can get its own fret and be held.
+     */
+    private static void settledPitch(Features f, Onset o) {
+        int n = f.frames();
+        int from = o.frame + 9;
+        int to = Math.min(n - 1, o.frame + (int) Math.round(f.fps * 0.23));
+        float[] print = new float[12];
+        float bestWeight = 0;
+        float height = Float.NaN, conf = 0;
+        for (int k = from; k <= to; k++) {
+            float sum = 0;
+            for (int c = 0; c < 12; c++) {
+                float v = f.toneChroma[k * 12 + c];
+                print[c] += v;
+                sum += v;
+            }
+            float w = sum * f.pitchConf[k];
+            if (!Float.isNaN(f.pitch[k]) && w > bestWeight) {
+                bestWeight = w;
+                height = f.pitch[k];
+                conf = f.pitchConf[k];
+            }
+        }
+        double norm = 0;
+        for (float v : print) norm += v * v;
+        norm = Math.sqrt(norm);
+        if (norm > 1e-6 && conf >= TONAL_CONF && !Float.isNaN(height)) {
+            for (int c = 0; c < 12; c++) print[c] = (float) (print[c] / norm);
+            o.print = print;
+            o.height = height;
+            o.conf = conf;
             o.tonal = true;
         }
     }
@@ -345,6 +474,7 @@ public final class GuitarCharter {
         float songLow, songHigh;
         double threshold;
         boolean chords = true;
+        boolean bass;
     }
 
     public static Chart build(Features f, List<Onset> onsets, TempoMap map, double bpm, Options options) {
@@ -358,6 +488,7 @@ public final class GuitarCharter {
         cx.measureTicks = map.measureTicks();
         cx.threshold = options == null ? 1.0 : Math.max(0.3, Math.min(3.0, options.threshold));
         cx.chords = options == null || options.chords;
+        cx.bass = options != null && options.bass;
         summariseGroups(cx, onsets);
         chart.soundGroups = cx.groups;
 
@@ -1189,8 +1320,13 @@ public final class GuitarCharter {
             int weak = 0;
             while (k < endFrame && k < n) {
                 // The note is still there while its pitches stand out from the rest of the
-                // harmony and the music has not dropped to near silence.
-                if (presence(f, k, a, b) < 0.35 * ref || f.rms[k] < 0.08f * loud) {
+                // harmony and the music has not dropped to near silence. A separated bass plays
+                // nothing else, so there it is simply how loud it still is (until 15 dB down):
+                // the pitch reading of a distorted 808 wanders too much to follow.
+                boolean gone = cx.bass
+                        ? f.rms[k] < BASS_HOLD * loud
+                        : presence(f, k, a, b) < 0.35 * ref || f.rms[k] < 0.08f * loud;
+                if (gone) {
                     // A brief dip (a drum hit masking the note) does not end it.
                     if (++weak > 5) break;
                 } else {

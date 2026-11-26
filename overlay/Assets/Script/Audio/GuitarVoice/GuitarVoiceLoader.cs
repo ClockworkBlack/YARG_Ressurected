@@ -23,6 +23,7 @@ using YARG.Audio.BASS;
 using YARG.Core;
 using YARG.Core.Audio;
 using YARG.Core.Chart;
+using YARG.Core.Game;
 using YARG.Core.Logging;
 using YARG.Core.Song;
 using YARG.Helpers;
@@ -122,7 +123,8 @@ namespace YARG.Audio.GuitarVoice
             bool freestyleGuitar = false, freestyleBass = false;
 
             // Which tracks are wanted, and from which chart (the hardest one in play)
-            var wanted = new Dictionary<SongStem, (Instrument Instrument, Difficulty Difficulty)>();
+            // (With the modifiers too: Deep Music Mode plays a different part of the chart)
+            var wanted = new Dictionary<SongStem, (Instrument Instrument, Difficulty Difficulty, Modifier Modifiers)>();
             foreach (var player in players)
             {
                 if (player == null || player.SittingOut)
@@ -172,7 +174,7 @@ namespace YARG.Audio.GuitarVoice
                 var difficulty = player.Profile.CurrentDifficulty;
                 if (!wanted.TryGetValue(stem, out var current) || difficulty > current.Difficulty)
                 {
-                    wanted[stem] = (instrument, difficulty);
+                    wanted[stem] = (instrument, difficulty, player.Profile.CurrentModifiers);
                 }
             }
 
@@ -201,11 +203,11 @@ namespace YARG.Audio.GuitarVoice
                 : mode == GuitarVoiceMode.Heavy ? GuitarVoiceTone.Heavy
                 : GuitarVoiceTone.Rock;
 
-            foreach (var (stem, (instrument, difficulty)) in wanted)
+            foreach (var (stem, (instrument, difficulty, modifiers)) in wanted)
             {
                 try
                 {
-                    if (!chart.GetFiveFretTrack(instrument).TryGetDifficulty(difficulty, out var track)
+                    if (!chart.GetFiveFretTrack(instrument, modifiers, difficulty).TryGetDifficulty(difficulty, out var track)
                         || track.Notes.Count == 0)
                     {
                         continue;

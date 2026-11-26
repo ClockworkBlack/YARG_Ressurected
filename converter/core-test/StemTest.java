@@ -5,6 +5,7 @@ import com.clockworkblack.yargconverter.core.Resampler;
 import com.clockworkblack.yargconverter.core.SongWriter;
 import com.clockworkblack.yargconverter.core.StemSplitter;
 
+import java.util.List;
 import java.util.Random;
 
 /**
@@ -21,7 +22,9 @@ final class StemTest {
         splitting();
         resampling();
         charting("Charting from perfectly separated instruments, 118 BPM", new SynthBand(44100, 118.0, 0.0, 0.40, 4, 7));
-        charting("Charting from perfectly separated instruments, busy mix 96 BPM", new SynthBand(44100, 96.0, 0.02, 0.50, 4, 7, true));
+        SynthBand busy = new SynthBand(44100, 96.0, 0.02, 0.50, 4, 7, true);
+        charting("Charting from perfectly separated instruments, busy mix 96 BPM", busy);
+        vocalLed(busy);
         return failures;
     }
 
@@ -171,7 +174,7 @@ final class StemTest {
         return e;
     }
 
-    static SongWriter.Stems stems(float[] guitar, float[] keys, float[] bass, float[] mix, int sr) {
+    static SongWriter.Stems stems(float[] guitar, float[] keys, float[] vocals, float[] drums, float[] bass, float[] mix, int sr) {
         SongWriter.Stems s = new SongWriter.Stems();
         float[] melodic = new float[guitar.length];
         for (int i = 0; i < melodic.length; i++) melodic[i] = guitar[i] + keys[i];
@@ -182,21 +185,110 @@ final class StemTest {
         s.melodicEnergy = energy(melodic);
         s.bassEnergy = energy(bass);
         s.mixEnergy = energy(mix);
+        addVocals(s, vocals, drums, sr);
         return s;
+    }
+
+    /** Share of {@code times} with a note of the chart's Expert part within 60 ms. */
+    private static double covered(GuitarCharter.Chart chart, SongWriter.Result r, List<Double> times) {
+        List<GuitarCharter.Note> notes = chart.notes.get(GuitarCharter.EXPERT);
+        double[] at = new double[notes.size()];
+        for (int i = 0; i < at.length; i++) at[i] = r.tempo.tickToTime(notes.get(i).tick);
+        java.util.Arrays.sort(at);
+        int hit = 0;
+        for (double t : times) {
+            int k = java.util.Arrays.binarySearch(at, t);
+            if (k < 0) k = -k - 1;
+            if ((k < at.length && Math.abs(at[k] - t) < 0.06) || (k > 0 && Math.abs(at[k - 1] - t) < 0.06)) hit++;
+        }
+        return times.isEmpty() ? 0 : (double) hit / times.size();
+    }
+
+    /** Adds the vocals and drums measurements, the way the app does. */
+    static void addVocals(SongWriter.Stems s, float[] vocals, float[] drums, int sr) {
+        s.vocals = analyze(vocals, sr);
+        s.vocalsEnergy = energy(vocals);
+        if (drums != null) {
+            s.drums = analyze(drums, sr);
+            s.drumsEnergy = energy(drums);
+        }
+    }
+
+    /**
+     * A song carried by the voice (like rap over a beat): the busy song's drums, bass and singing,
+     * with only a faint trace of guitar and no keys. The guitar chart should follow the singing,
+     * one note at a time.
+     */
+    private static void vocalLed(SynthBand song) throws Exception {
+        System.out.println("Charting a song carried by the vocals (drums, bass, singing, a trace of guitar)");
+        int n = song.audio.length, sr = song.sampleRate;
+        float[] faint = new float[n], none = new float[n], mix = new float[n];
+        for (int i = 0; i < n; i++) {
+            faint[i] = song.guitarTrack[i] * 0.02f;
+            mix[i] = song.drumsTrack[i] + song.bassTrack[i] + song.vocalsTrack[i] + faint[i];
+        }
+        Features f = analyze(mix, sr);
+        SongWriter.Result r = SongWriter.analyze(f, null, null, stems(faint, none, song.vocalsTrack, song.drumsTrack, song.bassTrack, mix, sr));
+        System.out.println("  guitar from " + r.guitarSource);
+        check(r.guitarSource.contains("vocals"), "guitar chart follows the vocals (got: " + r.guitarSource + ")");
+        for (int d = 0; d < 4; d++) {
+            boolean single = true;
+            for (GuitarCharter.Note note : r.chart.notes.get(d)) if (note.lane2 >= 0) single = false;
+            check(single, GuitarCharter.SECTION_NAMES[d] + ": single notes only, no chords");
+        }
+        List<GuitarCharter.Note> expert = r.chart.notes.get(GuitarCharter.EXPERT);
+        double[] at = new double[expert.size()];
+        for (int i = 0; i < at.length; i++) at[i] = r.tempo.tickToTime(expert.get(i).tick);
+        java.util.Arrays.sort(at);
+        int sungHit = 0;
+        for (double t : song.sungNotes) {
+            int k = java.util.Arrays.binarySearch(at, t);
+            if (k < 0) k = -k - 1;
+            boolean hit = (k < at.length && Math.abs(at[k] - t) < 0.06) || (k > 0 && Math.abs(at[k - 1] - t) < 0.06);
+            if (hit) sungHit++;
+        }
+        double coverage = song.sungNotes.isEmpty() ? 0 : (double) sungHit / song.sungNotes.size();
+        System.out.printf(java.util.Locale.US, "  %d Expert notes; %.0f%% of the %d sung notes are charted%n", expert.size(), 100 * coverage, song.sungNotes.size());
+        check(coverage >= 0.8, "sung notes are charted (" + coverage + ")");
+        check(r.bassChart != null, "the bass chart is still written");
+        check(r.bassChart != null && r.drumNotesInBass > 0 && r.deepBassChart != null, "Deep Music Mode bass is written");
+        if (r.deepBassChart != null && r.bassChart != null) {
+            // Deep Music Mode: no drum chart is played, so the bass covers the kick and snare too;
+            // the normal bass stays the bass alone.
+            double share = covered(r.deepBassChart, r, song.drumHits), plain = covered(r.bassChart, r, song.drumHits);
+            System.out.printf(java.util.Locale.US, "  Deep Music Mode bass: %d Expert notes (normal bass %d), %d drum hits added; kick and snare covered %.0f%% (normal bass %.0f%%)%n",
+                    r.deepBassChart.notes.get(GuitarCharter.EXPERT).size(), r.bassChart.notes.get(GuitarCharter.EXPERT).size(), r.drumNotesInBass, 100 * share, 100 * plain);
+            check(share >= 0.8, "Deep Music Mode bass covers the kick and snare (" + share + ")");
+            check(r.deepBassChart.notes.get(GuitarCharter.EXPERT).size() > r.bassChart.notes.get(GuitarCharter.EXPERT).size(), "the normal bass has no drum hits added");
+            for (int d = 0; d < 4; d++) {
+                for (GuitarCharter.Note b : r.deepBassChart.notes.get(d)) check(b.lane < GuitarCharter.lanes(d) && b.lane2 < 0, "bass notes fit the difficulty's frets");
+            }
+        }
+        check(r.deepChart != null && r.deepChart.notes.get(GuitarCharter.EXPERT).size() >= r.chart.notes.get(GuitarCharter.EXPERT).size(),
+                "Deep Music Mode guitar is written and keeps every normal guitar note's place");
+        String midi = new String(com.clockworkblack.yargconverter.core.MidiSong.build(r), java.nio.charset.StandardCharsets.ISO_8859_1);
+        check(midi.contains("PART GUITAR COOP") && midi.contains("PART RHYTHM"), "Deep Music Mode parts are in notes.mid");
+        // Only the verses are sung; the intro, choruses and outro follow the instruments (plus
+        // the part-measure before the first full measure and the tail after the last one).
+        int unsung = 0;
+        for (char c : song.sectionOf) if (c != 'V') unsung++;
+        System.out.println("  " + r.instrumentalMeasures + " measure(s) without vocals charted from the instruments (" + unsung + " unsung in the song)");
+        check(r.instrumentalMeasures >= unsung * 0.8 && r.instrumentalMeasures <= unsung + 2,
+                "measures without vocals follow the instruments (" + r.instrumentalMeasures + " of " + unsung + ")");
     }
 
     private static void charting(String name, SynthBand song) throws Exception {
         System.out.println(name);
         Features mix = analyze(song.audio, song.sampleRate);
         SongWriter.Result plain = SongWriter.analyze(mix, null, null);
-        SongWriter.Result split = SongWriter.analyze(mix, null, null, stems(song.guitarTrack, song.keysTrack, song.bassTrack, song.audio, song.sampleRate));
+        SongWriter.Result split = SongWriter.analyze(mix, null, null, stems(song.guitarTrack, song.keysTrack, song.vocalsTrack, song.drumsTrack, song.bassTrack, song.audio, song.sampleRate));
         ChartEval before = ChartEval.score(song, plain);
         ChartEval after = ChartEval.score(song, split);
         System.out.println("  guitar from " + plain.guitarSource + ":");
         System.out.println(before.report().replace("\n", "\n  "));
         System.out.println("  guitar from " + split.guitarSource + ":");
         System.out.println(after.report().replace("\n", "\n  "));
-        check(split.guitarSource.contains("guitar"), "guitar chart comes from the guitar stem");
+        check(split.guitarSource.equals("the separated guitar"), "guitar chart comes from the guitar stem, not the vocals (" + split.guitarSource + ")");
         check(after.coverage >= 0.95, "guitar notes are charted from the stem");
         check(after.offGuitar <= 0.03, "nothing but guitar in the guitar chart (" + after.offGuitar + ")");
         check(after.samePitchSameFret >= 0.9 && after.wrongDirection <= 0.05, "frets follow the guitar's pitch");
@@ -204,6 +296,10 @@ final class StemTest {
         check(Math.abs(after.beatAvgMs - before.beatAvgMs) < 1e-6, "beats still come from the full mix");
 
         check(split.bassChart != null, "a bass chart is written");
+        check(split.deepChart != null && split.deepBassChart != null, "Deep Music Mode guitar and bass are written");
+        if (split.deepBassChart != null) {
+            check(covered(split.deepBassChart, split, song.drumHits) >= 0.8, "Deep Music Mode bass covers the kick and snare");
+        }
         if (split.bassChart != null) {
             ChartEval bass = ChartEval.score(song, split, song.bassNotes, split.bassChart);
             System.out.println("  bass from the separated bass:");

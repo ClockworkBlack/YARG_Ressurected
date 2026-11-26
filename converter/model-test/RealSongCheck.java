@@ -109,6 +109,7 @@ public final class RealSongCheck {
         stems.melodicEnergy = StemTest.energy(melodic);
         stems.bassEnergy = energy[StemSplitter.BASS];
         stems.mixEnergy = ref;
+        StemTest.addVocals(stems, mono[StemSplitter.VOCALS], mono[StemSplitter.DRUMS], StemSplitter.SAMPLE_RATE);
         long t1 = System.currentTimeMillis();
         Features mixFeatures = StemTest.analyze(mix, StemSplitter.SAMPLE_RATE);
         SongWriter.Result plain = SongWriter.analyze(mixFeatures, null, null);
@@ -169,7 +170,10 @@ public final class RealSongCheck {
         System.out.printf(Locale.US, "Tempo %.1f BPM, %d beats to the measure, %d tempo marker(s)%n", split.bpm, split.beatsPerMeasure, split.tempo.tick.length);
         describe("Guitar from the full mix", plain.chart, seconds);
         describe("Guitar from " + split.guitarSource, split.chart, seconds);
+        if (split.instrumentalMeasures > 0) System.out.println("  " + split.instrumentalMeasures + " measure(s) without vocals charted from the instruments");
         if (split.bassChart != null) describe("Bass from the separated bass", split.bassChart, seconds);
+        if (split.deepChart != null) describe("Deep Music Mode guitar", split.deepChart, seconds);
+        if (split.deepBassChart != null) describe("Deep Music Mode bass (" + split.drumNotesInBass + " drum hits added)", split.deepBassChart, seconds);
         else System.out.println("No bass chart.");
 
         Set<Long> mixTicks = new HashSet<>();
