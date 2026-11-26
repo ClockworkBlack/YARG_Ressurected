@@ -138,6 +138,10 @@ def main():
     logs_dir = os.path.join(args.keep or args.out, "logs")
 
     jobs = auto_jobs() if args.jobs == "auto" else max(1, int(args.jobs))
+    gpu_mb = gpu_memory_mb() if args.gpu else 0
+    if gpu_mb and args.jobs == "auto":
+        # The graphics card is shared: speech to text keeps WHISPER_GPU_MB, each song SONG_GPU_MB
+        jobs = int(max(1, min(jobs, (gpu_mb - WHISPER_GPU_MB) // SONG_GPU_MB)))
     heap = heap_for(jobs)
     print("%d songs, %d at a time" % (len(todo), jobs), flush=True)
     whisper_lock = threading.Lock()
@@ -145,6 +149,10 @@ def main():
     state_lock = threading.Lock()
     total = len(todo)
     whisper = {"device": "cuda" if args.gpu else "cpu"}
+    jobs_now = [jobs]
+    if gpu_mb:
+        print("Graphics card: %d MB; %d MB for each song, %d MB kept for speech to text"
+              % (gpu_mb, gpu_share(gpu_mb, jobs), WHISPER_GPU_MB), flush=True)
 
     def say(text):
         with print_lock:
@@ -155,6 +163,8 @@ def main():
         with open(tmp, "w", encoding="utf-8") as f: json.dump(state, f, ensure_ascii=False, indent=1)
         os.replace(tmp, state_path)
         write_report(args.keep or args.out, [report[n] for n in files if n in report])
+
+    oom_waits = {}
 
     def speech_to_text(tag, name, base, song):
         """Writes lyrics from the voice; on the GPU when it can, else on the processor. True when it worked."""
@@ -168,7 +178,24 @@ def main():
                                 base + ".lrc.tmp", args.whisper, "auto"], env=env, capture_output=True, text=True)
             if r.returncode == 0 and os.path.exists(base + ".lrc.tmp"):
                 return True
-            gpu_trouble = re.search(r"libcublas|libcudnn|CUDA|cuda|cuBLAS|GPU", r.stderr or "")
+            err = r.stderr or ""
+            if whisper["device"] == "cuda" and re.search(r"out of memory|CUBLAS_STATUS_ALLOC_FAILED|CUDNN_STATUS_ALLOC", err, re.I):
+                # The card is full of other songs for now: wait for them to finish with it and
+                # ask again, rather than move every later song to the (much slower) processor
+                waited = oom_waits.get(name, 0)
+                if waited < 6:
+                    oom_waits[name] = waited + 1
+                    say("%s the graphics card is full for now; speech to text waits 30 s and tries again" % tag)
+                    time.sleep(30)
+                    return speech_to_text(tag, name, base, song)
+                say("%s the graphics card stayed full; this song's speech to text runs on the processor" % tag)
+                env = dict(env, DEVICE="cpu")
+                r = subprocess.run([sys.executable, os.path.join(HERE, "transcribe_lyrics.py"), base + ".vocals.wav",
+                                    base + ".lrc.tmp", args.whisper, "auto"], env=env, capture_output=True, text=True)
+                if r.returncode == 0 and os.path.exists(base + ".lrc.tmp"):
+                    return True
+                err = r.stderr or ""
+            gpu_trouble = re.search(r"libcublas|libcudnn|CUDA|cuda|cuBLAS|GPU", err)
             if whisper["device"] == "cuda" and gpu_trouble and attempt == 0:
                 # The GPU's libraries are missing or broken: the processor is slower but works
                 whisper["device"] = "cpu"
@@ -186,7 +213,8 @@ def main():
         for ext in (".vocals.wav", ".lrc", ".lrc.tmp", ".lrc.needed", ".json", ".log"):
             if os.path.exists(base + ext): os.remove(base + ext)
         before = state.get(name.lower(), {}).get("row", {}).get("folder")
-        cmd = ["java", "-Xmx%dm" % heap] + (["-Dyarg.cuda=1"] if args.gpu else []) + ["-cp", args.classpath, "ConvertSong",
+        gpu_cap = ["-Dyarg.gpuMemMb=%d" % gpu_share(gpu_mb, jobs_now[0])] if gpu_mb else []
+        cmd = ["java", "-Xmx%dm" % heap] + (["-Dyarg.cuda=1"] if args.gpu else []) + gpu_cap + ["-cp", args.classpath, "ConvertSong",
                "--audio", os.path.join(args.songs, name), "--out", out_songs, "--mode", mode, "--notes", notes,
                "--model", args.stems_model, "--words-model", args.words_model, "--find-details", "--find-lyrics",
                "--two-singers", "--summary", base + ".json", "--known-artists", known_path, "--threads", str(max(1, (os.cpu_count() or 2) // jobs))]
@@ -256,6 +284,7 @@ def main():
         print("Trying the %d that failed again, one at a time" % len(failed), flush=True)
         total = len(failed)
         heap = heap_for(1)
+        jobs_now[0] = 1
         for n, name in enumerate(failed, 1):
             convert(n, name, "failed with other songs running; again on its own")
     print("All done in %d min %02d s" % divmod(int(time.time() - started_all), 60), flush=True)
@@ -312,6 +341,27 @@ def memory_mb():
     except OSError:
         pass
     return 8000
+
+
+# Graphics memory (MB): Whisper large-v3 in half precision while it writes lyrics, and one song
+# while its instruments are split and its words heard (the split model's working memory)
+WHISPER_GPU_MB = 5500
+SONG_GPU_MB = 3500
+
+
+def gpu_memory_mb():
+    """The graphics card's memory in MB, or 0 when there is none to ask."""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=20).stdout.strip().splitlines()
+        return int(out[0]) if out else 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0
+
+
+def gpu_share(gpu_mb, jobs):
+    """Graphics memory one song may take, with speech to text's share kept free."""
+    return int(max(2500, (gpu_mb - WHISPER_GPU_MB) // max(1, jobs)))
 
 
 def auto_jobs():

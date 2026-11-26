@@ -35,13 +35,7 @@ public final class OrtWordModel implements AutoCloseable {
         if (threads > 0) options.setIntraOpNumThreads(threads);
         // On a computer with an NVIDIA graphics card and the GPU build of the runtime (the desktop
         // runner, e.g. on Colab): run there. Never set on a phone.
-        if (System.getProperty("yarg.cuda") != null) {
-            try {
-                options.addCUDA(0);
-            } catch (OrtException | RuntimeException | LinkageError e) {
-                System.err.println("No GPU for the model (" + e.getMessage() + "): running on the processor");
-            }
-        }
+        Gpu.add(options);
         session = env.createSession(modelPath, options);
         inputName = session.getInputNames().iterator().next();
     }

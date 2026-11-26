@@ -97,6 +97,7 @@ public final class CoreTest {
             {"Seduction", "Usher", "Seduction.mp3", "Usher", "Seduction"},
             {"Hold On - Remastered", "Wilson Phillips", "x.mp3", "Wilson Phillips", "Hold On - Remastered"},
             {"Charlene", "anthonyhamiltonVEVO", "Anthony Hamilton - Charlene.mp3", "Anthony Hamilton", "Charlene"},
+            {"Games", "Chuckii Booker - Topic", "Games.mp3", "Chuckii Booker", "Games"},
         };
         java.util.List<String> known = java.util.Arrays.asList("Rio Da Yung OG", "RMC Mike", "Anita Baker", "OG");
         String[][] inTitle = {

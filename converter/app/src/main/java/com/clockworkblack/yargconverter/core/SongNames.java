@@ -161,6 +161,8 @@ public final class SongNames {
      */
     public static String[] fromTags(String title, String artist, String fileName) {
         String t = title == null ? "" : title.trim(), a = artist == null ? "" : artist.trim();
+        // YouTube's own channels for an artist are called "Artist - Topic"
+        a = a.replaceFirst("(?i)\\s*-\\s*topic\\s*$", "").trim();
         String[] named = fromFileName(fileName);
         int dash = t.indexOf(" - ");
         if (dash > 0) {
