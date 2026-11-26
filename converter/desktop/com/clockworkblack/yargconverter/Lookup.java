@@ -13,13 +13,24 @@ public final class Lookup {
 
     /** @return title, artist, album, year, genre ("" where unknown), or null when nothing matched */
     public static String[] details(String title, String artist) {
-        try {
-            MusicBrainz.Found f = MusicBrainz.find(title, artist);
-            if (f == null) return null;
-            return new String[] {f.title, f.artist, f.album, f.year, f.genre};
-        } catch (Exception e) {
-            return null;
+        // MusicBrainz turns away more than one request a second (error 503), which happens when
+        // several songs are converted at once: wait a little and ask again
+        for (int attempt = 0; attempt < 4; attempt++) {
+            try {
+                MusicBrainz.Found f = MusicBrainz.find(title, artist);
+                if (f == null) return null;
+                return new String[] {f.title, f.artist, f.album, f.year, f.genre};
+            } catch (java.io.IOException e) {
+                try {
+                    Thread.sleep(1500L + (long) (Math.random() * 2500) + 2000L * attempt);
+                } catch (InterruptedException stop) {
+                    return null;
+                }
+            } catch (Exception e) {
+                return null;
+            }
         }
+        return null;
     }
 
     /** What the lyric search found. */
