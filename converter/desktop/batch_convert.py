@@ -11,7 +11,8 @@
 --keep FOLDER keeps every finished song there as soon as it is done, with a record of what is
 done (state.json); run again with the same --keep and only the songs not finished last time are
 converted: new files, ones that failed or found no lyrics, and ones whose file or songs.csv row
-changed. --redo-all converts everything again.
+changed. --redo "charlene, minho" also redoes the songs whose file names contain those words;
+--redo-all converts everything again.
 
 --jobs converts several songs at once (auto: as many as the machine's memory and processors allow,
 at most 4). Speech-to-text runs for one song at a time, so the GPU never holds more than one copy.
@@ -47,6 +48,8 @@ def main():
     ap.add_argument("--keep", help="a folder (on Google Drive, say) that keeps every finished song and the record of "
                     "what is done, so a later run picks up where this one stopped")
     ap.add_argument("--redo-all", action="store_true", help="convert every song again, finished or not")
+    ap.add_argument("--redo", default="", help="songs to convert again even if finished: parts of their file names, "
+                    "separated by commas (any letter case; spaces and underscores alike)")
     args = ap.parse_args()
 
     plan = {}
@@ -84,6 +87,8 @@ def main():
         """Why a song needs converting again, or None when its last conversion is complete."""
         before = state.get(name.lower())
         if args.redo_all: return "all songs redone"
+        squash = lambda t: re.sub(r"[\s_]+", " ", t).strip().lower()
+        if any(w and w in squash(name) for w in (squash(x) for x in args.redo.split(","))): return "asked to redo"
         if not before: return "new"
         if before.get("settings") != settings(name)[3]: return "file or settings changed"
         row = before.get("row", {})
