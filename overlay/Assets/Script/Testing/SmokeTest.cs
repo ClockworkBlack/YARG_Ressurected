@@ -16,7 +16,8 @@
 //      on it (speed, key, section, freestyle),
 //   5. starts the first song found with Guitar Sound On Notes switched on, so the guitar track
 //      is generated on this system (audio: the song only moves forward when it is playing),
-//   6. checks the song time moves on and the bot hits notes,
+//   6. checks the song time moves on and the bot hits notes, with the computer's microphone
+//      open and listening the way a singer's is (on a build machine it hears the song itself),
 //   7. writes result.txt (PASS or FAIL and why) plus screenshots (menu.png, phones.png,
 //      song-setup.png, gameplay.png) to <folder>, and quits with exit code 0 (pass) or 1 (fail).
 // If any step takes too long it fails with the step it was stuck on. Errors the game logged
@@ -33,7 +34,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using YARG.Audio.GuitarVoice;
+using YARG.Audio.Vocals;
 using YARG.Core;
+using YARG.Core.Audio;
 using YARG.Core.Game;
 using YARG.Gameplay;
 using YARG.Menu;
@@ -241,14 +244,25 @@ namespace YARG.Testing
                 }
                 Note($"Guitar Sound On Notes: {tracks} generated track");
 
-                // 6. Play
+                // 6. Play, with the computer's microphone listening (on a build machine it hears
+                // the song itself, through the virtual sound card)
                 _step = "playing the song";
+                var mic = OpenMicrophone(out string micName);
+                int micReadings = 0, micNotes = 0;
                 double startTime = game.SongTime;
                 int startFrame = Time.frameCount;
                 float startReal = Time.realtimeSinceStartup;
                 bool shot = false;
                 while (game != null && game.SongTime - startTime < SONG_SECONDS_TO_PLAY)
                 {
+                    while (mic != null && mic.DequeueOutputFrame(out var frame))
+                    {
+                        micReadings++;
+                        if (!frame.IsHit && frame.Pitch > 0f)
+                        {
+                            micNotes++;
+                        }
+                    }
                     if (SceneManager.GetSceneByName("MenuScene").isLoaded)
                     {
                         Finish(false, "the song stopped and the game went back to the menu");
@@ -265,6 +279,13 @@ namespace YARG.Testing
                         return;
                     }
                     await UniTask.NextFrame();
+                }
+
+                if (mic != null)
+                {
+                    mic.IsRecordingOutput = false;
+                    mic.Dispose();
+                    Note($"Microphone: '{micName}' listened to the song: {micReadings} readings, {micNotes} of them a note");
                 }
 
                 if (game == null)
@@ -645,6 +666,80 @@ namespace YARG.Testing
                     // already closed
                 }
             }
+        }
+
+        #endregion
+
+        #region The microphone
+
+        // Opens a microphone the way a singer's profile does, listening the way a song (and the
+        // mic test) does. What it hears is noted, not judged: a build machine may have no
+        // microphone, or a silent one. Null if there is none to open.
+        private MicDevice OpenMicrophone(out string name)
+        {
+            name = null;
+            List<(int id, string name)> devices;
+            try
+            {
+                devices = GlobalAudioHandler.GetAllInputDevices();
+            }
+            catch (Exception e)
+            {
+                Note("Microphone: the list of microphones could not be read: " + e.Message);
+                return null;
+            }
+
+            if (devices == null || devices.Count == 0)
+            {
+                Note("Microphone: none on this machine (not checked)");
+                return null;
+            }
+
+            // The system's default microphone first; some of what a system lists cannot record
+            // (on Linux, sound plug-ins are listed next to the real devices)
+            var candidates = devices
+                .OrderBy(d => d.name != null && d.name.IndexOf("default", StringComparison.OrdinalIgnoreCase) >= 0 ? 0
+                    : d.name != null && d.name.IndexOf("pulse", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 2)
+                .Take(6)
+                .ToList();
+
+            foreach (var candidate in candidates)
+            {
+                MicDevice mic = null;
+                try
+                {
+                    mic = GlobalAudioHandler.CreateInputDevice(candidate.id, candidate.name);
+                }
+                catch (Exception e)
+                {
+                    Note($"Microphone: '{candidate.name}' could not be opened: {e.Message}");
+                }
+
+                if (mic == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    (mic as IVoiceMic)?.BeginSong(false);
+                    mic.ClearOutputQueue();
+                    mic.IsRecordingOutput = true;
+                }
+                catch (Exception e)
+                {
+                    Note($"Microphone: '{candidate.name}' opened but could not listen: {e.Message}");
+                    mic.Dispose();
+                    return null;
+                }
+
+                name = candidate.name;
+                return mic;
+            }
+
+            Note($"Microphone: none of the {devices.Count} listed could be opened (not checked): " +
+                string.Join(", ", candidates.Select(d => "'" + d.name + "'")));
+            return null;
         }
 
         #endregion
