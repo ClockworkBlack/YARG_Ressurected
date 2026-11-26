@@ -721,7 +721,7 @@ namespace YARG.Testing
             // next to the real devices), so the next one is tried when one will not open.
             static int Rank(string device)
             {
-                string[] wanted = { "blackhole", "cable output", "monitor", "loopback", "default", "pulse" };
+                string[] wanted = { "blackhole", "background music", "cable output", "monitor", "loopback", "default", "pulse" };
                 for (int i = 0; i < wanted.Length; i++)
                 {
                     if (device != null && device.IndexOf(wanted[i], StringComparison.OrdinalIgnoreCase) >= 0)
