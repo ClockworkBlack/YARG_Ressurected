@@ -49,3 +49,9 @@ Whisper (large-v3-turbo): numbers spelled out, lines broken at pauses and senten
 the voice is silent dropped. Expect about 3 words in 10 to be wrong on English rap and R&B (more on
 other languages): good enough to sing along to and to time, not a lyric sheet. `lyrics_wer.py
 real.lrc heard.lrc` measures it on a song whose lyrics are known.
+
+**Song names in other alphabets** ("Girls’ Generation", 소녀시대, Beyoncé) need a UTF-8 locale:
+Java writes file names in the locale's encoding, and under a plain `C` or `POSIX` locale only
+ASCII fits. `batch_convert.py` runs the converter with `LC_ALL=C.UTF-8` by itself; when running
+`ConvertSong` by hand, set it too. Without it the folder gets an ASCII name ("Beyonce - Halo")
+and the converter says so, instead of failing.

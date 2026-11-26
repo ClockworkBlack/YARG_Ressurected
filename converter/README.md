@@ -31,6 +31,15 @@ the one-time download of the instrument-separation model.
    song's Edit page) looks the song up again from whatever is in the boxes, or the file name when
    they are empty: it fills the empty boxes and, where MusicBrainz has something different from
    what is there, asks before replacing it.
+
+   How a song is found: a file without tags is read as "Artist - Title" (a long run of
+   underscores, where a download site dropped letters it could not keep, also parts the two;
+   "MV" and "Official Video" at the end are left off). A title mangled by its file name
+   ("Ascension Dont Ever Wonder") is tried again by its first words, and kept only when the
+   title found starts with them. The album shown is the first official studio album or EP the
+   song came out on, looked for among all the artist's recordings of it, whatever name they are
+   credited by: *Maxwell's Urban Hang Suite* rather than a 1996 radio sampler, and the *Gee* EP
+   (credited to 소녀시대) rather than a later live album.
 3. Lyrics, any of:
    - **Find online** searches [LRCLIB](https://lrclib.net) for time-synced lyrics by title and artist.
    - **Open .lrc** loads a lyrics file you already have.
@@ -361,6 +370,10 @@ The app listens about 86 times a second and works in five steps.
 1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
    seconds so songs that speed up or slow down stay locked. Each beat is nudged onto the nearest
    note start, bass hits and chord changes say which beat is the "one", and it tells 4/4 from 3/4.
+   Most songs today are recorded to a click and never change speed. When the beats found lie on
+   one straight line (or, where the tracker's beats are rough, the rhythm repeats at one length
+   in every part of the song), the whole chart gets that one tempo instead of the tracker's
+   small wobbles, so every measure is the same length and a riff lines up with itself.
 2. **Note starts.** Every moment where new sound arrives is split into *pitched* sound (guitar,
    bass, voice, keys) and *noisy bursts* (drums). Pitched starts count fully; bare drum hits
    count less, so the chart leans towards the instruments rather than the drum kit.
@@ -377,12 +390,39 @@ The app listens about 86 times a second and works in five steps.
    Easy are thinned-out versions of it (eighths, quarters, half notes, adapting to the song's
    speed) on 5, 4 and 3 frets.
 
+   A riff that loops (the same one, two or four measures played over and over, under a whole
+   verse or the whole song) is charted the same every time: once it has come round at least
+   four times in a row it is locked, and the other hearings follow the pattern the most hearings
+   agree on. A bass line is locked only when it keeps coming back unchanged. A measure whose
+   motion and harmony match the one two or four measures before is charted as that one.
+
 The **How many notes** choice (Fewer / Standard / More) moves the bar for how strong a sound
 has to be to become a note.
 
 These are machine-made charts. Made from the full mix, expect them to follow the song's rhythm
 and harmony rather than exactly what the guitarist plays; made from the separated guitar they
 follow the guitar itself, as far as the separation got it right.
+
+### What we learned about the charts
+
+Measured on real songs from their separated instruments ("units like the one before": the
+share of 1-, 2- or 4-measure units charted 75%+ the same as the unit before, on the bar lines):
+
+1. **A loop needs the same tempo all the way.** Usher's *Seduction* (128 BPM, one guitar loop
+   from the first second to the last): 2 of 142 measures charted like the one before at first;
+   pooling measures by their motion as well as their sound, then locking the loop, gave 102;
+   the steady tempo, 110.
+2. **The beat tracker's wobble was the problem in *Gee*.** Girls' Generation's *Gee* is exactly
+   100 BPM; the tracker's beats wandered between 94 and 107, so measures drifted off the bar
+   lines and only 17 were seen to repeat. With one steady tempo (found from the rhythm's repeat
+   length, 99.99 BPM), 45 repeat.
+3. **Bass loops are locked more carefully than guitar ones.** Maxwell's *Ascension*: a 2-measure
+   bass line charted like the one before 19 times in 50 at first, 28 with the loop lock. A
+   stricter rule for bass kept the test songs' bass charts right.
+4. **Still not covered:** *Gee*'s four-measure synth cycles change a little each time round
+   (the same chords match only about half the time), so they are charted as heard rather than
+   as one repeated part. Forcing them together would chart changes that are there as if they
+   were not.
 
 ### How the vocals are made
 

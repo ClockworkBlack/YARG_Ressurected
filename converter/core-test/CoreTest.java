@@ -44,6 +44,7 @@ public final class CoreTest {
         band("Band, busy mix 96 BPM", new SynthBand(44100, 96.0, 0.02, 0.50, 4, 7, true), 4);
         band("Band, waltz 126 BPM", new SynthBand(44100, 126.0, 0.0, 0.30, 3, 7), 3);
         oddInputs();
+        fileNames();
         failures += StemTest.run();
         lyrics();
         failures += VocalTest.run();
@@ -55,6 +56,23 @@ public final class CoreTest {
             System.exit(1);
         }
         System.out.println("All checks passed");
+    }
+
+    /** Artist and title read from names of files without tags. */
+    private static void fileNames() {
+        System.out.println("File names");
+        String[][] cases = {
+            {"Sa Deuce - Body Knockin'.mp3", "Sa Deuce", "Body Knockin'"},
+            {"Girls_Generation______Gee_MV.mp3", "Girls Generation", "Gee"},
+            {"Maxwell_-_Ascension_Dont_Ever_Wonder_Official_4K_Video.mp3", "Maxwell", "Ascension Dont Ever Wonder"},
+            {"Seduction.mp3", "", "Seduction"},
+            {"Artist \u2013 Song Title (Live).flac", "Artist", "Song Title (Live)"},
+            {"Music.mp3", "", "Music"},
+        };
+        for (String[] c : cases) {
+            String[] got = com.clockworkblack.yargconverter.core.SongNames.fromFileName(c[0]);
+            check(got[0].equals(c[1]) && got[1].equals(c[2]), c[0] + " -> \"" + got[0] + "\" / \"" + got[1] + "\"");
+        }
     }
 
     private static void check(boolean ok, String what) {

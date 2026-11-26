@@ -13,6 +13,10 @@ public final class Lookup {
 
     /** @return title, artist, album, year, genre ("" where unknown), or null when nothing matched */
     public static String[] details(String title, String artist) {
+        return detailsOnce(title, artist);
+    }
+
+    private static String[] detailsOnce(String title, String artist) {
         // MusicBrainz turns away more than one request a second (error 503), which happens when
         // several songs are converted at once: wait a little and ask again
         for (int attempt = 0; attempt < 4; attempt++) {
