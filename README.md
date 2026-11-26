@@ -27,6 +27,7 @@ copies `overlay/` on top, builds the native libraries (`android/native/`), then 
 
 `patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 `tests/RemoteServerTests` checks the phone remote server on every build (runs before the Unity build).
+`tests/RemotePageTests` runs the phone page in a real browser (touch, a fake microphone) against that server.
 `tests/GameReaderCheck` runs a song written by the converter through YARG's own song scanner and chart loader.
 `tests/VocalsTests` checks singing: pitch detection, microphone timing and scoring, with the game's own engine.
 
@@ -514,6 +515,9 @@ Notes:
 - Each build makes a new self-signed certificate, so guests see the warning again after an update.
 - Anyone on the same Wi-Fi can open the page, so use it on networks you trust.
 - Wi-Fi adds a little delay. Run YARG's calibration with a phone if timing feels off.
+- A phone that drops off the Wi-Fi joins again by itself as the same player, mid-song too.
+- If a guest has the page open twice (say, the QR code scanned again), the newest tab plays. The other
+  says so at the top; tap there, or go back to that tab, to play from it instead.
 
 ## Deep Music Mode: guitar and bass cover the whole song
 

@@ -66,6 +66,56 @@ namespace RemoteServerTests
             Console.WriteLine("ok   events: " + string.Join(", ", expected));
         }
 
+        // The next event, which must come within 5 seconds
+        private static string Take(Handler handler)
+        {
+            if (!handler.Events.TryTake(out var ev, TimeSpan.FromSeconds(5)))
+            {
+                throw new Exception("FAILED: timed out waiting for an event");
+            }
+            return ev;
+        }
+
+        private static void ExpectInOrder(Handler handler, params string[] expected)
+        {
+            foreach (var want in expected)
+            {
+                var ev = Take(handler);
+                if (ev != want)
+                {
+                    throw new Exception($"FAILED: expected '{want}' next, got '{ev}' (wanted, in order: {string.Join(", ", expected)})");
+                }
+            }
+            _checks++;
+            Console.WriteLine("ok   events in order: " + string.Join(", ", expected));
+        }
+
+        // True once the server has ended the connection (with or without a closing handshake)
+        private static async Task<bool> ClosedByServer(ClientWebSocket ws)
+        {
+            var buffer = new byte[256];
+            using var cts = new CancellationTokenSource(5000);
+            try
+            {
+                while (true)
+                {
+                    var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (WebSocketException)
+            {
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+        }
+
         private static Task SendText(ClientWebSocket ws, string text) =>
             ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(text)), WebSocketMessageType.Text, true, CancellationToken.None);
 
@@ -190,11 +240,23 @@ namespace RemoteServerTests
             Check(server.ClientCount == 2, "two phones joined (" + server.ClientCount + ")");
             early.Abort();
 
-            // Alice's phone reconnects: keeps number 1, the old socket is dropped
+            // Alice's phone reconnects: keeps number 1, the old socket is dropped. The game hears of
+            // the old connection closing first, so the phone's controller is handed over in order
+            // (the other way round, mid-song, the player was left without a controller).
             var alice2 = await Connect($"wss://127.0.0.1:{port}/ws");
             await SendText(alice2, "hello\nkey-1\nAlice");
             Check(await ReceiveText(alice2) == "welcome\n1\n1\n1\nAlice", "reconnect keeps player number");
-            Expect(handler, "hello 1 Alice https", "closed 1");
+            ExpectInOrder(handler, "closed 1", "hello 1 Alice https");
+
+            // The old connection is told why (so a second tab of the same phone stays off instead of
+            // taking the connection back), anything more from it is ignored, and then it is closed
+            Check(await ReceiveText(alice) == "replaced", "old connection is told it was replaced");
+            await alice.SendAsync(new ArraySegment<byte>(new byte[] { 1, 1, 0, 0, 0, 0 }), WebSocketMessageType.Binary, true, CancellationToken.None);
+            await SendText(alice, "mic\n48000");
+            await Task.Delay(300);
+            Check(handler.Events.Count == 0, "a replaced connection is not heard any more");
+            Check(server.ClientCount == 2, "a replaced connection is not counted (" + server.ClientCount + ")");
+            Check(await ClosedByServer(alice), "old connection is closed");
 
             // Phone without a name gets a default one
             var nameless = await Connect($"ws://127.0.0.1:{port}/ws");
@@ -209,6 +271,36 @@ namespace RemoteServerTests
             // Abrupt disconnect
             nameless.Abort();
             Expect(handler, "closed 3");
+
+            // Reconnecting while the old connection is still open, many times: always "closed" for
+            // the old connection, then "hello" for the new one, and each connection's close only once
+            // (this came out the wrong way round about half the time)
+            const int rounds = 30;
+            int inOrder = 0;
+            for (int i = 0; i < rounds; i++)
+            {
+                var first = await Connect($"ws://127.0.0.1:{port}/ws");
+                await SendText(first, $"hello\nround-{i}\nRay");
+                await ReceiveText(first);
+                var joined = Take(handler);
+                int n = int.Parse(joined.Split(' ')[1]);
+                var again = await Connect($"ws://127.0.0.1:{port}/ws");
+                await SendText(again, $"hello\nround-{i}\nRay");
+                await ReceiveText(again);
+                if (Take(handler) == $"closed {n}" && Take(handler) == $"hello {n} Ray http")
+                {
+                    inOrder++;
+                }
+                first.Abort();
+                again.Abort();
+                if (Take(handler) != $"closed {n}")
+                {
+                    throw new Exception("FAILED: the new connection's close was not reported");
+                }
+            }
+            await Task.Delay(300);
+            Check(inOrder == rounds && handler.Events.Count == 0,
+                $"reconnects are announced in order, each close once ({inOrder} of {rounds})");
 
             // QR codes: expected modules come from a reference encoder whose output a real QR
             // decoder (OpenCV) read back correctly.

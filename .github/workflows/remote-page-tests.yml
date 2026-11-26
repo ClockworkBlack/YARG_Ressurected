@@ -1,0 +1,47 @@
+name: Phone page tests
+
+# Friends' phones as guitars and mics: the phone page (remote.html) in a real browser (Chromium,
+# with touch and a fake microphone) against the real phone server. Joining, touch timing, chords,
+# frets, whammy, menu buttons, singing into the phone, reconnecting, the same phone in two tabs.
+# A separate workflow on purpose: the APK builds don't wait for it.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "overlay/Assets/Resources/YargRemote/**"
+      - "overlay/Assets/Script/Remote/RemoteServer.cs"
+      - "overlay/Assets/Script/Remote/RemoteTiming.cs"
+      - "tests/RemotePageTests/**"
+      - "android/remote/**"
+      - ".github/workflows/remote-page-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-page-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  remote-page-tests:
+    name: Phone page in a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install the browser
+        working-directory: tests/RemotePageTests
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Make a test certificate
+        run: bash android/remote/make-cert.sh "$RUNNER_TEMP/cert.bytes"
+      - name: Run tests
+        run: node tests/RemotePageTests/test.js "$RUNNER_TEMP/cert.bytes"
