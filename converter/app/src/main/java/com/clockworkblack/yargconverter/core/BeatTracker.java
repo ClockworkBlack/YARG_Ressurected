@@ -408,4 +408,218 @@ public final class BeatTracker {
         double shift = 0.5 * (a - c) / denom;
         return t + Math.max(-0.5, Math.min(0.5, shift));
     }
+
+    /** Beats laid on one steady tempo, and the index of the first downbeat among them. */
+    public static final class Steady {
+        public final double[] beats;
+        public final int firstDownbeat;
+        public final double bpm;
+        /** How far the beats found were from the steady grid (root mean square, seconds). */
+        public final double rms;
+
+        Steady(double[] beats, int firstDownbeat, double bpm, double rms) {
+            this.beats = beats;
+            this.firstDownbeat = firstDownbeat;
+            this.bpm = bpm;
+            this.rms = rms;
+        }
+    }
+
+    /** Beats this close to one steady tempo (root mean square) are that tempo, with jitter. */
+    static boolean DEBUG = Boolean.getBoolean("yarg.debugTempo");
+    static double STEADY_RMS = Double.parseDouble(System.getProperty("yarg.steadyRms", "0.022"));
+
+    /**
+     * Studio recordings are mostly played to a click: one tempo from start to end. Beats found in
+     * the audio wobble around it by a few hundredths of a second, and that wobble would become a
+     * tempo change every few beats (Gee, a steady 100 BPM, came out as 16 changes between 94
+     * and 107), so measures drift against the music and repeats stop lining up. When the beats
+     * fit one tempo closely, they are replaced by that tempo's grid.
+     *
+     * @return the steady grid, or null when the tempo really moves (live playing, a slow-down)
+     */
+    public static Steady steady(double[] beats, int firstDownbeat, double duration) {
+        int n = beats.length;
+        if (n < 16 || STEADY_RMS <= 0) return null;
+        // The middle beat length, then each beat's place on that grid (a missed or doubled beat is skipped over)
+        double[] gaps = new double[n - 2];
+        for (int i = 2; i < n; i++) gaps[i - 2] = beats[i] - beats[i - 1];
+        double[] sorted = gaps.clone();
+        java.util.Arrays.sort(sorted);
+        double period = sorted[sorted.length / 2];
+        if (period <= 0.2 || period >= 2.0) return null;
+        double origin = beats[1];
+        double[] k = new double[n - 1], t = new double[n - 1];
+        // Counted from beat to beat, so a slightly wrong period cannot add up over the song
+        k[0] = 0;
+        t[0] = beats[1];
+        for (int i = 2; i < n; i++) {
+            k[i - 1] = k[i - 2] + Math.max(1, Math.round((beats[i] - beats[i - 1]) / period));
+            t[i - 1] = beats[i];
+        }
+        // Least squares line through (k, t), twice: the second time without beats far off the first line
+        boolean[] use = new boolean[k.length];
+        java.util.Arrays.fill(use, true);
+        double a = 0, b = period;
+        for (int pass = 0; pass < 2; pass++) {
+            double sk = 0, st = 0, skk = 0, skt = 0;
+            int m = 0;
+            for (int i = 0; i < k.length; i++) {
+                if (!use[i]) continue;
+                sk += k[i]; st += t[i]; skk += k[i] * k[i]; skt += k[i] * t[i]; m++;
+            }
+            double den = m * skk - sk * sk;
+            if (m < 12 || den == 0) return null;
+            b = (m * skt - sk * st) / den;
+            a = (st - b * sk) / m;
+            if (pass == 0) {
+                int off = 0;
+                for (int i = 0; i < k.length; i++) {
+                    if (Math.abs(t[i] - (a + b * k[i])) > 0.1) { use[i] = false; off++; }
+                }
+                // Many beats far from the line: the tempo really changes
+                if (DEBUG) System.err.printf("steady: period %.4f, %d of %d beats off the line%n", period, off, k.length);
+                if (off > k.length / 10) return null;
+            }
+        }
+        double sq = 0;
+        int m = 0;
+        for (int i = 0; i < k.length; i++) {
+            if (!use[i]) continue;
+            double r = t[i] - (a + b * k[i]);
+            sq += r * r;
+            m++;
+        }
+        double rms = Math.sqrt(sq / m);
+        if (DEBUG) System.err.printf("steady: rms %.4f s%n", rms);
+        if (rms > STEADY_RMS) return null;
+        // Also no slow drift: the first and last thirds alone must agree on the tempo
+        double first = slope(k, t, use, 0, k.length / 3), last = slope(k, t, use, 2 * k.length / 3, k.length);
+        if (DEBUG) System.err.printf("steady: first third %.5f, last third %.5f, differ %.4f%n", first, last, Math.abs(first - last) / b);
+        if (Double.isNaN(first) || Double.isNaN(last) || Math.abs(first - last) / b > 0.004) return null;
+
+        // The grid: beat 0 stays at time zero (the lead-in), then every beat from the first one
+        // after zero to past the end of the song
+        long kFirst = (long) Math.ceil((0.01 - a) / b);
+        long kLast = (long) Math.ceil((duration + 2 * b - a) / b);
+        int count = (int) (kLast - kFirst + 1);
+        double[] grid = new double[count + 1];
+        grid[0] = 0;
+        for (int i = 0; i < count; i++) grid[i + 1] = a + (kFirst + i) * b;
+        // The downbeat found before, carried to the nearest beat of the grid
+        double down = beats[Math.max(1, Math.min(n - 1, firstDownbeat))];
+        int downIndex = (int) Math.round((down - a) / b - kFirst) + 1;
+        downIndex = Math.max(1, Math.min(count, downIndex));
+        return new Steady(grid, downIndex, 60.0 / b, rms);
+    }
+
+    /**
+     * When the beats found do not fit one tempo, the audio may still keep one: Gee, a steady
+     * 100 BPM, gave beats half of which were a tenth of a second or more off. Then the tempo is
+     * measured straight from the rhythm of the whole song (how its note starts repeat), section
+     * by section; if every section agrees, a grid at that tempo, set where the note starts fall,
+     * replaces the beats.
+     *
+     * @param near the tempo the beat tracker found (seconds per beat): the answer must be close,
+     *             so that double or half the tempo is never chosen
+     */
+    public static Steady steadyFromRhythm(Features f, double near, double[] beats, int firstDownbeat) {
+        float[] flux = f.flux;
+        if (flux == null || flux.length < 200 || near <= 0) return null;
+        double fps = f.fps;
+        int n = flux.length;
+        double[] x = new double[n];
+        double mean = 0;
+        for (int i = 0; i < n; i++) mean += flux[i];
+        mean /= n;
+        for (int i = 0; i < n; i++) x[i] = Math.max(0, flux[i] - mean);
+        int lo = (int) Math.floor(near * 0.92 * fps), hi = (int) Math.ceil(near * 1.08 * fps);
+        double global = bestLag(x, 0, n, lo, hi);
+        if (Double.isNaN(global)) return null;
+        // Every 20-second section must find the same beat length
+        int window = (int) (20 * fps);
+        int sections = 0, agree = 0;
+        for (int from = 0; from + window <= n; from += window) {
+            double lag = bestLag(x, from, from + window, lo, hi);
+            if (Double.isNaN(lag)) continue;
+            sections++;
+            if (Math.abs(lag - global) / global <= 0.006) agree++;
+        }
+        if (DEBUG) System.err.printf("rhythm: beat %.4f s, %d of %d sections agree%n", global / fps, agree, sections);
+        if (sections < 4 || agree < sections) return null;
+        double period = global / fps;
+        // Where the grid sits: the offset at which the note starts land on beats the most
+        int steps = 64;
+        double bestPhase = 0, bestSum = -1;
+        for (int p = 0; p < steps; p++) {
+            double phase = period * p / steps, sum = 0;
+            for (double t = phase; t < f.duration; t += period) {
+                int fr = f.frameAt(t);
+                if (fr >= 0 && fr < n) sum += x[fr];
+            }
+            if (sum > bestSum) {
+                bestSum = sum;
+                bestPhase = phase;
+            }
+        }
+        // Fine tuning: the strongest note start near each grid beat, and the straight line through them
+        for (int pass = 0; pass < 2; pass++) {
+            double sk = 0, st = 0, skk = 0, skt = 0, sw = 0;
+            int kk = 0;
+            for (double t = bestPhase; t < f.duration; t += period, kk++) {
+                int c = f.frameAt(t), reach = (int) Math.round(0.06 * fps);
+                int bestF = -1;
+                for (int fr = Math.max(0, c - reach); fr <= Math.min(n - 1, c + reach); fr++) if (bestF < 0 || x[fr] > x[bestF]) bestF = fr;
+                if (bestF < 0 || x[bestF] <= 0) continue;
+                double w = x[bestF], tt = f.timeOf(bestF);
+                sw += w; sk += w * kk; st += w * tt; skk += w * kk * kk; skt += w * kk * tt;
+            }
+            double den = sw * skk - sk * sk;
+            if (sw <= 0 || den == 0) break;
+            double b = (sw * skt - sk * st) / den, a0 = (st - b * sk) / sw;
+            if (Math.abs(b - period) / period > 0.01) break;
+            period = b;
+            bestPhase = a0;
+            while (bestPhase < 0) bestPhase += period;
+            while (bestPhase >= period) bestPhase -= period;
+        }
+        if (DEBUG) System.err.printf("rhythm: tuned beat %.5f s (%.3f BPM)%n", period, 60 / period);
+        int count = (int) Math.ceil((f.duration + 2 * period - bestPhase) / period);
+        double[] grid = new double[count + 1];
+        grid[0] = 0;
+        for (int i = 0; i < count; i++) grid[i + 1] = bestPhase + i * period + (bestPhase < 0.01 && i == 0 ? period : 0) * 0;
+        if (grid[1] < 0.01) for (int i = 1; i <= count; i++) grid[i] += period;
+        double down = beats[Math.max(1, Math.min(beats.length - 1, firstDownbeat))];
+        int downIndex = (int) Math.round((down - grid[1]) / period) + 1;
+        downIndex = Math.max(1, Math.min(count, downIndex));
+        return new Steady(grid, downIndex, 60.0 / period, 0);
+    }
+
+    /** The lag (frames, with fractions) in [lo, hi] at which x[from..to) repeats best, or NaN. */
+    private static double bestLag(double[] x, int from, int to, int lo, int hi) {
+        if (to - from < 4 * hi) return Double.NaN;
+        double[] ac = new double[hi + 2];
+        for (int lag = Math.max(1, lo - 1); lag <= hi + 1; lag++) {
+            double sum = 0;
+            for (int i = from; i + lag < to; i++) sum += x[i] * x[i + lag];
+            ac[lag] = sum;
+        }
+        int best = -1;
+        for (int lag = lo; lag <= hi; lag++) if (best < 0 || ac[lag] > ac[best]) best = lag;
+        if (best <= lo || best >= hi) return Double.NaN;
+        double y0 = ac[best - 1], y1 = ac[best], y2 = ac[best + 1];
+        double den = y0 - 2 * y1 + y2;
+        return best + (den == 0 ? 0 : 0.5 * (y0 - y2) / den);
+    }
+
+    private static double slope(double[] k, double[] t, boolean[] use, int from, int to) {
+        double sk = 0, st = 0, skk = 0, skt = 0;
+        int m = 0;
+        for (int i = from; i < to; i++) {
+            if (!use[i]) continue;
+            sk += k[i]; st += t[i]; skk += k[i] * k[i]; skt += k[i] * t[i]; m++;
+        }
+        double den = m * skk - sk * sk;
+        return m < 6 || den == 0 ? Double.NaN : (m * skt - sk * st) / den;
+    }
 }

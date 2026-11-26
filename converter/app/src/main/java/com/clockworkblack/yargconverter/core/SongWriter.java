@@ -33,6 +33,8 @@ public final class SongWriter {
         public int vocalTier = -1;
         /** The lyric lines as charted, carrying who sings each (including a guess made from the voices). */
         public List<Lrc.Line> lyricsOut = new ArrayList<>();
+        /** True when the song was found to keep one tempo throughout and is charted at it. */
+        public boolean steadyTempo;
         /** True when the lyrics were re-timed to fit this audio ({@link #lyricsOut} has the new times). */
         public boolean lyricsMoved;
         /** The word-by-word timing in full (for reports and checks); null when it was not used. */
@@ -131,7 +133,16 @@ public final class SongWriter {
             strengths[i] = onsets.get(i).strength;
         }
         double[] aligned = BeatTracker.alignToOnsets(beats.beats, times, strengths);
-        r.tempo = TempoMap.fromBeats(aligned, beats.firstDownbeat, beats.beatsPerMeasure);
+        // A song played to one tempo throughout is charted at that tempo, not at every wobble of the beats found
+        BeatTracker.Steady steady = BeatTracker.steady(aligned, beats.firstDownbeat, f.duration);
+        if (steady == null) steady = BeatTracker.steadyFromRhythm(f, 60.0 / Math.max(30, beats.bpm), aligned, beats.firstDownbeat);
+        if (steady != null) {
+            r.tempo = TempoMap.fromBeats(steady.beats, steady.firstDownbeat, beats.beatsPerMeasure);
+            r.bpm = steady.bpm;
+            r.steadyTempo = true;
+        } else {
+            r.tempo = TempoMap.fromBeats(aligned, beats.firstDownbeat, beats.beatsPerMeasure);
+        }
         r.chart = GuitarCharter.build(f, onsets, r.tempo, r.bpm, options);
         if (stems != null) chartFromStems(r, stems, options);
         if (lyrics != null && !lyrics.isEmpty()) {

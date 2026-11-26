@@ -114,6 +114,8 @@ public final class GuitarCharter {
         public int repeatedMeasures;
         /** Measures charted as a loop heard under other parts (see lockLoops). */
         public int loopMeasures;
+        /** Measures charted like the one two or four before them (see linkCycles). */
+        public int cycleMeasures;
         /** Repeat family of each measure (-1 for none), for checking how a song was understood. */
         public int[] measureFamily = new int[0];
     }
@@ -332,6 +334,8 @@ public final class GuitarCharter {
         long measureTicks;
         /** Measures given to a loop by {@link #lockLoops}. */
         int loopMeasures;
+        /** Measures linked to the one a cycle before them by {@link #linkCycles}. */
+        int cycleMeasures;
         /** Repeat family of each measure (index = measure number), -1 for none. */
         int[] family;
         int[] familySize;
@@ -475,6 +479,7 @@ public final class GuitarCharter {
         chart.repeatedMeasures = repeated;
         chart.measureFamily = cx.family.clone();
         chart.loopMeasures = cx.loopMeasures;
+        chart.cycleMeasures = cx.cycleMeasures;
 
         // Pooled strength of every slot of every family.
         int families = cx.familySize.length;
@@ -620,7 +625,35 @@ public final class GuitarCharter {
         // rhythm and key and still play other notes, which the lock would then chart wrongly
         // A bass line gets the lock too, on stricter terms (see lockLoops): it can share a loop's
         // rhythm and key and still play other notes
+        if (cx.chords && PERIOD_MIN > 0) linkCycles(cx, motion, harmony, measures);
         if (LOOP_PRESENCE > 0 && (cx.chords || BASS_LOCK)) lockLoops(cx, motion, measures, steps);
+    }
+
+    static double PERIOD_MIN = Double.parseDouble(System.getProperty("yarg.periodMin", "0.80"));
+
+    /**
+     * Songs built on two- or four-bar cycles (a chord progression going round, as in most pop):
+     * a measure that sounds like the one two or four measures before it, in how its notes move
+     * and in its harmony, plays the same part. Families are otherwise only compared with their
+     * first measure, which misses a cycle whose measures each drift a little from that first one.
+     */
+    private static void linkCycles(Context cx, float[][] motion, float[][] harmony, int measures) {
+        int linked = 0;
+        for (int m = 2; m < measures; m++) {
+            for (int length : new int[] {4, 2}) {
+                int back = m - length;
+                if (back < 0 || cx.family[back] < 0 || cx.family[m] == cx.family[back]) continue;
+                double mo = Features.cosine(motion[m], motion[back]);
+                double h = Features.cosine(harmony[m], harmony[back]);
+                if (mo < PERIOD_MIN || h < 0.85) continue;
+                if (cx.family[m] >= 0) cx.familySize[cx.family[m]]--;
+                cx.family[m] = cx.family[back];
+                cx.familySize[cx.family[m]]++;
+                linked++;
+                break;
+            }
+        }
+        cx.cycleMeasures = linked;
     }
 
     /** A loop: a family that plays at least this many measures in a row. */
