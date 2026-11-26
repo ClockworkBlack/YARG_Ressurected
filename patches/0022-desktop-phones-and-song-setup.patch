@@ -1,0 +1,225 @@
+diff --git a/Assets/Script/Audio/Bass/BassMicDevice.cs b/Assets/Script/Audio/Bass/BassMicDevice.cs
+index ae5a1ce..b88249f 100644
+--- a/Assets/Script/Audio/Bass/BassMicDevice.cs
++++ b/Assets/Script/Audio/Bass/BassMicDevice.cs
+@@ -133,6 +133,9 @@ namespace YARG.Audio.BASS
+ #nullable disable
+         {
+             var devPeriod = Bass.GetConfig(Configuration.DevicePeriod);
++            // YARG Resurrected: the sound library's reason is kept, so the error below can say
++            // why a microphone would not start (it was only in the trace log, which is off)
++            var reason = Errors.OK;
+             foreach (int sampleRate in _sampleRates)
+             {
+ #if UNITY_ANDROID
+@@ -142,7 +145,8 @@ namespace YARG.Audio.BASS
+ #endif
+                 if (handle == 0)
+                 {
+-                    YargLogger.LogFormatTrace("Failed to start clean recording at {0} Hz: {1}!", sampleRate, Bass.LastError);
++                    reason = Bass.LastError;
++                    YargLogger.LogFormatTrace("Failed to start clean recording at {0} Hz: {1}!", sampleRate, reason);
+                     continue;
+                 }
+ 
+@@ -158,7 +162,11 @@ namespace YARG.Audio.BASS
+                 return new RecordingHandle(handle, processedHandle, devPeriod, sampleRate);
+             }
+ 
+-            YargLogger.LogError("Failed to start recording at any supported sample rate!");
++            // (49 is the library's "access denied", which this version of its C# wrapper has no name for)
++            string why = (int) reason == 49
++                ? "access to the microphone was denied; allow microphone access for desktop apps in the system's privacy settings"
++                : reason.ToString();
++            YargLogger.LogFormatError("Failed to start recording at any supported sample rate! (The sound library says: {0})", why);
+             return null;
+         }
+ 
+@@ -458,7 +466,40 @@ namespace YARG.Audio.BASS
+         }
+ #endif
+ 
++        // YARG Resurrected: set once an error in the recording has been logged, so a fault that
++        // comes back with every buffer does not fill the log
++        private bool _recordErrorLogged;
++
+         private bool ProcessRecordData(int handle, IntPtr buffer, int length, IntPtr user)
++        {
++            // YARG Resurrected: the sound library can call this before Create() has finished
++            // setting the microphone up. On a Mac the first call came before the monitor stream
++            // existed, and the exception that followed stopped the recording: the microphone was
++            // then silent until the game was restarted. There is nothing to do with the sound
++            // yet, but the recording must go on.
++            if (_monitorHandle == null || _recordHandle == null)
++            {
++                return true;
++            }
++
++            try
++            {
++                return ProcessRecordedSound(buffer, length);
++            }
++            catch (Exception e)
++            {
++                // Returning false, or letting the exception out, would stop the recording for
++                // good; one bad buffer should not take the microphone away for the session.
++                if (!_recordErrorLogged)
++                {
++                    _recordErrorLogged = true;
++                    YargLogger.LogException(e, "Error while listening to the microphone");
++                }
++                return true;
++            }
++        }
++
++        private bool ProcessRecordedSound(IntPtr buffer, int length)
+         {
+             // Copies the data from the recording buffer to the monitor playback buffer.
+             if (Bass.StreamPutData(_monitorHandle.Handle, buffer, length) == -1)
+@@ -616,8 +657,12 @@ namespace YARG.Audio.BASS
+ 
+         protected override void DisposeUnmanagedResources()
+         {
+-            _monitorHandle.Dispose();
++            // YARG Resurrected: the recording is stopped first, then the stream it plays into is
++            // closed. The other way round, a buffer that arrived in between was pushed into a
++            // closed stream, and "Error pushing data to monitor stream: Handle" was logged
++            // (seen on a Mac when a microphone was removed).
+             _recordHandle.Dispose();
++            _monitorHandle.Dispose();
+             Bass.CurrentRecordingDevice = _deviceId;
+             Bass.RecordFree();
+ #if UNITY_ANDROID
+diff --git a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
+index 1e8e34c..34471ab 100644
+--- a/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
++++ b/Assets/Script/Input/Bindings/BindingCollection.Defaults.cs
+@@ -13,6 +13,11 @@ namespace YARG.Input
+             return device switch
+             {
+                 Keyboard keyboard => SetDefaultBindings(keyboard),
++                // A phone joined over Wi-Fi always sends the guitar layout (frets on A/B/Y/X/LB,
++                // strum on the D-pad), whichever layout is chosen for real gamepads. Without this,
++                // a phone added to a profile by hand on a computer got the gamepad's buttons.
++                Gamepad gamepad when YARG.Remote.RemotePlayManager.IsRemoteDevice(gamepad)
++                    => SetDefaultBindings(gamepad, GamepadBindingMode.RB4InstrumentMapper_Guitar),
+                 Gamepad gamepad => SetDefaultBindings(gamepad, ControllerLayout.GuitarBindingMode),
+ 
+                 FiveFretGuitar guitar => SetDefaultBindings(guitar),
+diff --git a/Assets/Script/Input/InputManager.cs b/Assets/Script/Input/InputManager.cs
+index ba89bbc..2700e65 100644
+--- a/Assets/Script/Input/InputManager.cs
++++ b/Assets/Script/Input/InputManager.cs
+@@ -205,6 +205,12 @@ namespace YARG.Input
+ 
+         private static void OnPlayerBindingDeviceAdded(InputDevice device)
+         {
++            // YARG Resurrected: a device given to a player who is already in (a phone that joins,
++            // or Add Device on a connected profile) is that player's from now on. It was only
++            // noted for devices the player came in with, so "Player not registered with device"
++            // was logged as an error when such a player left.
++            _registeredDevices.Add(device);
++
+             if (HasProfileWithKeyboard)
+             {
+                 _defaultKeyboardMenuBindings.Disable();
+@@ -213,6 +219,8 @@ namespace YARG.Input
+ 
+         private static void OnPlayerBindingDeviceRemoved(InputDevice device)
+         {
++            _registeredDevices.Remove(device);
++
+             if (!HasProfileWithKeyboard)
+             {
+                 _defaultKeyboardMenuBindings.Enable();
+diff --git a/Assets/Script/Integration/Data Stream/DataStreamController.cs b/Assets/Script/Integration/Data Stream/DataStreamController.cs
+index be00262..fae9505 100644
+--- a/Assets/Script/Integration/Data Stream/DataStreamController.cs	
++++ b/Assets/Script/Integration/Data Stream/DataStreamController.cs	
+@@ -305,6 +305,10 @@ namespace YARG.Integration
+             {
+                 StopSendThread();
+                 _sendClient?.Dispose();
++                // YARG Resurrected: forget the sender once it is closed. It was kept, so closing
++                // the game tried to send a last packet through it, and "Error sending UDP packet"
++                // was logged on every exit with this feature off (which it is by default).
++                _sendClient = null;
+                 ClearInstrumentQueues();
+             }
+         }
+@@ -506,7 +510,7 @@ namespace YARG.Integration
+                 _writer.Write((byte) message.CameraCutPriority);
+                 _writer.Write((byte) message.CameraCutSubject);
+ 
+-                _sendClient.Send(_ms.GetBuffer(), (int) _ms.Position);
++                _sendClient?.Send(_ms.GetBuffer(), (int) _ms.Position);
+             }
+             catch (Exception ex)
+             {
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index bb97bf9..7f89a40 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -139,8 +139,9 @@ namespace YARG.Menu.DifficultySelect
+                 // Left / right (D-pad or a guitar's joystick): song speed, 5% at a time
+                 new NavigationScheme.Entry(MenuAction.Left, "Menu.Common.Left", () => NudgeSpeed(-0.05f), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Right, "Menu.Common.Right", () => NudgeSpeed(0.05f), hide: true),
+-#if UNITY_ANDROID && !UNITY_EDITOR
+-                // The two bars along the bottom (Song Setup, Venue) were for touch only
++#if (UNITY_ANDROID || UNITY_STANDALONE) && !UNITY_EDITOR
++                // The two bars along the bottom (Song Setup, Venue) were for touch only.
++                // (Song Setup is on the phone and on the Windows, Mac and Linux builds.)
+                 new NavigationScheme.Entry(MenuAction.Yellow, "Menu.Common.SongSetup",
+                     () => YARG.Menu.SongSetup.SongSetupPanel.OpenFromMenu()),
+ #endif
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index 23fd7f5..f575908 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -58,7 +58,8 @@ namespace YARG.Menu.ProfileList
+                 new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfile),
+                 // The MIC TEST and PHONES bars on this screen were for touch only
+                 new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.MicTest", () => YARG.Audio.MicTest.OpenFromMenu()),
+-#if UNITY_ANDROID && !UNITY_EDITOR
++#if (UNITY_ANDROID || UNITY_STANDALONE) && !UNITY_EDITOR
++                // (Phones join the Windows, Mac and Linux builds too)
+                 new NavigationScheme.Entry(MenuAction.Orange, "Menu.Common.Phones", () => YARG.Remote.RemotePlayManager.OpenPhones()),
+ #endif
+             }, true));
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 396a519..fb8fb95 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -299,7 +299,12 @@ namespace YARG.Menu.ProfileList
+                         YargLogger.LogFormatWarning("Failed to initialize microphone `{0}`.", microphone.name);
+                         DialogManager.Instance.ClearDialog();
+                         DialogManager.Instance.ShowMessage("Microphone Error",
+-                            $"Failed to initialize microphone:\n\n{microphone.name}\n\nPlease try again or choose a different microphone.");
++                            $"Failed to initialize microphone:\n\n{microphone.name}\n\nPlease try again or choose a different microphone." +
++                            // (On a computer the usual reason is the system's own privacy switch)
++                            (Application.isMobilePlatform ? "" :
++                                "\n\nIf no microphone works, check that microphone access is allowed in the system's privacy settings " +
++                                "(Windows: Settings > Privacy & security > Microphone, with desktop apps allowed; " +
++                                "macOS: System Settings > Privacy & Security > Microphone)."));
+                         return;
+                     }
+ 
+diff --git a/Assets/Script/Persistent/GlobalVariables.cs b/Assets/Script/Persistent/GlobalVariables.cs
+index 5f180d5..135ed08 100644
+--- a/Assets/Script/Persistent/GlobalVariables.cs
++++ b/Assets/Script/Persistent/GlobalVariables.cs
+@@ -108,6 +108,14 @@ namespace YARG
+ 
+         private void OnApplicationFocus(bool hasFocus)
+         {
++            // YARG Resurrected: on a computer this is also called while the game is still
++            // starting (a window opened behind another one), before the settings are loaded.
++            // That was an error on every such start.
++            if (SettingsManager.Settings == null)
++            {
++                return;
++            }
++
+             if (!hasFocus)
+             {
+                 if (SettingsManager.Settings.MuteOnFocusLoss.Value && !_mutedFromFocusLoss)

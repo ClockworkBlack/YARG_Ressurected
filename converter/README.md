@@ -1,5 +1,8 @@
 # YARG Converter
 
+**Convert a whole folder of songs on a free Google GPU:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ClockworkBlack/YARG_Resurrected/blob/ccr-7c39c845-6cqp27/converter/colab/YARG_batch_convert.ipynb)
+(the notebook in `colab/`: songs from `My Drive/YARG/input`, finished songs zipped into `My Drive/YARG/output`).
+
 Companion Android app for YARG Resurrected. Pick an **MP3, WAV or FLAC** and it writes a
 ready-to-play song folder into `Internal storage/YARG/songs/Converted/<Artist - Title>/`:
 
@@ -7,7 +10,7 @@ ready-to-play song folder into `Internal storage/YARG/songs/Converted/<Artist - 
 |---|---|
 | `notes.mid` | Tempo map, 5-fret guitar and bass on Easy / Medium / Hard / Expert, Star Power, practice sections, and a **vocals part** made from the lyrics: a note under every word, for one singer or two |
 | `song.ini` | Title, artist, album, year, genre, length, preview point, difficulty rating |
-| `song.mp3` / `.wav` / `.ogg` / `.opus` | The audio. MP3, WAV, OGG and OPUS are copied as they are; FLAC and anything else is saved as WAV |
+| `song.mp3` / `.wav` / `.ogg` / `.opus` | The audio. MP3, WAV, OGG and OPUS are copied as they are (on a computer or in Colab, without any cover-art stream); FLAC and anything else is saved as WAV |
 | `album.jpg` / `.png` | Cover art, when the audio file has one embedded |
 | `lyrics.lrc` | The timed lyrics that were used, with who sings each line (handy if you convert again) |
 | `vocal_parts.txt` | Only for a song with two singers: their names, shown in the game where a player picks whose lines to sing |
@@ -251,7 +254,7 @@ list). Normal mode cannot listen to voices: there, only the lyrics' own headers 
 
 ## Several songs at once
 
-Under **Several songs at once**, press **Choose files (up to 33)** and pick as many songs as you
+Under **Several songs at once**, press **Choose files (up to 60)** and pick as many songs as you
 like in the file picker (long-press the first, then tap the others). They are listed with the
 title and artist from each file's tags, or from a file name like `Artist - Title.mp3`; take any
 out with **Remove**. Each song also has a button with its way of converting: it starts as the
@@ -262,7 +265,7 @@ is looked up on LRCLIB by its title, artist and length, and gets a vocals part w
 are found there.
 
 **Convert all** converts them one after another, each its own way, with the number of notes
-chosen in step 3, in the background with a notification ("Song 7 of 33: ..."). A song that fails does not
+chosen in step 3, in the background with a notification ("Song 7 of 50: ..."). A song that fails does not
 stop the rest. At the end a summary lists which songs were converted (and whether lyrics were
 found) and which were not, and why; those stay in the list to try again. Then scan songs in YARG
 once for all of them.
@@ -281,6 +284,11 @@ sync** (it plays that song), and marked with **Who sings what**. A song's row sh
 lyrics are ready or still need times. Lyrics without times give that song no vocals, and the
 summary says so.
 
+
+Each song is saved into `YARG/songs/Converted` as soon as it is done. If Android closes the app part way
+through a long list, open it again: the songs still to do are back in the list (the ones already
+converted are taken off), so press **Convert all** to carry on. Picking a file the app has converted
+before leaves it out of the list, and asks whether to add it anyway to convert it again.
 ## Adding a converted song to YARG
 
 The converter already puts the song where YARG looks for songs, so there is nothing to copy or
@@ -369,10 +377,11 @@ bass. Without it, everything below is done on the full mix and there is no bass 
 guitar chart to follow once the drums and bass are taken out. When the pitched instruments
 are under 35% of the pitched instruments and vocals together, the **guitar chart follows the
 vocals**, as single notes (a voice sings one note at a time, and its breathy sound would
-otherwise turn into chords). In measures without vocals (intro, breaks, outro) it follows the
-instruments instead, with half the usual bar for how strong a note must be, since an intro
-is usually softer than the rest of the song. Songs with a real guitar part don't reach the
-cut-off and are charted as before.
+otherwise turn into chords). In measures where the instruments lead (nobody sings, or the
+instruments are at least half as strong as the vocals: an intro, a guitar break, the ending)
+it follows the instruments instead, with half the usual bar for how strong a note must be,
+since an intro is usually softer than the rest of the song. Songs with a real guitar part
+throughout don't reach the cut-off and are charted as before.
 
 1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
    seconds so songs that speed up or slow down stay locked. Each beat is nudged onto the nearest
@@ -414,14 +423,72 @@ On two rap tracks, Deep Music Mode guitar covers 85-92% of the chime/keys notes 
 Mode bass covers 81% of the main drum hits on one, and every other trap hi-hat on the other.
 The Done message gives how many notes each part adds.
 
-**Bass charts** (from the separated bass) read each note's name allowing for the song's own
-tuning, which is often not A = 440 Hz. A long note (a trap 808, a held synth bass) pumps and
-buzzes while it rings; a start on the same note only counts as a new note when the sound gets
-clearly louder again (4 dB) or the note had already faded, and a change of note without a new
-attack needs a sure pitch reading, since a distorted 808 often reads as its own fifth or octave.
-A note that starts with a click has its pitch read a little later, once its tone settles.
-Notes are held for as long as they stay loud (until 15 dB down). Sounds far below the song's
-usual bass level (-24 dB) are other instruments leaking into the bass and are left out.
+The app listens about 86 times a second and works in five steps.
+
+1. **Beats and measures.** It finds the overall tempo, then follows the local tempo every two
+   seconds so songs that speed up or slow down stay locked. Each beat is nudged onto the nearest
+   note start, bass hits and chord changes say which beat is the "one", and it tells 4/4 from
+   3/4. Three things are then checked, because rap and other loop-based music fooled the first
+   version:
+   - **The tempo against the song's own loop.** A dotted rhythm can pass for the beat (trap 808s
+     in dotted eighths made 95 BPM songs read as 127, and a 79 BPM one as 110). Tempos at 3/4,
+     4/3, 2/3 and 3/2 of the first choice are tried, and so are the tempos that make the song's
+     strongest repeat (its loop, 1.5-4.5 s long) exactly one or two measures. One that makes the
+     song repeat measure by measure clearly better wins; when the first choice does not even
+     fit a whole number of beats into the loop, a tempo that does only has to repeat better.
+   - **One steady tempo.** Music made on a grid keeps perfect time, but beats found by ear follow
+     the accents and wander (808s on the off-beats left one song's notes 23 ms from their hits,
+     typically, and some 70 ms). So the tempo and phase that put the song's note starts closest
+     to sixteenth notes are found, and where that steady grid fits about as well as the beats
+     found, it is used: one tempo marker for the whole song. A band that speeds up and slows
+     down fits a steady tempo far worse and keeps the beats found.
+   - **Twice or half the tempo, by the backbeat.** A beat found from note starts can as well be
+     twice or half the one anyone would count: a busy hi-hat reads fast, a sparse beat slow (two
+     95 and 79 BPM songs read as 190 and 158; a test beat at 110 read as 55). The notes are on
+     time either way, but the beat lines and measures come twice as close, or half as close, as
+     the song feels. In a song carried by the vocals the drums settle it: the clap or snare
+     falls on two and four, so the big drum hits repeat every two beats. If they only repeat
+     every four, the tempo is counted at half; if every beat, at twice (staying between 60 and
+     160 BPM); a song reading 150 or more is halved unless its backbeat says otherwise. The
+     beats are then placed again at that tempo. A song counted at half is still charted on the
+     fast count, so it gets the same notes as before: only the lines and measures change.
+2. **Note starts.** Every moment where new sound arrives is split into *pitched* sound (guitar,
+   bass, voice, keys) and *noisy bursts* (drums). Pitched starts count fully; bare drum hits
+   count less, so the chart leans towards the instruments rather than the drum kit.
+3. **What each note is.** For each pitched start it reads the pitch of the new sound and takes a
+   "fingerprint" of it. Starts with the same fingerprint are the same note or chord played
+   again.
+4. **Frets.** Within each four-measure phrase the distinct sounds are lined up from lowest to
+   highest and spread over the frets. The same sound always gets the same fret, higher sounds
+   get higher frets, low thick sounds become chords, and drum hits between strums repeat the
+   fret before them. Notes that keep ringing become sustains.
+5. **Repeats and difficulties.** Measures that repeat in the music (same rhythm, same notes) are
+   pooled, so a riff played eight times gets one pattern decided by all eight hearings, and a
+   verse that comes round again gets the same chart. Expert is written first; Hard, Medium and
+   Easy are thinned-out versions of it (eighths, quarters, half notes, adapting to the song's
+   speed) on 5, 4 and 3 frets.
+
+**Bass charts** (from the separated bass) read each note's pitch from the waveform itself: how
+long the wave takes to repeat, measured from 0.1 s after the hit, once an 808 has dropped onto
+its note. (The reading used for other parts looks at which frequencies are loud, and a
+distorted 808's overtones are louder than its note: on real songs the fret then moved the way
+the pitch did in under half of the changes; with the waveform reading in about 80%, and a note
+played again stays on its fret over 80% of the time, from about 60%.) Note names allow for the song's own
+tuning, which is often not A = 440 Hz. A trap 808 is often hit again while its last note is
+still ringing at full strength. Each hit is a note, even though a heavily compressed 808 only
+gets 2-3 dB louder at it; so on a note that is still ringing, a start counts when the sound
+rises at least 1.5 dB from the dip just before it. (Right after a hit, while the 808 drops
+onto its pitch, a second "start" turns up that rises less than that and is not a note.) The
+pitch at such a hit is read again once it has settled, and unless that reading is sure of a
+different note, the hit is the same note again and gets the same fret. Such a hit is a note
+on its rise in level alone, however little the sound itself changes. In a song with one steady
+tempo, bass notes may also sit on 32nd-note positions, down to 70 ms apart: 808s are played
+with double hits a 32nd apart (one song has over 200), and within a tenth of a second of a hit
+the next one counts when it rises 3 dB (the ripple after a single hit rises less). A bass note
+that is strong enough on its own is kept even where the other repeats of its measure do not
+have it (a fill, a pickup), since everything in a separated bass is the bass. Notes are held for as long as they stay loud
+(until 15 dB down, or the next hit). Sounds far below the song's usual bass level (-24 dB) are
+other instruments leaking into the bass and are left out.
 
    A riff that loops (the same one, two or four measures played over and over, under a whole
    verse or the whole song) is charted the same every time: once it has come round at least
@@ -573,7 +640,8 @@ Every song the checks write is also read back from `notes.mid` by a reader that 
 game's own rules (how it pairs notes, finds phrases, attaches lyrics, and decides a song has
 vocals at all), and compared note for note with what was meant to be written.
 
-For separation, four things are checked on every build:
+For separation, five things are checked on every build (and real recordings by hand, see
+[real-songs](real-songs/README.md)):
 
 1. **The plumbing**, with a stand-in model: cutting a song into overlapping segments and joining
    the results gives back every sample exactly once, aligned with the original.
@@ -586,7 +654,21 @@ For separation, four things are checked on every build:
    and chart at least 80% of the sung notes (it charts all of them); the unsung intro, choruses
    and outro must follow the instruments instead. The full band songs, which have singing too,
    must still chart guitar from the guitar.
-4. **The real model** (`model-test/`), downloaded and run through the app's own code on a
+4. **A trap / R&B beat with known answers** (`TrapSong`, `TrapTest`), built like the real rap and
+   R&B songs the converter was tuned on: 808s in dotted eighths that dominate the mix (72% of the
+   sound, drums 1.5%), an 808 that is hit again while it still rings (each hit only 3 dB
+   louder), a sustained 808 with the slight flutter real ones have, kick clicks and pitch drops
+   on every 808 hit, a song tuned off A = 440 Hz, a quiet flute-like loop that glides between
+   notes and is turned up for two measures, and a vocal line louder than the loop. It must keep
+   each lesson: the tempo is the beat's and not the dotted 808's (126.7 BPM for 95 without that
+   fix); hits on a ringing 808 are charted and stay on their fret (none are charted with the
+   earlier 4 dB rule); a sustained 808 is one held note; the regular guitar follows the vocals,
+   and the instruments where they lead; Deep Music Mode guitar adds the loop and Deep Music
+   Mode bass the claps; both hits of an 808 double hit a 32nd apart are charted on time; the
+   same 808 note gets the same fret and the fret moves the way the pitch does; the same beat at
+   70 and at 110 BPM (which read as 140 and 55) is charted at its own tempo with the measure
+   lines on the ones. Each of these checks was seen to fail with its fix taken out.
+5. **The real model** (`model-test/`), downloaded and run through the app's own code on a
    desktop JVM in GitHub Actions:
    - on the synthetic song, drums and bass come out in the right stems (94% and 109% of their
      level) and the six stems add back up to the mix (-22 dB difference). The synthetic

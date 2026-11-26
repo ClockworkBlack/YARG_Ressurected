@@ -85,7 +85,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
     private Queued singersFor;
 
     /** Most songs converted in one go. */
-    static final int BATCH_MAX = 33;
+    static final int BATCH_MAX = 60;
 
     /** One song waiting in the list. */
     private static final class Queued {
@@ -444,7 +444,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
 
         root.addView(section("Several songs at once"));
         batchStatus = new TextView(this);
-        batchStatus.setText("Pick up to " + BATCH_MAX + " files and convert them all in one go, one after another, with the mode and number of notes chosen above. Each song's title and artist come from the file's tags (or its name).");
+        batchStatus.setText("Pick up to " + BATCH_MAX + " files and convert them all in one go, one after another, with the mode and number of notes chosen above. Each song's title and artist come from the file's tags (or its name). Each song is saved as soon as it is done; if the app is closed part way, the songs still to do are here again when it opens.");
         root.addView(batchStatus);
         batchPickButton = button("Choose files (up to " + BATCH_MAX + ")", new View.OnClickListener() {
             @Override
@@ -478,6 +478,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
         batchRow.addView(batchConvertButton, weighted());
         batchRow.addView(batchClearButton, weighted());
         root.addView(batchRow);
+        // The list as it was when the app last closed (Android may close it in the middle of a
+        // long list): the songs not converted yet are back, to carry on with Convert all
+        restoreBatch();
         showBatch();
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
@@ -1540,12 +1543,27 @@ public final class MainActivity extends Activity implements ConversionService.Li
         } else if (data.getData() != null) {
             picked.add(data.getData());
         }
+        addUris(picked, false);
+    }
+
+    /**
+     * Adds files to the list.
+     *
+     * @param addAnyway true to add songs this app converted before, too
+     */
+    private void addUris(List<Uri> picked, boolean addAnyway) {
         int left = 0;
         final List<Queued> added = new ArrayList<>();
+        final List<Uri> convertedBefore = new ArrayList<>();
         for (Uri uri : picked) {
             boolean already = false;
             for (Queued q : batch) already |= q.uri.equals(uri);
             if (already || uri == null) continue;
+            if (!addAnyway && wasConverted(uri, displayName(uri))) {
+                // Converted in an earlier list (one that was cut off, say): left out unless asked for
+                convertedBefore.add(uri);
+                continue;
+            }
             if (batch.size() >= BATCH_MAX) {
                 left++;
                 continue;
@@ -1567,6 +1585,22 @@ public final class MainActivity extends Activity implements ConversionService.Li
         }
         if (left > 0) {
             message("List is full", left + (left == 1 ? " file was" : " files were") + " left out: at most " + BATCH_MAX + " songs go in one list.");
+        } else if (!convertedBefore.isEmpty()) {
+            final int n = convertedBefore.size();
+            new AlertDialog.Builder(this)
+                    .setTitle("Converted before")
+                    .setMessage(n + (n == 1 ? " of these songs was" : " of these songs were") + " already converted by this app (they are in YARG/songs/"
+                            + SUBFOLDER + "), so " + (n == 1 ? "it was" : "they were") + " left out of the list. Add "
+                            + (n == 1 ? "it" : "them") + " anyway to convert again?")
+                    .setPositiveButton("Add anyway", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface d, int w) {
+                            forgetConverted(convertedBefore);
+                            addUris(convertedBefore, true);
+                        }
+                    })
+                    .setNegativeButton("Leave out", null)
+                    .show();
         }
         showBatch();
         // Title, artist and the rest from each file's tags, off the main thread
@@ -1584,6 +1618,97 @@ public final class MainActivity extends Activity implements ConversionService.Li
                 }
             }
         }, "batch-tags").start();
+    }
+
+    // ---------------------------------------------------------------- the list, kept across restarts
+
+    private static final String PREF_LIST = "batchList", PREF_CONVERTED = "convertedSongs";
+
+    /** Saves the list, so it is back if Android closes the app before it is done. */
+    private void saveBatch() {
+        try {
+            org.json.JSONArray list = new org.json.JSONArray();
+            for (Queued q : batch) {
+                org.json.JSONObject o = new org.json.JSONObject();
+                o.put("uri", q.uri.toString());
+                o.put("file", q.fileName);
+                o.put("mode", q.mode);
+                o.put("density", q.density);
+                list.put(o);
+            }
+            getSharedPreferences("converter", MODE_PRIVATE).edit().putString(PREF_LIST, list.toString()).apply();
+        } catch (org.json.JSONException ignored) {
+            // Not saved this time; the list on screen is unaffected
+        }
+    }
+
+    /** Puts back the list saved when the app last closed, without the songs converted since. */
+    private void restoreBatch() {
+        if (!batch.isEmpty()) return;
+        String saved = getSharedPreferences("converter", MODE_PRIVATE).getString(PREF_LIST, "");
+        if (saved.isEmpty()) return;
+        final List<Queued> back = new ArrayList<>();
+        try {
+            org.json.JSONArray list = new org.json.JSONArray(saved);
+            for (int i = 0; i < list.length() && back.size() < BATCH_MAX; i++) {
+                org.json.JSONObject o = list.getJSONObject(i);
+                Queued q = new Queued();
+                q.uri = Uri.parse(o.getString("uri"));
+                q.fileName = o.optString("file", "");
+                if (wasConverted(q.uri, q.fileName)) continue;
+                q.mode = o.optInt("mode", MODE_NORMAL);
+                if (q.mode != MODE_NORMAL && !ModelStore.installed(this)) q.mode = MODE_NORMAL;
+                q.density = o.optInt("density", 0);
+                q.meta.title = q.fileName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
+                back.add(q);
+            }
+        } catch (org.json.JSONException e) {
+            return;
+        }
+        if (back.isEmpty()) return;
+        batch.addAll(back);
+        batchStatus.setText(back.size() + (back.size() == 1 ? " song" : " songs") + " from the last list " + (back.size() == 1 ? "is" : "are")
+                + " still to convert (songs already converted were taken off). Press Convert all to carry on, or Clear list.");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                for (final Queued q : back) {
+                    readTags(q);
+                    main.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            showBatch();
+                        }
+                    });
+                }
+            }
+        }, "batch-tags").start();
+    }
+
+    /** The songs this app has converted, by file (and by name, as a file picked again may have a new address). */
+    private java.util.Set<String> converted() {
+        return getSharedPreferences("converter", MODE_PRIVATE).getStringSet(PREF_CONVERTED, new java.util.HashSet<String>());
+    }
+
+    private boolean wasConverted(Uri uri, String fileName) {
+        java.util.Set<String> set = converted();
+        return set.contains("uri:" + uri) || (fileName != null && !fileName.isEmpty() && set.contains("name:" + fileName));
+    }
+
+    private void markConverted(Queued q) {
+        java.util.Set<String> set = new java.util.HashSet<>(converted());
+        set.add("uri:" + q.uri);
+        if (!q.fileName.isEmpty()) set.add("name:" + q.fileName);
+        getSharedPreferences("converter", MODE_PRIVATE).edit().putStringSet(PREF_CONVERTED, set).commit();
+    }
+
+    private void forgetConverted(List<Uri> uris) {
+        java.util.Set<String> set = new java.util.HashSet<>(converted());
+        for (Uri u : uris) {
+            set.remove("uri:" + u);
+            set.remove("name:" + displayName(u));
+        }
+        getSharedPreferences("converter", MODE_PRIVATE).edit().putStringSet(PREF_CONVERTED, set).commit();
     }
 
     /** Fills in a queued song's details from its tags, falling back to "Artist - Title" in the file name. */
@@ -1635,6 +1760,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
 
     /** Redraws the list: one row a song, with a button to take it out. */
     private void showBatch() {
+        saveBatch();
         batchList.removeAllViews();
         for (int i = 0; i < batch.size(); i++) {
             final Queued q = batch.get(i);
@@ -2095,6 +2221,9 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         lastResult = null;
                         runConversion(q.uri, q.fileName, q.meta, lyrics, lrcText, own, useStems, guessSingers, rnb);
                         ok++;
+                        // Remembered at once: if the app is closed before the list is done, this song
+                        // is not in the list when it opens again
+                        markConverted(q);
                         // How the singers came out, now that the song has been listened to
                         SongWriter.Result res = lastResult;
                         if (res != null && res.lyricLines > 0 && q.meta.singers.length >= 2) {
@@ -2130,6 +2259,12 @@ public final class MainActivity extends Activity implements ConversionService.Li
                     public void run() {
                         // Converted songs leave the list; any that failed stay, to try again
                         batch.removeAll(songs);
+                        List<Uri> failedUris = new ArrayList<>();
+                        for (Queued q : notDone) failedUris.add(q.uri);
+                        for (java.util.Iterator<Queued> it = batch.iterator(); it.hasNext(); ) {
+                            Queued q = it.next();
+                            if (failedUris.contains(q.uri) || wasConverted(q.uri, q.fileName)) it.remove();
+                        }
                         batch.addAll(0, notDone);
                         showBatch();
                     }
@@ -2299,7 +2434,7 @@ public final class MainActivity extends Activity implements ConversionService.Li
         if (result.rnbNote != null) sb.append(result.rnbNote).append("\n");
         if (result.instrumentalMeasures > 0) {
             sb.append(result.instrumentalMeasures).append(result.instrumentalMeasures == 1 ? " measure" : " measures")
-                    .append(" without vocals (intro, breaks) charted from the instruments\n");
+                    .append(" where the instruments lead (intro, breaks) charted from the instruments\n");
         }
         if (result.deepChart != null || result.deepBassChart != null) {
             sb.append("Deep Music Mode charts included (turn on the Deep Music Mode modifier in YARG): guitar +")

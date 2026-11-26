@@ -395,7 +395,12 @@ public final class ConvertSong {
         log("notes.mid read back as the game reads it: OK");
 
         for (String old : new String[] {"song.mp3", "song.wav", "song.ogg", "song.opus"}) new File(dir, old).delete();
-        if (copyAsIs) {
+        if (ext.equals("ogg") || ext.equals("opus") || ext.equals("mp3")) {
+            // The sound only, as it is (no re-encoding): a file can also hold the cover art as a
+            // video stream, and with one in an Ogg the game played neither the preview nor the
+            // song. The cover art is saved as album.png instead (below).
+            run("ffmpeg", "-v", "error", "-y", "-i", audio.getPath(), "-map", "0:a:0", "-vn", "-c:a", "copy", new File(dir, audioFile).getPath());
+        } else if (copyAsIs) {
             Files.copy(audio.toPath(), new File(dir, audioFile).toPath(), StandardCopyOption.REPLACE_EXISTING);
         } else {
             run("ffmpeg", "-v", "error", "-y", "-i", audio.getPath(), "-c:a", "pcm_s16le", new File(dir, audioFile).getPath());
@@ -407,9 +412,19 @@ public final class ConvertSong {
 
         StringBuilder sb = new StringBuilder();
         sb.append("Done: ").append(dir).append('\n');
-        sb.append(String.format(Locale.US, "Tempo: about %.0f BPM, %d beats to the measure\n", r.bpm, r.beatsPerMeasure));
+        sb.append(String.format(Locale.US, "Tempo: about %.0f BPM, %d beats to the measure%s%s\n", r.bpm, r.beatsPerMeasure,
+                r.steadyTempo ? ", one steady tempo" : "", tempoNote(r)));
         sb.append("Guitar chart made from ").append(r.guitarSource).append('\n');
         if (r.rnbNote != null) sb.append(r.rnbNote).append('\n');
+        if (r.instrumentalMeasures > 0) {
+            sb.append(r.instrumentalMeasures).append(r.instrumentalMeasures == 1 ? " measure" : " measures")
+                    .append(" where the instruments lead (intro, breaks) charted from the instruments\n");
+        }
+        if (r.deepChart != null || r.deepBassChart != null) {
+            sb.append("Deep Music Mode charts included (turn on the Deep Music Mode modifier in YARG): guitar +")
+                    .append(r.deepGuitarNotesAdded).append(" notes from the vocals and other instruments, bass +")
+                    .append(r.drumNotesInBass).append(" drum hits on Expert\n");
+        }
         sb.append("Recognised ").append(r.chart.soundGroups).append(" different notes and chords, and ")
                 .append(r.chart.repeatedMeasures).append(" measures that repeat\n");
         sb.append(String.format(Locale.US, "Guitar notes: Easy %d, Medium %d, Hard %d, Expert %d\n",
@@ -439,12 +454,23 @@ public final class ConvertSong {
         if (a.containsKey("summary")) {
             // One line of JSON for batch runs
             String json = String.format(Locale.US,
-                    "{\"folder\":%s,\"title\":%s,\"artist\":%s,\"lyrics\":%s,\"vocalLines\":%d,\"guitarExpert\":%d,\"bassExpert\":%d,\"timing\":%s}",
+                    "{\"folder\":%s,\"title\":%s,\"artist\":%s,\"lyrics\":%s,\"vocalLines\":%d,\"guitarExpert\":%d,\"bassExpert\":%d,\"timing\":%s,"
+                            + "\"bpm\":%.1f,\"tempo\":%s,\"guitarFrom\":%s,\"deepGuitarExpert\":%d,\"deepBassExpert\":%d}",
                     q(dir.getName()), q(meta.title), q(meta.artist), q(r.lyricLines > 0 ? lyricsSource : "none"), r.lyricLines,
                     r.noteCount(GuitarCharter.EXPERT), r.bassChart == null ? 0 : r.bassChart.notes.get(GuitarCharter.EXPERT).size(),
-                    q(r.lyricTimingNote == null ? "" : r.lyricTimingNote));
+                    q(r.lyricTimingNote == null ? "" : r.lyricTimingNote), r.bpm,
+                    q((r.steadyTempo ? "steady" : "follows the band") + tempoNote(r)), q(r.guitarSource),
+                    r.deepChart == null ? 0 : r.deepChart.notes.get(GuitarCharter.EXPERT).size(),
+                    r.deepBassChart == null ? 0 : r.deepBassChart.notes.get(GuitarCharter.EXPERT).size());
             Files.write(new File(a.get("summary")).toPath(), (json + "\n").getBytes(StandardCharsets.UTF_8));
         }
+    }
+
+    /** Says when the tempo was counted at half or twice what was first found (see BeatTracker.recount). */
+    private static String tempoNote(SongWriter.Result r) {
+        if (r.recount == 0.5) return String.format(Locale.US, " (read as %.0f; counted at half by the backbeat)", r.bpm * 2);
+        if (r.recount == 2) return String.format(Locale.US, " (read as %.0f; counted at twice by the backbeat)", r.bpm / 2);
+        return "";
     }
 
     private static String q(String s) {
@@ -481,13 +507,19 @@ public final class ConvertSong {
         final float[] rsL = to16k == null ? null : new float[to16k.capacityFor(StemSplitter.SEGMENT)];
         final float[] rsR = to16k == null ? null : new float[to16k.capacityFor(StemSplitter.SEGMENT)];
         final AudioAnalyzer guitar = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
-        final AudioAnalyzer vocals = rnb ? new AudioAnalyzer(StemSplitter.SAMPLE_RATE) : null;
+        // The vocals and drums measured like instruments, as the phone app does: R&B mode charts the
+        // guitar from the vocals, a song the voice carries (rap over a beat) charts its guitar from
+        // the vocals and the beat's melody, its Deep Music Mode bass adds the drum hits, and its
+        // tempo is counted by the drums' backbeat. Without them none of that happens.
+        final AudioAnalyzer vocals = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
+        final AudioAnalyzer drums = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer melodic = new AudioAnalyzer(StemSplitter.SAMPLE_RATE);
         final AudioAnalyzer bass = new AudioAnalyzer(StemSplitter.SAMPLE_RATE, true);
         final VocalAnalyzer voice = new VocalAnalyzer(StemSplitter.SAMPLE_RATE);
         final float[] vox = new float[StemSplitter.SEGMENT];
         final float[] g = new float[StemSplitter.SEGMENT], m = new float[StemSplitter.SEGMENT], b = new float[StemSplitter.SEGMENT];
-        final double[] energy = new double[4];
+        final float[] dr = new float[StemSplitter.SEGMENT];
+        final double[] energy = new double[6];
         final WavOut wav = vocalsOut == null ? null : new WavOut(new File(vocalsOut), StemSplitter.SAMPLE_RATE);
         // For looking at what the separation did: the guitar, keys (piano) and "other" stems as WAV files
         final String stemsDir = System.getProperty("yarg.stemsOut");
@@ -528,7 +560,7 @@ public final class ConvertSong {
             };
             StemSplitter.Sink sink = (mixLeft, mixRight, st, count) -> {
                 float[][] gt = st[StemSplitter.GUITAR], ot = st[StemSplitter.OTHER], pn = st[StemSplitter.PIANO];
-                float[][] bs = st[StemSplitter.BASS], vc = st[StemSplitter.VOCALS];
+                float[][] bs = st[StemSplitter.BASS], vc = st[StemSplitter.VOCALS], ds = st[StemSplitter.DRUMS];
                 for (int i = 0; i < count; i++) {
                     vox[i] = (vc[0][i] + vc[1][i]) * 0.5f;
                     float gv = (gt[0][i] + gt[1][i]) * 0.5f;
@@ -542,12 +574,17 @@ public final class ConvertSong {
                     energy[1] += mv * mv;
                     energy[2] += bv * bv;
                     energy[3] += xv * xv;
+                    float dv = (ds[0][i] + ds[1][i]) * 0.5f;
+                    dr[i] = dv;
+                    energy[4] += vox[i] * vox[i];
+                    energy[5] += dv * dv;
                 }
                 guitar.feed(g, 0, count);
                 melodic.feed(m, 0, count);
                 bass.feed(b, 0, count);
                 voice.feed(vox, 0, count);
-                if (vocals != null) vocals.feed(vox, 0, count);
+                vocals.feed(vox, 0, count);
+                drums.feed(dr, 0, count);
                 if (to16k != null) {
                     int made = to16k.process(vox, vox, count, rsL, rsR);
                     if (voice16kLength[0] + made > voice16k[0].length) {
@@ -591,11 +628,14 @@ public final class ConvertSong {
         out.melodic = melodic.finish();
         out.bass = bass.finish();
         out.voice = voice.finish();
-        if (vocals != null) out.vocals = vocals.finish();
+        out.vocals = vocals.finish();
+        out.drums = drums.finish();
         out.guitarEnergy = energy[0];
         out.melodicEnergy = energy[1];
         out.bassEnergy = energy[2];
         out.mixEnergy = energy[3];
+        out.vocalsEnergy = energy[4];
+        out.drumsEnergy = energy[5];
         if (wordsModel != null) {
             log("Hearing the words in the voice…");
             try (com.clockworkblack.yargconverter.stems.OrtWordModel words =

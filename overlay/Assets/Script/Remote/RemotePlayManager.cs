@@ -53,10 +53,31 @@ namespace YARG.Remote
                 (device.description.interfaceName == INTERFACE_NAME || _remoteDevices.Contains(device));
         }
 
+        /// <summary>True on a computer (Windows, Mac, Linux), where the wording says "click" and
+        /// "this computer" and there is no game network to start.</summary>
+        public static bool OnComputer => !Application.isMobilePlatform;
+
+        /// <summary>The port the phone page is served on, or 0 while the server isn't running.</summary>
+        public static int ServerPort
+        {
+            get
+            {
+                var server = Instance != null ? Instance._server : null;
+                return server != null && server.IsRunning ? server.Port : 0;
+            }
+        }
+
+        /// <summary>1 when the secure (https) link works, -1 when it doesn't, 0 while still testing.</summary>
+        public static int SecureLinkState => Instance != null ? Instance._tlsState : -1;
+
+        /// <summary>How many phones are connected as controllers right now.</summary>
+        public static int PhoneCount => Instance != null ? Instance._padCount : 0;
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {
-#if UNITY_ANDROID && !UNITY_EDITOR
+            // The phone, and the Windows, Mac and Linux builds (not inside the Unity editor)
+#if (UNITY_ANDROID || UNITY_STANDALONE) && !UNITY_EDITOR
             if (Instance != null)
             {
                 return;
@@ -616,12 +637,75 @@ namespace YARG.Remote
             }
         }
 
+        // Names of network adapters on a computer that phones on the Wi-Fi can't reach: virtual
+        // machines, containers and VPNs. Their addresses go last, never first. (Not every "virtual"
+        // adapter: Windows' own hotspot is the "Wi-Fi Direct Virtual Adapter", and phones join that.)
+        private static readonly string[] UnreachableAdapters =
+        {
+            "virtualbox", "vmware", "vmnet", "vbox", "hyper-v", "vethernet", "wsl", "docker", "veth", "virbr",
+            "br-", "tailscale", "zerotier", "wireguard", "openvpn", "tap-", "utun", "awdl", "llw", "anpi",
+            "vpn", "loopback", "bluetooth",
+        };
+
+        private static bool IsUnreachableAdapter(NetworkInterface nic, string name)
+        {
+            if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback ||
+                nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel)
+            {
+                return true;
+            }
+
+            string description = "";
+            try
+            {
+                description = (nic.Description ?? "").ToLowerInvariant();
+            }
+            catch (Exception)
+            {
+                // not every system gives one
+            }
+
+            foreach (string word in UnreachableAdapters)
+            {
+                if (name.Contains(word) || description.Contains(word))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // The address this device uses to reach the rest of its network (nothing is sent: a UDP
+        // "connection" only makes the system pick the route). Null without a network.
+        private static string DefaultRouteAddress()
+        {
+            try
+            {
+                using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
+                {
+                    socket.Connect(IPAddress.Parse("8.8.8.8"), 53);
+                    if (socket.LocalEndPoint is IPEndPoint endPoint && IsPrivate(endPoint.Address))
+                    {
+                        return endPoint.Address.ToString();
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // no network
+            }
+            return null;
+        }
+
         // Private IPv4 addresses, Wi-Fi first, then hotspot. Mobile-data interfaces are skipped
-        // because other phones can't reach them.
+        // because other phones can't reach them. On a computer the address of its main network
+        // (the one it reaches the router through) comes first, and virtual adapters come last.
         private static List<string> GetLocalAddresses()
         {
             var wifi = new List<string>();
             var other = new List<string>();
+            var last = new List<string>();
+            bool computer = OnComputer;
 
             try
             {
@@ -634,12 +718,15 @@ namespace YARG.Remote
                     }
 
                     string name = (nic.Name ?? "").ToLowerInvariant();
+                    // ("lo" exactly, or "lo0": on Windows, "Local Area Connection" is a real network)
                     if (name.StartsWith("rmnet") || name.StartsWith("ccmni") || name.StartsWith("dummy") ||
-                        name.StartsWith("lo") || name.StartsWith("tun") || name.StartsWith("ipsec") ||
+                        name == "lo" || name == "lo0" || name.StartsWith("tun") || name.StartsWith("ipsec") ||
                         name.StartsWith("p2p"))
                     {
                         continue;
                     }
+
+                    bool unreachable = computer && IsUnreachableAdapter(nic, name);
 
                     foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
                     {
@@ -650,18 +737,24 @@ namespace YARG.Remote
                         }
 
                         string text = address.ToString();
-                        if (wifi.Contains(text) || other.Contains(text))
+                        if (wifi.Contains(text) || other.Contains(text) || last.Contains(text))
                         {
                             continue;
                         }
 
-                        if (name.StartsWith("wlan"))
+                        if (unreachable)
+                        {
+                            last.Add(text);
+                        }
+                        else if (name.StartsWith("wlan") || (computer && (name.StartsWith("wl") ||
+                            name.Contains("wi-fi") || name.Contains("wifi") ||
+                            nic.NetworkInterfaceType == NetworkInterfaceType.Wireless80211)))
                         {
                             wifi.Add(text);
                         }
                         else
                         {
-                            other.Add(text); // e.g. swlan0 = Samsung hotspot
+                            other.Add(text); // e.g. swlan0 = Samsung hotspot, or a computer's cable
                         }
                     }
                 }
@@ -673,26 +766,19 @@ namespace YARG.Remote
 
             wifi.AddRange(other);
 
-            if (wifi.Count == 0)
+            // Ask the system which address it uses for its main network: the only answer when
+            // the list above is empty, and on a computer the one to show first
+            if (wifi.Count == 0 || computer)
             {
-                // Fallback: ask the OS which local address it would use for the default route.
-                try
+                string main = DefaultRouteAddress();
+                if (main != null && !last.Contains(main))
                 {
-                    using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
-                    {
-                        socket.Connect(IPAddress.Parse("8.8.8.8"), 53);
-                        if (socket.LocalEndPoint is IPEndPoint endPoint && IsPrivate(endPoint.Address))
-                        {
-                            wifi.Add(endPoint.Address.ToString());
-                        }
-                    }
-                }
-                catch (Exception)
-                {
-                    // no network
+                    wifi.Remove(main);
+                    wifi.Insert(0, main);
                 }
             }
 
+            wifi.AddRange(last);
             return wifi;
         }
 
@@ -807,6 +893,13 @@ namespace YARG.Remote
                 : phones + (phones == 1 ? " phone" : " phones") + (mics > 0 ? $", {mics} mic{(mics == 1 ? "" : "s")}" : "");
 
             string address = PrimaryAddress();
+            if (OnComputer)
+            {
+                return address == null
+                    ? $"<b>PHONES</b>  Click here to let friends join with their phones  |  {counts}"
+                    : $"<b>PHONES</b>  Click here for the join code, or open <color=#FFD84D>{BuildUrl(address)}</color> on a phone  |  {counts}";
+            }
+
             if (address == null)
             {
                 return $"<b>PHONES</b>  Tap here to let friends join with their phones  |  {counts}";

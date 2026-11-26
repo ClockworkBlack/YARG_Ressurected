@@ -174,8 +174,11 @@ namespace YARG.Audio
             StoryUi.Button(hear, StoryButtonStyle.Normal, "Hear myself: off", 34f, out _, out _hearLabel).onClick.AddListener(ToggleHear);
             var close = StoryUi.Area(panel, 0.52f, 0.09f, 0.95f, 0.19f, "Close");
             StoryUi.Button(close, StoryButtonStyle.Primary, "Done", 34f, out _, out _).onClick.AddListener(Close);
+            // (On a computer the microphones are the system's own: no "This phone's mic")
             StoryUi.Text(panel, 0.05f, 0.02f, 0.95f, 0.085f,
-                "Hear myself needs headphones (through the speaker it squeals) and works with \"This phone's mic\".",
+                Application.isMobilePlatform
+                    ? "Hear myself needs headphones (through the speaker it squeals) and works with \"This phone's mic\"."
+                    : "Hear myself needs headphones (through the speakers it squeals).",
                 26f, false, StoryTheme.Muted, TextAlignmentOptions.Left);
             _panel.SetActive(false);
         }
@@ -209,7 +212,9 @@ namespace YARG.Audio
                 {
                     StoryUi.Text(_rows, 0f, 0.3f, 1f, 0.9f,
                         "No active profile has a microphone yet.\n\nClose this, pick a profile, set its Game Mode to Vocals, " +
-                        "then Add New Device and choose a microphone (\"This phone's mic\" or \"Built-in mic\").",
+                        (Application.isMobilePlatform
+                            ? "then Add New Device and choose a microphone (\"This phone's mic\" or \"Built-in mic\")."
+                            : "then Add New Device and choose your microphone (or a phone's mic, see the PHONES bar)."),
                         36f, false, StoryTheme.Cream, TextAlignmentOptions.Center);
                 }
 

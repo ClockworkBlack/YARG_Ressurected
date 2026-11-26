@@ -27,6 +27,19 @@ public final class TempoMap {
     }
 
     /**
+     * The same timing counted twice as fast: every beat becomes two, every tick two ticks, so a
+     * tick of this map is exactly tick * 2 of the one returned.
+     */
+    public TempoMap doubled() {
+        long[] t = new long[tick.length], m = new long[tick.length];
+        for (int i = 0; i < t.length; i++) {
+            t[i] = tick[i] * 2;
+            m[i] = Math.round(microsPerBeat[i] / 2.0);
+        }
+        return new TempoMap(t, m, time, (2 * pickupBeats) % beatsPerMeasure, beatsPerMeasure);
+    }
+
+    /**
      * @param beats beat times in seconds, beats[0] == 0
      * @param firstDownbeat index of the first beat that starts a measure
      * @param beatsPerMeasure 3 or 4

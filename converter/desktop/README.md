@@ -17,7 +17,13 @@ Hugging Face) to time the lyrics word by word against the voice and check them a
 repeats: the most accurate way there is here, and it needs no times in the lyrics at all.
 
 `--mode` is normal, split or rnb; `--notes` fewer, standard or more; `--two-singers` guesses who sings
-which line from their voices. The folder appears in `songs/Artist - Title/`; copy it into
+which line from their voices. With split (or rnb), the vocals and drums are measured like instruments, as
+the phone app does: a song the voice carries (rap over a beat) then gets its guitar from the vocals
+and the instruments where they lead, its tempo counted by the drums' backbeat (95 BPM, not 190),
+and Deep Music Mode parts (`PART GUITAR COOP` / `PART RHYTHM`: guitar adds the vocals and the
+beat's melody, bass adds the drum hits). The summary line says which of these happened. The song's
+sound is copied without re-encoding but without any cover art stream in it (an Ogg with its cover
+art as a video stream was neither previewed nor played by the game); the art goes to `album.png`. The folder appears in `songs/Artist - Title/`; copy it into
 `Internal storage/YARG/songs/` on the phone.
 
 **Finding lyrics as the app does.** The app's lookup (LRCLIB, then NetEase when its box is ticked,
@@ -49,6 +55,10 @@ Whisper (large-v3-turbo): numbers spelled out, lines broken at pauses and senten
 the voice is silent dropped. Expect about 3 words in 10 to be wrong on English rap and R&B (more on
 other languages): good enough to sing along to and to time, not a lyric sheet. `lyrics_wer.py
 real.lrc heard.lrc` measures it on a song whose lyrics are known.
+
+**Long batches.** `batch_convert.py ... --save-to <folder>` copies each song to `<folder>/Converted/` the
+moment it is done and keeps `<folder>/report.csv` up to date; run it again after an interruption and the
+songs already there are skipped. The Colab notebook saves to Drive this way.
 
 **Song names in other alphabets** ("Girls’ Generation", 소녀시대, Beyoncé) need a UTF-8 locale:
 Java writes file names in the locale's encoding, and under a plain `C` or `POSIX` locale only

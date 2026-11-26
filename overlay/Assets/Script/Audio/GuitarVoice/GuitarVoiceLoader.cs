@@ -49,6 +49,10 @@ namespace YARG.Audio.GuitarVoice
         public static bool Enabled =>
             SettingsManager.Settings.GuitarVoice.Value != GuitarVoiceMode.Off || SongSetupState.Freestyle;
 
+        /// <summary>How many guitar or bass tracks were generated for the song loaded last
+        /// (0 when the setting is off or the song has its own). Read by the automated play test.</summary>
+        public static volatile int LastTracksAdded;
+
         // The recorded notes ship with the game as two files in StreamingAssets
         private const string STRINGS_FOLDER = "guitar-voice";
         private const string GUITAR_STRINGS = "guitar.bank";
@@ -112,6 +116,7 @@ namespace YARG.Audio.GuitarVoice
             IReadOnlyList<YargPlayer> players)
         {
             var added = new List<SongStem>();
+            LastTracksAdded = 0;
             var mode = SettingsManager.Settings.GuitarVoice.Value;
             bool freestyle = SongSetupState.Freestyle;
             GuitarFreestyle.Clear();
@@ -261,6 +266,7 @@ namespace YARG.Audio.GuitarVoice
                 }
             }
 
+            LastTracksAdded = added.Count;
             YargLogger.LogFormatInfo(
                 "Guitar voice: added {0} track(s) in {1} ms (read {2} ms, listen {3} ms); tuning {4} cents, scale root {5}",
                 added.Count, watch.ElapsedMilliseconds, decodeMs, analyzeMs,

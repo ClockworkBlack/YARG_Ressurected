@@ -21,7 +21,8 @@ An optional songs.csv in the songs folder gives, per file: file,mode,notes,title
 (any column may be empty; mode and notes default to the command line's; start and end, in seconds,
 cut a music video's intro or outro off). The file column is matched in any letter case, with or
 without the extension.
-Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv.
+Writes <output>/Converted/<Artist - Title>/ for each song, and <output>/report.csv (--save-to is another
+name for --keep).
 """
 import argparse, csv, json, os, re, shutil, subprocess, sys, threading, time
 from concurrent.futures import ThreadPoolExecutor
@@ -45,7 +46,7 @@ def main():
     ap.add_argument("--words-model", default=os.environ.get("YARG_WORDS", "wav2vec2-base-960h.onnx"))
     ap.add_argument("--whisper", default="large-v3")
     ap.add_argument("--jobs", default="auto")
-    ap.add_argument("--keep", help="a folder (on Google Drive, say) that keeps every finished song and the record of "
+    ap.add_argument("--keep", "--save-to", dest="keep", help="a folder (on Google Drive, say) that keeps every finished song and the record of "
                     "what is done, so a later run picks up where this one stopped")
     ap.add_argument("--redo-all", action="store_true", help="convert every song again, finished or not")
     ap.add_argument("--redo", default="", help="songs to convert again even if finished: parts of their file names, "
@@ -200,7 +201,9 @@ def main():
         if proc.returncode == 0 and os.path.exists(base + ".json"):
             s = json.load(open(base + ".json", encoding="utf-8"))
             s.update(file=name, mode=mode, notes=notes, seconds=round(took))
-            say("%s done in %d s: %s, %d vocal lines (%s)" % (tag, took, s["folder"], s["vocalLines"], s["lyrics"]))
+            say("%s done in %d s: %s, %.0f BPM, guitar from %s, %d vocal lines (%s)%s" % (
+                tag, took, s["folder"], s.get("bpm", 0), s.get("guitarFrom", "?"), s["vocalLines"], s["lyrics"],
+                ", Deep Music Mode guitar %d / bass %d notes" % (s["deepGuitarExpert"], s["deepBassExpert"]) if s.get("deepGuitarExpert") or s.get("deepBassExpert") else ""))
         else:
             s = dict(file=name, mode=mode, notes=notes, folder="", error=error_line(base + ".log"))
             say("%s FAILED %s: %s" % (tag, name, s["error"]))
@@ -252,7 +255,8 @@ def error_line(log_path):
     return lines[-1][:300] if lines else "failed"
 
 
-COLS = ["file", "folder", "title", "artist", "mode", "notes", "lyrics", "vocalLines", "guitarExpert", "bassExpert", "seconds", "timing", "error"]
+COLS = ["file", "folder", "title", "artist", "mode", "notes", "bpm", "tempo", "guitarFrom", "lyrics", "vocalLines",
+        "guitarExpert", "bassExpert", "deepGuitarExpert", "deepBassExpert", "seconds", "timing", "error"]
 
 
 def write_report(folder, rows):
