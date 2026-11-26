@@ -37,6 +37,17 @@ public final class Lookup {
         return null;
     }
 
+    /** Timed lyrics of every artist with a song of this title and about this length: {artist, title, lyrics}. */
+    public static List<String[]> candidates(String title, double seconds) {
+        List<String[]> out = new java.util.ArrayList<>();
+        try {
+            for (LrcLib.Found f : LrcLib.candidates(title, seconds, 8)) out.add(new String[] {f.artist, f.title, f.synced});
+        } catch (Exception e) {
+            // Nothing to choose from
+        }
+        return out;
+    }
+
     /** What the lyric search found. */
     public static final class Lyrics {
         /** Timed lyrics (with singer marks when the lyrics say who sings what), or null. */

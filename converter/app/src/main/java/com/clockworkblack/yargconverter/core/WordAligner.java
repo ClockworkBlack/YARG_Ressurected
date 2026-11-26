@@ -349,7 +349,7 @@ public final class WordAligner {
      * (A fixed limit on the fit did not work: the wrong song's lyrics on one song fitted better
      * than the right lyrics on another.)
      */
-    static final double MIN_MARGIN = 0.25;
+    public static final double MIN_MARGIN = 0.25;
     /** At or below this, the lyrics are certainly another song's (every wrong set tested: -0.12 to -0.01). */
     static final double WRONG_MARGIN = 0.05;
 
@@ -444,6 +444,7 @@ public final class WordAligner {
         // unison, rap), so the fit is judged against the same lines in a shuffled order: right
         // lyrics fit clearly better in their own order, wrong ones no better than shuffled.
         double margin = placed == 0 ? 0 : fitSum / placed - shuffledFit(sung, logProbs);
+        r.margin = margin;
         if (placed >= n * 0.8 && margin < WRONG_MARGIN) {
             // No better in their own order than shuffled: these are another song's words
             r.wrongLyrics = true;

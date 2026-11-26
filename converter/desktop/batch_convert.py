@@ -197,8 +197,7 @@ def main():
             s.update(file=name, mode=mode, notes=notes, seconds=round(took))
             say("%s done in %d s: %s, %d vocal lines (%s)" % (tag, took, s["folder"], s["vocalLines"], s["lyrics"]))
         else:
-            tail = open(base + ".log", encoding="utf-8", errors="replace").read()[-400:]
-            s = dict(file=name, mode=mode, notes=notes, folder="", error=tail.strip().splitlines()[-1] if tail.strip() else "failed")
+            s = dict(file=name, mode=mode, notes=notes, folder="", error=error_line(base + ".log"))
             say("%s FAILED %s: %s" % (tag, name, s["error"]))
         if os.path.exists(base + ".vocals.wav"): os.remove(base + ".vocals.wav")
         with state_lock:
@@ -220,12 +219,32 @@ def main():
     started_all = time.time()
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         list(pool.map(lambda a: convert(*a), [(n, name, why) for n, (name, why) in enumerate(todo, 1)]))
+    failed = [name for name, _ in todo if report.get(name, {}).get("error")]
+    if failed and jobs > 1:
+        # Most failures with several songs at once are the GPU or memory running short: alone, they fit
+        print("Trying the %d that failed again, one at a time" % len(failed), flush=True)
+        total = len(failed)
+        heap = heap_for(1)
+        for n, name in enumerate(failed, 1):
+            convert(n, name, "failed with other songs running; again on its own")
     print("All done in %d min %02d s" % divmod(int(time.time() - started_all), 60), flush=True)
     rows = [report[n] for n in files if n in report]
     write_report(args.out, rows)
     if args.keep: write_report(args.keep, rows)
     ok = sum(1 for r in rows if r.get("folder"))
     print("Converted %d of %d songs into %s%s" % (ok, len(rows), songs_dir, " (%d of them earlier)" % skipped if skipped else ""))
+
+
+def error_line(log_path):
+    """The line of a failed conversion's log that says what went wrong."""
+    try:
+        lines = [l.strip() for l in open(log_path, encoding="utf-8", errors="replace") if l.strip()]
+    except OSError:
+        return "failed"
+    for l in lines:
+        if ("Exception" in l or "Error" in l) and not l.startswith("at ") and not l.startswith("Picked up"):
+            return l[:300]
+    return lines[-1][:300] if lines else "failed"
 
 
 COLS = ["file", "folder", "title", "artist", "mode", "notes", "lyrics", "vocalLines", "guitarExpert", "bassExpert", "seconds", "timing", "error"]

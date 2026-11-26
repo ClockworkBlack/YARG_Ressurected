@@ -100,21 +100,84 @@ public final class SongNames {
         base = base.replaceAll("[ _]+[\u2013\u2014-][ _]+", " - ");
         if (!base.contains(" - ")) base = base.replaceFirst("_{3,}", " - ");
         base = base.replace('_', ' ').replaceAll("\\s+", " ").trim();
+        // A TV show's upload: "[Music Bank] KBS WORLD TV 241108"
+        base = base.replaceAll("(?i)\\s*[\\[(](music bank|inkigayo|m ?countdown|show champion|show! music core|music core|the show|"
+                + "simply k-pop|immortal songs|sketchbook|mpd직캠|직캠|fancam|stage mix|교차편집)[^\\])]*[\\])]", "");
+        base = base.replaceAll("(?i)\\s+(kbs|mbc|sbs|mnet|jtbc|arirang|kbs world)( world)?( tv)?( k-?pop)?( \\d{6})?\\s*$", "").trim();
         String artist, title;
         int dash = base.indexOf(" - ");
         java.util.regex.Matcher quoted = QUOTED.matcher(base);
+        java.util.regex.Matcher kLyrics = K_LYRICS.matcher(base);
         if (dash > 0) {
             artist = base.substring(0, dash).trim();
             title = base.substring(dash + 3).trim();
+            // "Came And Left Me - MINHO 민호": the side with the name in two alphabets is the artist
+            if (hasAlias(title) && !hasAlias(artist)) {
+                String swap = artist;
+                artist = title;
+                title = swap;
+            }
         } else if (quoted.find() && quoted.start() > 0) {
-            // "Artist 'Title' MV", the way music videos are often named
+            // "Artist 'Title' MV", "Artist 'Title' Lyrics (...) [Color Coded]": the title is what is
+            // in quotes (with a feature in it kept); what follows is the uploader's
             artist = base.substring(0, quoted.start()).trim();
-            title = (quoted.group(1) + " " + base.substring(quoted.end())).trim();
+            title = quoted.group(1).trim();
+        } else if (kLyrics.find()) {
+            // "MINHO CALL BACK Lyrics (민호 CALL BACK 가사)": the title is the Latin part of the bracket
+            String inside = kLyrics.group(2).replaceAll("[\\p{IsHangul}]+", " ").replaceAll("\\s+", " ").trim();
+            String before = kLyrics.group(1).trim();
+            if (!inside.isEmpty() && before.toLowerCase(Locale.ROOT).endsWith(inside.toLowerCase(Locale.ROOT))
+                    && before.length() > inside.length()) {
+                artist = before.substring(0, before.length() - inside.length()).trim();
+                title = inside;
+            } else {
+                artist = "";
+                title = before;
+            }
         } else {
             artist = "";
             title = base;
         }
-        return new String[] {withoutAlias(artist), dropVideoWords(title)};
+        artist = withoutAlias(artist);
+        // A K-pop soloist with the group in brackets: "NAYEON (TWICE)", "SEULGI (RED VELVET)"
+        String solo = artist.replaceFirst("^(\\p{Lu}[\\p{Lu}\\d .&-]*?)\\s*\\((\\p{Lu}[\\p{Lu}\\d .&'-]*)( of [^)]*)?\\)$", "$1");
+        if (!solo.isEmpty()) artist = solo;
+        return new String[] {artist, dropVideoWords(title)};
+    }
+
+    /** "Title Lyrics (한글 가사)": the way lyric videos of Korean songs are named. */
+    private static final java.util.regex.Pattern K_LYRICS =
+            java.util.regex.Pattern.compile("(?i)^(.*?)\\s+lyrics\\s*[(\\[]([^)\\]]*\uAC00\uC0AC)\\s*[)\\]].*$");
+
+    /** A name followed by the same name in another alphabet: "MINHO 민호", "Girls' Generation (소녀시대)". */
+    private static boolean hasAlias(String s) {
+        return s.matches(".*\\p{IsLatin}.*") && !withoutAlias(s).equals(s.trim());
+    }
+
+    /**
+     * Artist and title from a file's tags, put right where a video site wrote them: the channel
+     * as the artist ("anthonyhamiltonVEVO", "Bad Boy Entertainment", "BigGucci Sosa") and
+     * "Artist - Title" as the title. {artist, title}; tags that look right come back as they are.
+     */
+    public static String[] fromTags(String title, String artist, String fileName) {
+        String t = title == null ? "" : title.trim(), a = artist == null ? "" : artist.trim();
+        String[] named = fromFileName(fileName);
+        int dash = t.indexOf(" - ");
+        if (dash > 0) {
+            String left = t.substring(0, dash).trim(), right = t.substring(dash + 3).trim();
+            String kl = key(left), ka = key(a);
+            boolean channel = a.isEmpty() || looksLikeChannel(a) || (!named[0].isEmpty() && key(named[0]).equals(kl))
+                    || (kl.length() >= 3 && ka.contains(kl) && !ka.equals(kl));
+            if (channel && !right.isEmpty() && !key(a).equals(key(right))) return new String[] {left, right};
+        }
+        if (looksLikeChannel(a) && !named[0].isEmpty()) return new String[] {named[0], t.isEmpty() ? named[1] : t};
+        return new String[] {a, t};
+    }
+
+    /** A video channel or a label rather than a performer: "...VEVO", "Atlantic Records", "X - Topic". */
+    public static boolean looksLikeChannel(String artist) {
+        return artist != null && artist.trim().matches("(?i).*(vevo|\\brecords?|\\brecordings|\\bentertainment|\\bmusic|\\bofficial|\\btv"
+                + "|\\bchannel|\\bfilms?|\\bmedia|\\bproductions?|\\blabel|\\bstudios?|- topic|\\bworldwide|\\bgroup)\\s*$");
     }
 
     /** A title in quotes: the opening quote after a space, the closing one before a space or the end. */

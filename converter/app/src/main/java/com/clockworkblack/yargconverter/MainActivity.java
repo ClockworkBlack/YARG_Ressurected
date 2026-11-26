@@ -918,8 +918,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
                         if (!uri.equals(audioUri)) return;
                         audioSeconds = secondsFinal;
                         String base = audioName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
-                        String title = clean(tags[0]);
-                        String artist = clean(tags[1]);
+                        // A video site's tags: the channel as the artist, "Artist - Title" as the title
+                        String[] fixedTags = com.clockworkblack.yargconverter.core.SongNames.fromTags(clean(tags[0]), clean(tags[1]), base);
+                        String title = fixedTags[1];
+                        String artist = fixedTags[0];
                         if (title.isEmpty()) {
                             // "Artist - Title.mp3" is the most common way untagged files are named.
                             String[] named = com.clockworkblack.yargconverter.core.SongNames.fromFileName(base);
@@ -1593,8 +1595,10 @@ public final class MainActivity extends Activity implements ConversionService.Li
             }
         }
         String base = q.fileName.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
-        String title = clean(tags[0]);
-        String artist = clean(tags[1]);
+        // A video site's tags: the channel as the artist, "Artist - Title" as the title
+        String[] fixedTags = com.clockworkblack.yargconverter.core.SongNames.fromTags(clean(tags[0]), clean(tags[1]), base);
+        String title = fixedTags[1];
+        String artist = fixedTags[0];
         if (title.isEmpty()) {
             String[] named = com.clockworkblack.yargconverter.core.SongNames.fromFileName(base);
             if (artist.isEmpty()) artist = named[0];

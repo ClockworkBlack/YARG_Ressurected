@@ -2,6 +2,9 @@ import com.clockworkblack.yargconverter.core.AudioAnalyzer;
 import com.clockworkblack.yargconverter.core.Features;
 import com.clockworkblack.yargconverter.core.GuitarCharter;
 import com.clockworkblack.yargconverter.core.Lrc;
+import com.clockworkblack.yargconverter.core.LyricAligner;
+import com.clockworkblack.yargconverter.core.TempoMap;
+import com.clockworkblack.yargconverter.core.WordAligner;
 import com.clockworkblack.yargconverter.core.SongMeta;
 import com.clockworkblack.yargconverter.core.SongWriter;
 import com.clockworkblack.yargconverter.core.StemSplitter;
@@ -48,6 +51,44 @@ public final class ConvertSong {
      * ASCII names, and "Girls’ Generation" or "소녀시대" would stop the conversion; run with
      * LC_ALL=C.UTF-8 (batch_convert.py does) to keep such names as they are.
      */
+    /**
+     * Of the timed lyrics of every song with this title and about this length, the one whose
+     * words fit the voice clearly better in their own order than shuffled: {artist, title, lyrics},
+     * or null when none does.
+     */
+    static String[] byTheSinging(String title, double seconds, float[][] letters) {
+        List<String[]> all = com.clockworkblack.yargconverter.Lookup.candidates(title, seconds);
+        if (all.isEmpty()) return null;
+        // An even beat is enough to judge the fit (the tempo only matters for the repeats)
+        double[] beats = new double[(int) (letters.length * WordAligner.FRAME_SEC * 2) + 8];
+        for (int i = 0; i < beats.length; i++) beats[i] = i * 0.5;
+        TempoMap even = TempoMap.fromBeats(beats, 0, 4);
+        String[] best = null;
+        double bestMargin = 0;
+        for (String[] c : all) {
+            List<Lrc.Line> lines = Lrc.parse(c[2]);
+            if (lines.size() < 4) continue;
+            LyricAligner.Result r = WordAligner.place(lines, letters, even, 4, 120);
+            double m = r.wrongLyrics || Double.isNaN(r.margin) ? Double.NEGATIVE_INFINITY : r.margin;
+            log(String.format(Locale.US, "  %s's \"%s\": %s", c[0], c[1], Double.isInfinite(m) ? "does not fit" : String.format(Locale.US, "fits by %.2f", m)));
+            if (m > bestMargin + 1e-9 && m >= WordAligner.MIN_MARGIN) {
+                bestMargin = m;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    /** No lyrics to use: whoever runs this writes them from the separated voice (vocals-out) into {@code path}. */
+    static String waitForLyrics(String path) throws IOException, InterruptedException {
+        File wait = new File(path);
+        Files.write(new File(wait.getPath() + ".needed").toPath(), new byte[0]);
+        log("Waiting for " + wait + "…");
+        while (!wait.exists()) Thread.sleep(2000);
+        Thread.sleep(1000);
+        return wait.getPath();
+    }
+
     static String writableName(String name) {
         java.nio.charset.Charset native_;
         try {
@@ -126,6 +167,13 @@ public final class ConvertSong {
         meta.genre = a.getOrDefault("genre", "");
         // What was not given: from the file's own tags, then its name ("Artist - Title (Official Video)")
         Map<String, String> tags = tags(audio);
+        if (tags.containsKey("title") || tags.containsKey("artist")) {
+            // A video site's tags: the channel as the artist, "Artist - Title" as the title
+            String[] fixed = com.clockworkblack.yargconverter.core.SongNames.fromTags(tags.get("title"), tags.get("artist"),
+                    audio.getName().replaceAll("^cut-\\d+-", "").replaceAll("^[0-9a-f]{8}-", ""));
+            if (!fixed[1].isEmpty()) tags.put("title", fixed[1]);
+            if (!fixed[0].isEmpty()) tags.put("artist", fixed[0]); else tags.remove("artist");
+        }
         // Tags that say nothing: an album named like the video, a genre of "Music"
         String tagTitle = tags.getOrDefault("title", "");
         if (tags.getOrDefault("album", "").equalsIgnoreCase(tagTitle)) tags.remove("album");
@@ -171,19 +219,35 @@ public final class ConvertSong {
         }
         meta.title = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title).isEmpty() ? meta.title
                 : com.clockworkblack.yargconverter.core.SongNames.cleanTitle(meta.title);
+        boolean guessedArtist = false;
+        boolean[] fromMusicBrainz = new boolean[5];
         if (a.containsKey("find-details")) {
             String[] found = com.clockworkblack.yargconverter.Lookup.details(meta.title, meta.artist);
             if (found != null) {
-                if (meta.artist.isEmpty() && !found[1].isEmpty()) meta.artist = found[1];
+                if (meta.artist.isEmpty() && !found[1].isEmpty()) {
+                    // Found by the title alone: a guess among the songs of that name
+                    meta.artist = found[1];
+                    guessedArtist = true;
+                    for (int i = 0; i < 5; i++) fromMusicBrainz[i] = true;
+                }
                 // The artist as the record writes it ("Girls' Generation"), when ours is only the
                 // same name read from a file name ("Girls Generation")
                 if (artistFromName && com.clockworkblack.yargconverter.core.SongNames.key(found[1])
                         .equals(com.clockworkblack.yargconverter.core.SongNames.key(meta.artist))) meta.artist = found[1];
                 // The title as the record has it, when ours came from a mangled file name
                 if (!a.containsKey("title") && !found[0].isEmpty()) meta.title = found[0];
-                if (meta.album.isEmpty()) meta.album = found[2];
-                if (meta.year.isEmpty()) meta.year = found[3];
-                if (meta.genre.isEmpty()) meta.genre = found[4];
+                if (meta.album.isEmpty()) {
+                    meta.album = found[2];
+                    fromMusicBrainz[2] = true;
+                }
+                if (meta.year.isEmpty()) {
+                    meta.year = found[3];
+                    fromMusicBrainz[3] = true;
+                }
+                if (meta.genre.isEmpty()) {
+                    meta.genre = found[4];
+                    fromMusicBrainz[4] = true;
+                }
                 log("Details from MusicBrainz: " + String.join(" | ", found));
             }
         }
@@ -196,8 +260,6 @@ public final class ConvertSong {
         GuitarCharter.Options options = new GuitarCharter.Options();
         options.threshold = notes.equals("fewer") ? 1.5 : notes.equals("more") ? 0.65 : 1.0;
 
-        File dir = new File(new File(req(a, "out")), writableName(meta.folderName()));
-        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Could not create " + dir);
 
         String name = audio.getName();
         String ext = name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.US);
@@ -232,7 +294,39 @@ public final class ConvertSong {
         boolean untimed = false;
         String foundText = null;
         if (lyricsPath == null && a.containsKey("find-lyrics")) {
-            com.clockworkblack.yargconverter.Lookup.Lyrics found = com.clockworkblack.yargconverter.Lookup.lyrics(
+            com.clockworkblack.yargconverter.Lookup.Lyrics found = null;
+            if ((guessedArtist || meta.artist.isEmpty()) && stems != null && stems.letters != null) {
+                // The artist is not known (or only guessed from the title): of the songs of this
+                // title, the one whose words fit the singing is this one
+                String[] pick = byTheSinging(meta.title, features.duration, stems.letters);
+                if (pick != null) {
+                    if (!com.clockworkblack.yargconverter.core.SongNames.same(pick[0], meta.artist)) {
+                        log("The words that fit the singing are those of " + pick[0] + "'s \"" + pick[1] + "\""
+                                + (meta.artist.isEmpty() ? "" : " (not " + meta.artist + ")"));
+                        meta.artist = pick[0];
+                        meta.singers = Lrc.artists(meta.artist, meta.title).toArray(new String[0]);
+                        String[] again = com.clockworkblack.yargconverter.Lookup.details(meta.title, meta.artist);
+                        if (fromMusicBrainz[2] || meta.album.isEmpty()) meta.album = again == null ? "" : again[2];
+                        if (fromMusicBrainz[3] || meta.year.isEmpty()) meta.year = again == null ? "" : again[3];
+                        if (fromMusicBrainz[4] || meta.genre.isEmpty()) meta.genre = again == null ? "" : again[4];
+                        stems.singerNames = meta.singers.length >= 2 ? meta.singers : null;
+                    }
+                    found = new com.clockworkblack.yargconverter.Lookup.Lyrics();
+                    found.timed = pick[2];
+                    found.source = "LRCLIB, the one that fits the singing";
+                    found.foundArtist = pick[0];
+                    found.foundTitle = pick[1];
+                } else if (guessedArtist) {
+                    // None of them is this recording: MusicBrainz's guess is not trusted either
+                    log("No song of this title fits the singing; the artist is not known");
+                    meta.artist = "";
+                    if (fromMusicBrainz[2]) meta.album = "";
+                    if (fromMusicBrainz[3]) meta.year = "";
+                    if (fromMusicBrainz[4]) meta.genre = "";
+                    meta.singers = new String[0];
+                }
+            }
+            if (found == null) found = com.clockworkblack.yargconverter.Lookup.lyrics(
                     meta.title, meta.artist, meta.album, features.duration, audio.getName(), java.util.Arrays.asList(meta.singers));
             if (found != null && found.timed != null) {
                 foundText = found.timed;
@@ -256,13 +350,7 @@ public final class ConvertSong {
         }
         if (foundText == null && lyricsPath == null && a.containsKey("wait-for-lyrics")) {
             lyricsSource = "written from the voice (speech to text)";
-            File wait = new File(a.get("wait-for-lyrics"));
-            // No lyrics anywhere: whoever runs this writes them from the separated voice (vocals-out)
-            Files.write(new File(wait.getPath() + ".needed").toPath(), new byte[0]);
-            log("Waiting for " + wait + "…");
-            while (!wait.exists()) Thread.sleep(2000);
-            Thread.sleep(1000);
-            lyricsPath = wait.getPath();
+            lyricsPath = waitForLyrics(a.get("wait-for-lyrics"));
         }
         String lrcText = foundText != null ? foundText : lyricsPath == null ? null : Lrc.decode(Files.readAllBytes(new File(lyricsPath).toPath()));
         if (stems != null) stems.lyricTimesUnknown = untimed;
@@ -271,6 +359,16 @@ public final class ConvertSong {
 
         log("Finding the beat and writing the charts…");
         SongWriter.Result r = SongWriter.analyze(features, lyrics, options, stems, Lrc.keepsTiming(lrcText));
+        if (foundText != null && r.lyricLines == 0 && stems != null && a.containsKey("wait-for-lyrics")) {
+            // The lyrics found online were another song's, or words that could not be matched to
+            // the voice: written from the voice instead, as for a song with no lyrics online
+            log("The lyrics found online do not fit this recording; writing them from the voice instead");
+            lyricsPath = waitForLyrics(a.get("wait-for-lyrics"));
+            lrcText = Lrc.decode(Files.readAllBytes(new File(lyricsPath).toPath()));
+            stems.lyricTimesUnknown = false;
+            lyricsSource = "written from the voice (speech to text; the lyrics found online were for another recording)";
+            r = SongWriter.analyze(features, Lrc.parse(lrcText), options, stems, Lrc.keepsTiming(lrcText));
+        }
         if (r.singerGuess != null || r.lyricsMoved) lrcText = Lrc.format(r.lyricsOut);
         if (a.containsKey("letters-out") && stems != null && stems.letters != null) {
             // What the speech model heard, kept so timing can be tried again without splitting the song again
@@ -287,6 +385,8 @@ public final class ConvertSong {
             }
             Files.write(new File(a.get("timing-report")).toPath(), rep.toString().getBytes(StandardCharsets.UTF_8));
         }
+        File dir = new File(new File(req(a, "out")), writableName(meta.folderName()));
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("Could not create " + dir);
         SongWriter.writeFolder(dir, meta, r, audioFile);
         // Read back by the game's rules (core-test/MidiCheck): every note and word must come through
         List<String> problems = MidiCheck.verify(Files.readAllBytes(new File(dir, "notes.mid").toPath()), r);

@@ -63,3 +63,7 @@ that failed or got no lyrics, and songs whose file or `songs.csv` row changed (`
 everything again). Without a record yet, a `report.csv` in that folder from an earlier run is
 taken as the record. Speech-to-text runs on the GPU when it can (CUDA 12's cuBLAS and cuDNN 9:
 `pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"`) and on the processor when it cannot.
+
+A song that failed while others were converting at once (most often the GPU or memory running
+short) is tried once more on its own at the end of the run; the report gives the line of the log
+that says what went wrong.

@@ -148,6 +148,35 @@ final class LrcLib {
     }
 
     /**
+     * Every timed lyric of a title, one per artist (the one nearest in length), for when the
+     * artist is not known: which of them is this recording is then told by the singing.
+     * Lyrics timed to a recording more than 20 seconds longer or shorter are left out.
+     */
+    static java.util.List<Found> candidates(String title, double durationSec, int max) throws IOException {
+        java.util.Map<String, Found> byArtist = new java.util.LinkedHashMap<>();
+        String clean = SongNames.cleanTitle(title);
+        if (clean.isEmpty()) return new java.util.ArrayList<>();
+        String body = get(BASE + "search?track_name=" + enc(clean));
+        if (body == null) return new java.util.ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(body);
+            for (int i = 0; i < arr.length(); i++) {
+                Found f = parse(arr.getJSONObject(i));
+                if (f.synced == null || !SongNames.key(SongNames.cleanTitle(f.title)).equals(SongNames.key(clean))) continue;
+                if (durationSec > 1 && f.duration > 1 && Math.abs(f.duration - durationSec) > 20) continue;
+                String k = SongNames.key(SongNames.primaryArtist(f.artist));
+                Found had = byArtist.get(k);
+                if (had == null || Math.abs(f.duration - durationSec) < Math.abs(had.duration - durationSec)) byArtist.put(k, f);
+            }
+        } catch (JSONException e) {
+            throw new IOException("The lyrics service sent an unexpected reply.", e);
+        }
+        java.util.List<Found> out = new java.util.ArrayList<>(byArtist.values());
+        out.sort((x, y) -> Double.compare(Math.abs(x.duration - durationSec), Math.abs(y.duration - durationSec)));
+        return out.size() > max ? out.subList(0, max) : out;
+    }
+
+    /**
      * Lyrics.ovh (api.lyrics.ovh), a free catalogue of plain lyrics. It has no times, so what it
      * finds still has to be tapped in time; it needs both an artist and a title.
      */
