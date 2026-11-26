@@ -28,6 +28,22 @@ namespace YARG.Audio
         /// <summary>True while "Hear myself" is on in the test: the helper that silences playback without headphones stands aside.</summary>
         public static bool HearMyself { get; private set; }
 
+        private static MicTest _instance;
+
+        /// <summary>Opens the test from the Profiles screen (its controller button), when the bar is there.</summary>
+        public static void OpenFromMenu()
+        {
+            if (_instance != null && _instance._bar != null && _instance._bar.activeSelf)
+            {
+                _instance.Open();
+            }
+        }
+
+        private void Awake()
+        {
+            _instance = this;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
         {

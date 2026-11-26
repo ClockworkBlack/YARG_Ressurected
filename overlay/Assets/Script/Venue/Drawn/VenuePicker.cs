@@ -5,7 +5,8 @@
 // just above the SONG SETUP bar, saying where the next song will be played and whether the crowd
 // is on. Tapping it opens a list: random (any, street and club, high class), every venue by
 // region, or none; and the crowd on or off. The choice is the same setting as in Settings, saved
-// straight away. A new file on its own: nothing else is changed.
+// straight away. With a controller, the Venue button in the help bar opens the same choices as a
+// list. A new file on its own: nothing else is changed.
 using System;
 using System.Collections.Generic;
 using TMPro;
@@ -15,6 +16,7 @@ using YARG.Core.Input;
 using YARG.Core.Logging;
 using YARG.Menu.DifficultySelect;
 using YARG.Menu.Navigation;
+using YARG.Menu.Persistent;
 using YARG.Settings;
 using YARG.Story;
 
@@ -47,6 +49,75 @@ namespace YARG.Venue.Drawn
         private bool _failed;
         private string _shownChoice;
         private bool _shownCrowd;
+
+        private static VenuePicker _instance;
+
+        /// <summary>True while the touch list of venues is open (other bars keep clear of it).</summary>
+        public static bool PanelOpen => _instance != null && _instance._panel != null && _instance._panel.activeSelf;
+
+        /// <summary>True when a venue can be picked now (the instrument screen, not a story gig).</summary>
+        public static bool CanOpen => SettingsManager.Settings != null && DifficultySelectMenu.Current != null &&
+            !(StoryMode.Instance != null && StoryMode.Instance.GigUnderWay);
+
+        /// <summary>The choices as a list the controller can work (the Venue button on the instrument screen).</summary>
+        public static void OpenList()
+        {
+            if (!CanOpen || DialogManager.Instance == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var dialog = DialogManager.Instance.ShowList("Where to play");
+                FillList(dialog, 0);
+            }
+            catch (Exception e)
+            {
+                YargLogger.LogException(e, "The venue list could not open");
+            }
+        }
+
+        private static void FillList(YARG.Menu.Dialogs.ListDialog dialog, int select)
+        {
+            var settings = SettingsManager.Settings;
+            string current = settings.VenueChoice.Value;
+            dialog.ClearList();
+
+            dialog.AddListButton("Dancing crowd: " + (settings.VenueCrowd.Value ? "ON" : "off"), () =>
+            {
+                settings.VenueCrowd.SetValueWithoutNotify(!settings.VenueCrowd.Value);
+                SettingsManager.SaveSettings();
+                FillList(dialog, 0);
+            }, false);
+
+            void Add(string text, string choice)
+            {
+                dialog.AddListButton((choice == current ? "> " : "") + text, () =>
+                {
+                    settings.VenueChoice.SetValueWithoutNotify(choice);
+                    SettingsManager.SaveSettings();
+                });
+            }
+
+            foreach (string choice in new[] { VenueCatalog.CHOICE_RANDOM, VenueCatalog.CHOICE_RANDOM_STREET, VenueCatalog.CHOICE_RANDOM_UPSCALE })
+            {
+                Add(VenueCatalog.Describe(choice), choice);
+            }
+
+            foreach (var venue in VenueCatalog.All)
+            {
+                Add(venue.Name + "   <alpha=#88>" + venue.Region + ", inspired by " + venue.InspiredBy, venue.Id);
+            }
+
+            Add(VenueCatalog.Describe(VenueCatalog.CHOICE_NONE), VenueCatalog.CHOICE_NONE);
+            dialog.SelectListIndex(select);
+        }
+
+        private void Awake()
+        {
+            _instance = this;
+        }
 
         private void Update()
         {
@@ -81,8 +152,7 @@ namespace YARG.Venue.Drawn
                 {
                     _shownChoice = settings.VenueChoice.Value;
                     _shownCrowd = settings.VenueCrowd.Value;
-                    _barText.text = "VENUE   " + VenueCatalog.Describe(_shownChoice) + "   |   crowd " + (_shownCrowd ? "on" : "off") +
-                        "   (tap to change)";
+                    _barText.text = "VENUE   " + VenueCatalog.Describe(_shownChoice) + "   |   crowd " + (_shownCrowd ? "on" : "off");
                 }
             }
             catch (Exception e)

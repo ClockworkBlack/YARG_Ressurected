@@ -97,6 +97,441 @@ index 4883d4d..6f37e40 100644
              // Don't create instance if Discord rich presence is turned off in settings
              if (SettingsManager.Settings.DiscordRichPresence.Value == DiscordRichPresenceMode.Hide)
              {
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index b2bf664..f5b41d4 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -82,8 +82,9 @@ namespace YARG.Menu.DifficultySelect
+         // Keeps the Sing-Off row highlighted after it has been switched
+         private bool _reselectSingOff;
+ 
+-        private State _lastMenuState;
+-        private State _menuState;
++        // (Main, not the first state in the list: the cursor starts on Ready)
++        private State _lastMenuState = State.Main;
++        private State _menuState = State.Main;
+ 
+         private readonly List<Instrument> _possibleInstruments  = new();
+         private readonly List<Difficulty> _possibleDifficulties = new();
+@@ -98,7 +99,8 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private List<SongEntry> _songList;
+ 
+-        private YargPlayer CurrentPlayer => PlayerContainer.Players[_playerIndex];
++        // (Kept in range: a phone that leaves takes its player with it)
++        private YargPlayer CurrentPlayer => PlayerContainer.Players[Mathf.Clamp(_playerIndex, 0, Mathf.Max(0, PlayerContainer.Players.Count - 1))];
+ 
+         private Scrollbar _scrollbar;
+ 
+@@ -137,6 +139,13 @@ namespace YARG.Menu.DifficultySelect
+                 // Left / right (D-pad or a guitar's joystick): song speed, 5% at a time
+                 new NavigationScheme.Entry(MenuAction.Left, "Menu.Common.Left", () => NudgeSpeed(-0.05f), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Right, "Menu.Common.Right", () => NudgeSpeed(0.05f), hide: true),
++#if UNITY_ANDROID && !UNITY_EDITOR
++                // The two bars along the bottom (Song Setup, Venue) were for touch only
++                new NavigationScheme.Entry(MenuAction.Yellow, "Menu.Common.SongSetup",
++                    () => YARG.Menu.SongSetup.SongSetupPanel.OpenFromMenu()),
++#endif
++                new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.Venue",
++                    () => YARG.Venue.Drawn.VenuePicker.OpenList()),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () =>
+                 {
+                     if (_menuState == State.Main)
+@@ -174,6 +183,7 @@ namespace YARG.Menu.DifficultySelect
+             // ChangePlayer(0) will update for the current player
+             _playerIndex = 0;
+             _vocalModifierSelectIndex = -1;
++            _lastMenuState = State.Main;
+             ChangePlayer(0);
+ 
+             _loadingPhrase.text = RichTextUtils.StripRichTextTags(
+@@ -216,6 +226,18 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private void UpdateForPlayer()
+         {
++            // Everyone left (phones that disconnected): nothing to choose for
++            if (PlayerContainer.Players.Count == 0)
++            {
++                MenuManager.Instance.PopMenu();
++                return;
++            }
++
++            if (_playerIndex >= PlayerContainer.Players.Count)
++            {
++                _playerIndex = PlayerContainer.Players.Count - 1;
++            }
++
+             // Set player text
+             var profile = CurrentPlayer.Profile;
+             _text.text = $"<sprite name=\"{profile.GameMode.ToResourceName()}\"> {profile.Name}";
+@@ -845,7 +867,7 @@ namespace YARG.Menu.DifficultySelect
+                 }
+ 
+                 // Ensure all vocal players have the same modifiers active
+-                if (_vocalModifierSelectIndex != -1)
++                if (_vocalModifierSelectIndex != -1 && _vocalModifierSelectIndex < PlayerContainer.Players.Count)
+                 {
+                     // Call the player with the selected modifiers, the "primary player"
+                     var primaryPlayer = PlayerContainer.Players[_vocalModifierSelectIndex];
+@@ -1091,7 +1113,9 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private void NudgeSpeed(float change)
+         {
+-            float speed = Mathf.Clamp(Mathf.Round((ShownSongSpeed + change) * 20f) / 20f, 0.25f, 2f);
++            // (Down to 25% and up to 200%; a speed typed in beyond that is not pulled back in)
++            float speed = Mathf.Round((ShownSongSpeed + change) * 20f) / 20f;
++            speed = Mathf.Clamp(speed, Mathf.Min(0.25f, ShownSongSpeed), Mathf.Max(2f, ShownSongSpeed));
+             ShownSongSpeed = speed;
+             YARG.Menu.Persistent.MenuInfoPanel.ShowHint("Song Speed: " + Mathf.RoundToInt(speed * 100f) + "%",
+                 "Left and right change the song's speed, 5% at a time. Slower is easier to learn; the song's pitch stays the same.");
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+index 9f5b187..96a3474 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.SortFilter.cs
+@@ -551,12 +551,17 @@ namespace YARG.Menu.MusicLibrary
+ 
+             var dialog = DialogManager.Instance.ShowList("Browse by " + what + "\n<size=60%><line-height=60%>\n" +
+                 groups.Count + " to choose from. Pick one to see its songs.</size>");
+-            dialog.AddListButton("All songs (clear the search)", () => SetSearchInput(attribute, string.Empty));
++            // Browsing shows just the one pick, not that pick on top of the last one
++            dialog.AddListButton("All songs (clear the search)", () => _searchField.ClearFilterQueries());
+             foreach (var (name, count) in groups)
+             {
+                 string chosen = name;
+                 dialog.AddListButton(name + "   <alpha=#88>(" + count + (count == 1 ? " song)" : " songs)"),
+-                    () => SetSearchInput(attribute, "\"" + chosen + "\""));
++                    () =>
++                    {
++                        _searchField.ClearFilterQueries();
++                        SetSearchInput(attribute, "\"" + chosen + "\"");
++                    });
+             }
+         }
+ 
+diff --git a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+index 7b32ad1..a6dfd7b 100644
+--- a/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
++++ b/Assets/Script/Menu/MusicLibrary/MusicLibraryMenu.cs
+@@ -367,6 +367,8 @@ namespace YARG.Menu.MusicLibrary
+             var selection = CurrentSelection;
+             if (selection == null || !selection.GetFavoriteInfo().ShowFavoriteButton)
+             {
++                // (Say why nothing happened: on a heading, a playlist or a category)
++                ToastManager.ToastInformation("Move to a song to add it to Favorites");
+                 return;
+             }
+ 
+diff --git a/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs b/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs
+index c301a61..c8ef7c1 100644
+--- a/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs
++++ b/Assets/Script/Menu/MusicLibrary/SongSearchingField.cs
+@@ -91,9 +91,11 @@ namespace YARG.Menu.MusicLibrary
+                 else
+                 {
+                     // Regex pattern: The filter specified and the search query tagged with that filter
++                    // (Both taken literally: an album such as "Nevermind (Remastered)" or an artist
++                    // such as "Ke$ha" is not a pattern, and an unbalanced bracket threw)
+                     var currentQuery = $"{filter}:{_searchQueries[attribute]}";
+-                    _fullSearchQuery = Regex.Replace(_fullSearchQuery, currentQuery, updatedQuery,
+-                        RegexOptions.IgnoreCase);
++                    _fullSearchQuery = Regex.Replace(_fullSearchQuery, Regex.Escape(currentQuery),
++                        updatedQuery.Replace("$", "$$"), RegexOptions.IgnoreCase);
+                 }
+             }
+ 
+diff --git a/Assets/Script/Menu/Persistent/MusicPlayer.cs b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+index fc872c0..09fe775 100644
+--- a/Assets/Script/Menu/Persistent/MusicPlayer.cs
++++ b/Assets/Script/Menu/Persistent/MusicPlayer.cs
+@@ -188,8 +188,12 @@ namespace YARG.Menu.Persistent
+ 
+                     if (!isActiveAndEnabled)
+                     {
+-                        // Hidden while the song was loading: start afresh when the menu comes back
++                        // Hidden while the song was loading: start afresh when the menu comes back.
++                        // (The song held from before goes too: it would come back under this one's name.)
+                         mixer.Dispose();
++                        _mixer?.Dispose();
++                        _mixer = null;
++                        _heldForLater = false;
+                         return;
+                     }
+ 
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index 45eeb1c..23fd7f5 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -56,13 +56,51 @@ namespace YARG.Menu.ProfileList
+                 new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", OpenSelectedProfileActions),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu(), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfile),
++                // The MIC TEST and PHONES bars on this screen were for touch only
++                new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.MicTest", () => YARG.Audio.MicTest.OpenFromMenu()),
++#if UNITY_ANDROID && !UNITY_EDITOR
++                new NavigationScheme.Entry(MenuAction.Orange, "Menu.Common.Phones", () => YARG.Remote.RemotePlayManager.OpenPhones()),
++#endif
+             }, true));
+ 
+             PlayerContainer.PlayerAdded += OnPlayerAdded;
++            _navigationGroup.SelectionChanged += ScrollToSelection;
++        }
++
++        // The list follows the controller's cursor (on the Fold's cover screen it is longer than the screen)
++        private void ScrollToSelection(NavigatableBehaviour selected, SelectionOrigin origin)
++        {
++            if (origin != SelectionOrigin.Navigation || selected == null)
++            {
++                return;
++            }
++
++            var scrollRect = _profileList.GetComponentInParent<UnityEngine.UI.ScrollRect>();
++            if (scrollRect == null || scrollRect.content == null)
++            {
++                return;
++            }
++
++            Canvas.ForceUpdateCanvases();
++            var content = scrollRect.content;
++            var viewport = scrollRect.viewport != null ? scrollRect.viewport : (RectTransform) scrollRect.transform;
++            float scrollable = content.rect.height - viewport.rect.height;
++            if (scrollable <= 0f)
++            {
++                return;
++            }
++
++            var item = (RectTransform) selected.transform;
++            var middle = content.InverseTransformPoint(item.TransformPoint(item.rect.center));
++            float fromTop = content.rect.yMax - middle.y;
++            float target = Mathf.Clamp(fromTop - viewport.rect.height / 2f, 0f, scrollable);
++            scrollRect.StopMovement();
++            scrollRect.verticalNormalizedPosition = 1f - target / scrollable;
+         }
+ 
+         private void OnDisable()
+         {
++            _navigationGroup.SelectionChanged -= ScrollToSelection;
+             PlayerContainer.EnsureValidInstruments();
+             PlayerContainer.SaveProfiles();
+ 
+@@ -156,7 +194,7 @@ namespace YARG.Menu.ProfileList
+ 
+         public void AddProfile()
+         {
+-            PlayerContainer.AddProfile(new YargProfile
++            var profile = new YargProfile
+             {
+                 Name = GetUniqueProfileName("New Profile"),
+                 NoteSpeed = 5,
+@@ -166,9 +204,11 @@ namespace YARG.Menu.ProfileList
+                 CurrentDifficulty = Difficulty.Easy,
+                 DifficultyFallback = Difficulty.Easy,
+                 GameMode = GameMode.FiveFretGuitar
+-            });
++            };
++            PlayerContainer.AddProfile(profile);
+ 
+-            RefreshList();
++            // The new profile is the one lit up, so the next press acts on it
++            RefreshList(profile);
+         }
+ 
+         public void AddBotProfile()
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 0b069fe..f832965 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -11,6 +11,7 @@ using YARG.Core.Game;
+ using YARG.Core.Logging;
+ using YARG.Input;
+ using YARG.Localization;
++using YARG.Menu.Data;
+ using YARG.Menu.Navigation;
+ using YARG.Menu.Persistent;
+ using YARG.Player;
+@@ -135,8 +136,11 @@ namespace YARG.Menu.ProfileList
+ 
+             if (!remove) return;
+ 
+-            // Then remove
++            DeleteNow();
++        }
+ 
++        private void DeleteNow()
++        {
+             if (Selected)
+             {
+                 _profileSidebar.HideContents();
+@@ -148,6 +152,36 @@ namespace YARG.Menu.ProfileList
+             }
+         }
+ 
++        // On a controller: the usual confirmation asks for the profile's name to be typed, which a
++        // controller can't do, so ask with two buttons instead
++        private async UniTask ConfirmDeleteWithController()
++        {
++            if (Profile.IsBot)
++            {
++                DeleteNow();
++                return;
++            }
++
++            bool remove = false;
++            var dialog = DialogManager.Instance.ShowMessage("Delete " + Profile.Name + "?",
++                "Deleting this profile is permanent and you will lose all stats and binds. Play history will " +
++                "remain and can be accessed in the <b>History</b> tab.");
++            dialog.ClearButtons();
++            dialog.AddDialogButton("Menu.Common.Cancel", MenuData.Colors.CancelButton,
++                () => DialogManager.Instance.ClearDialog());
++            dialog.AddDialogButton("Menu.Common.Delete", MenuData.Colors.ConfirmButton, () =>
++            {
++                remove = true;
++                DialogManager.Instance.ClearDialog();
++            });
++            await dialog.WaitUntilClosed();
++
++            if (remove && this != null)
++            {
++                DeleteNow();
++            }
++        }
++
+         public UniTask<bool> PromptAddDevice() => PromptAddDeviceFor(Profile);
+ 
+         /// <summary>
+@@ -378,7 +412,16 @@ namespace YARG.Menu.ProfileList
+             bool selectedDevice = false;
+             bool clearBinds = false;
+ 
+-            dialog.AddToggleSetting("Clear Binds for Device", false, (value) => clearBinds = value);
++            // (A row of the list rather than a tick box, so a controller can reach it too)
++            ColoredButton clearRow = null;
++            clearRow = dialog.AddListButton("Clear binds for the removed device: off", () =>
++            {
++                clearBinds = !clearBinds;
++                if (clearRow != null)
++                {
++                    clearRow.Text.text = "Clear binds for the removed device: " + (clearBinds ? "ON" : "off");
++                }
++            }, false);
+ 
+             // Add available devices
+             foreach (var device in InputSystem.devices)
+@@ -434,7 +477,8 @@ namespace YARG.Menu.ProfileList
+         /// Confirm on a controller: a list of what can be done with this profile, since the buttons
+         /// on the row and in the sidebar can only be reached by touch.
+         /// </summary>
+-        public void ShowActions()
++        /// <param name="select">The row to put the cursor on (the one just used, when the list is shown again).</param>
++        public void ShowActions(int select = 0)
+         {
+             var engine = YARG.Settings.Customization.CustomContentManager.EnginePresets.GetPresetById(Profile.EnginePreset);
+             string engineName = engine != null ? engine.Name : "Default";
+@@ -449,14 +493,12 @@ namespace YARG.Menu.ProfileList
+                     dialog.AddListButton(Profile.IsBot ? "Add this bot to the band" : "Connect (play as this profile)",
+                         () => After(() => Connect(true)));
+                 }
+-                dialog.AddListButton("Delete this profile", () => After(() =>
+-                {
+-                    RemoveProfile();
+-                    return UniTask.CompletedTask;
+-                }));
++                dialog.AddListButton("Delete this profile", () => After(ConfirmDeleteWithController));
+                 return;
+             }
+ 
++            // Rows are counted so that the list can come back with the cursor where it was
++            int rows = 0;
+             if (!Profile.IsBot)
+             {
+                 dialog.AddListButton("Add Device (controller or microphone)", () => After(async () =>
+@@ -469,23 +511,28 @@ namespace YARG.Menu.ProfileList
+                     await PromptRemoveDevice();
+                     _profileListMenu.RefreshList(Profile);
+                 }));
++                rows += 2;
+             }
+ 
++            int typeRow = rows++;
+             dialog.AddListButton("Instrument Type: " + Profile.GameMode.ToLocalizedName() + "  (change)", () =>
+             {
++                // The same instruments, in the same order, as the profile's own list (a mode that
++                // list doesn't have was turned back into Five Fret Guitar when it was shown)
+                 var modes = new[]
+                 {
+                     YARG.Core.GameMode.FiveFretGuitar, YARG.Core.GameMode.Vocals,
+                     YARG.Core.GameMode.FourLaneDrums, YARG.Core.GameMode.FiveLaneDrums,
+-                    YARG.Core.GameMode.SixFretGuitar, YARG.Core.GameMode.ProKeys,
++                    YARG.Core.GameMode.EliteDrums, YARG.Core.GameMode.ProKeys,
+                 };
+                 int at = System.Array.IndexOf(modes, Profile.GameMode);
+                 Profile.GameMode = modes[(at + 1) % modes.Length];
+                 Profile.CurrentInstrument = Profile.GameMode.PossibleInstruments()[0];
+                 YARG.Menu.Filters.FiltersMenu.ResetIntensityFiltersForProfile(Profile);
+                 UpdateDisplay(Profile);
+-                After(Reopen);
++                After(() => Reopen(typeRow));
+             });
++            int engineRow = rows++;
+             dialog.AddListButton("Engine: " + engineName + "  (change)", () =>
+             {
+                 // Default, Casual, Precision, Solo Taps: the ones that change this instrument
+@@ -499,22 +546,25 @@ namespace YARG.Menu.ProfileList
+                     choices.Add(YARG.Core.Game.EnginePreset.SoloTaps);
+                 int at = choices.FindIndex(e => e.Id == Profile.EnginePreset);
+                 Profile.EnginePreset = choices[(at + 1) % choices.Count].Id;
+-                After(Reopen);
++                After(() => Reopen(engineRow));
+             });
++            int fasterRow = rows++;
+             dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (faster)", () =>
+             {
+                 Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed + 0.5f, 0.5f, 100f);
+-                After(Reopen);
++                After(() => Reopen(fasterRow));
+             });
++            int slowerRow = rows++;
+             dialog.AddListButton($"Note Speed: {Profile.NoteSpeed:0.#}  (slower)", () =>
+             {
+                 Profile.NoteSpeed = Mathf.Clamp(Profile.NoteSpeed - 0.5f, 0.5f, 100f);
+-                After(Reopen);
++                After(() => Reopen(slowerRow));
+             });
++            int leftyRow = rows++;
+             dialog.AddListButton(Profile.LeftyFlip ? "Lefty Flip: On" : "Lefty Flip: Off", () =>
+             {
+                 Profile.LeftyFlip = !Profile.LeftyFlip;
+-                After(Reopen);
++                After(() => Reopen(leftyRow));
+             });
+             dialog.AddListButton("More Settings and Button Bindings", () => After(() =>
+             {
+@@ -546,12 +596,14 @@ namespace YARG.Menu.ProfileList
+                 Disconnect();
+                 return UniTask.CompletedTask;
+             }));
++
++            dialog.SelectListIndex(select);
+         }
+ 
+-        private UniTask Reopen()
++        private UniTask Reopen(int select)
+         {
+             _profileSidebar.UpdateSidebar(Profile, this);
+-            ShowActions();
++            ShowActions(select);
+             return UniTask.CompletedTask;
+         }
+ 
+@@ -626,7 +678,8 @@ namespace YARG.Menu.ProfileList
+             }
+ 
+             PlayerContainer.DisposePlayer(player);
+-            _profileListMenu.RefreshList();
++            // (Keep the cursor on this profile)
++            _profileListMenu.RefreshList(Profile);
+         }
+ 
+         public void MoveUp()
 diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
 index 4b90b44..9a656ce 100644
 --- a/Assets/Script/Settings/SettingsManager.Settings.cs
@@ -262,10 +697,31 @@ index 6327919..01e2a73 100644
              }
  
 diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
-index 5fab337..ed2329d 100644
+index 5fab337..4633ffd 100644
 --- a/Assets/StreamingAssets/lang/en-US.json
 +++ b/Assets/StreamingAssets/lang/en-US.json
-@@ -979,7 +979,7 @@
+@@ -138,6 +138,20 @@
+             "Start": "Start",
+ 
+             "Up": "Up",
++            "SongSetup": "Song Setup",
++            "Venue": "Venue",
++            "MicTest": "Mic Test",
++            "Phones": "Phones",
++            "SongSetupPreview": "Preview",
++            "SongSetupFreestyle": "Freestyle",
++            "SongSetupStart": "Start Here",
++            "SongSetupEnd": "End Here",
++            "SongSetupSlower": "Slower",
++            "SongSetupFaster": "Faster",
++            "SongSetupKeyUp": "Key Up",
++            "SongSetupKeyDown": "Key Down",
++            "GameNetwork": "Game Network",
++            "HotspotSettings": "Hotspot Settings",
+             "Down": "Down",
+             "Left": "Left",
+             "Right": "Right",
+@@ -979,7 +993,7 @@
          "Button": {
              "CopyCurrentSongJsonFilePath": "Copy Current Song Json File Path",
              "CopyCurrentSongTextFilePath": "Copy Current Song Text File Path",
@@ -274,7 +730,7 @@ index 5fab337..ed2329d 100644
              "ExportSongsText": "Plain Text",
              "ExportSongsCsv": "CSV",
              "OpenCalibrator": "Open Calibrator",
-@@ -1717,10 +1717,6 @@
+@@ -1717,10 +1731,6 @@
                  "Name": "Sing-Off",
                  "Description": "Turns the vocals into a battle when two or more players sing. On the Vocals instrument the lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. On Harmonies (a song with a part for each artist) each player sings the artist they picked and the two artists' singers face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. A sing-off with turns leaves no high score, since each singer has only half the song. Can also be switched on the screen before a song."
              },
