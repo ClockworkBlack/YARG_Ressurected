@@ -350,6 +350,8 @@ public final class WordAligner {
      * than the right lyrics on another.)
      */
     static final double MIN_MARGIN = 0.25;
+    /** At or below this, the lyrics are certainly another song's (every wrong set tested: -0.12 to -0.01). */
+    static final double WRONG_MARGIN = 0.05;
 
     /**
      * @param timesKnown false when the lyrics came without times and the ones on the lines mean nothing
@@ -441,7 +443,14 @@ public final class WordAligner {
         // letters fit depends on the language and the singing (Korean read by sound, a group in
         // unison, rap), so the fit is judged against the same lines in a shuffled order: right
         // lyrics fit clearly better in their own order, wrong ones no better than shuffled.
-        if (placed < n * 0.8 || fitSum / Math.max(1, placed) - shuffledFit(sung, logProbs) < MIN_MARGIN) {
+        double margin = placed == 0 ? 0 : fitSum / placed - shuffledFit(sung, logProbs);
+        if (placed >= n * 0.8 && margin < WRONG_MARGIN) {
+            // No better in their own order than shuffled: these are another song's words
+            r.wrongLyrics = true;
+            r.leftOut = 0;
+            return r;
+        }
+        if (placed < n * 0.8 || margin < MIN_MARGIN) {
             r.leftOut = 0;
             return r;
         }

@@ -39,6 +39,8 @@ public final class LyricAligner {
         public String note;
         /** Word-by-word alignment only, one entry per line of {@link #lines}: where the letters were heard, and how well they fitted. */
         public double[] heard, fit;
+        /** The lyrics fit this recording no better than shuffled: another song's (word-by-word alignment only). */
+        public boolean wrongLyrics;
         /** Lines of the lyrics found not to be sung in this recording and left out (word-by-word alignment only). */
         public int leftOut;
         /** Lines the song's repeats corrected, one note each (word-by-word alignment only); may be null. */
