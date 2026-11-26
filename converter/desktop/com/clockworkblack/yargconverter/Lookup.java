@@ -13,6 +13,23 @@ public final class Lookup {
 
     /** @return title, artist, album, year, genre ("" where unknown), or null when nothing matched */
     public static String[] details(String title, String artist) {
+        String[] found = detailsOnce(title, artist);
+        if (found != null || artist == null || artist.trim().isEmpty()) return found;
+        // A title from a mangled file name ("Ascension Dont Ever Wonder" for "Ascension (Don't Ever
+        // Wonder)"): with the artist known, try its first words, and keep a match only when the
+        // title found starts with them
+        String[] words = title.trim().split("\\s+");
+        for (int n = Math.min(3, words.length - 1); n >= 1; n--) {
+            String head = String.join(" ", java.util.Arrays.copyOf(words, n));
+            if (head.length() < 4) continue;
+            found = detailsOnce(head, artist);
+            if (found != null && com.clockworkblack.yargconverter.core.SongNames.key(found[0])
+                    .startsWith(com.clockworkblack.yargconverter.core.SongNames.key(head))) return found;
+        }
+        return null;
+    }
+
+    private static String[] detailsOnce(String title, String artist) {
         // MusicBrainz turns away more than one request a second (error 503), which happens when
         // several songs are converted at once: wait a little and ask again
         for (int attempt = 0; attempt < 4; attempt++) {

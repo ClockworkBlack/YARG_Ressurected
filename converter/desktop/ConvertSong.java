@@ -125,6 +125,8 @@ public final class ConvertSong {
             String[] found = com.clockworkblack.yargconverter.Lookup.details(meta.title, meta.artist);
             if (found != null) {
                 if (meta.artist.isEmpty() && !found[1].isEmpty()) meta.artist = found[1];
+                // The title as the record has it, when ours came from a mangled file name
+                if (!a.containsKey("title") && !found[0].isEmpty()) meta.title = found[0];
                 if (meta.album.isEmpty()) meta.album = found[2];
                 if (meta.year.isEmpty()) meta.year = found[3];
                 if (meta.genre.isEmpty()) meta.genre = found[4];
