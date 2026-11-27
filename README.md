@@ -603,6 +603,17 @@ instruments for converted songs: picking **Co-op Guitar** or **Rhythm** plays th
 Mode guitar or bass directly. Convert a song again with the latest converter to add the parts
 to songs converted earlier.
 
+## Deep Music Mode on every song
+
+*(Branch `real-instrument-tracks`.)* Songs from the converter (split into instruments) carry
+Deep Music Mode's whole-song parts. Every other song now gets them built when it loads, from
+the charts it has: **guitar** adds the **keys** part's notes and the **sung melody** (lead
+vocals, one note per sung word, the fret following the tune) where the guitar leaves room;
+**bass** adds the **drum** hits between its notes (a kick on the fret of the bass note that is
+ringing, a snare, tom or cymbal on the fret next to it). Notes only go where there is room (a
+beat apart on Easy, down to a tenth of a second on Expert), and a held note lets go before an
+added one. A song with only guitar and bass charts has nothing to add from, and plays as before.
+
 ## Co-op guitar on every song
 
 *(Branch `real-instrument-tracks`.)* Every song with a guitar part can be played as **co-op

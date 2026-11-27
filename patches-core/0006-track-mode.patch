@@ -1,5 +1,290 @@
+diff --git a/YARG.Core/Chart/DeepMusicCover.cs b/YARG.Core/Chart/DeepMusicCover.cs
+new file mode 100644
+index 0000000..86efcbd
+--- /dev/null
++++ b/YARG.Core/Chart/DeepMusicCover.cs
+@@ -0,0 +1,279 @@
++// YARG Resurrected: Deep Music Mode on any song.
++//
++// YARG Converter writes Deep Music Mode's whole-song parts into the songs it makes (co-op guitar:
++// the guitar plus the vocals and the beat's melody; rhythm: the bass plus the drums). Every other
++// song has none, and the modifier used to change nothing on it. This builds the same kind of part
++// from the charts such a song does have:
++//
++//   guitar: the guitar part, plus the keys part's notes and the sung melody (lead vocals, one
++//           note per sung word, its fret following the tune) where the guitar is not playing;
++//   bass:   the bass part, plus the drum hits between its notes (a kick on the fret of the bass
++//           note that is ringing, a snare, tom or cymbal on the fret next to it).
++//
++// Notes are only added where the part leaves room (a beat apart on Easy, down to a tenth of a
++// second on Expert), and a held note lets go before an added one. A song with nothing else to
++// add from plays as before.
++
++using System;
++using System.Collections.Generic;
++using YARG.Core.Extensions;
++
++namespace YARG.Core.Chart
++{
++    public static class DeepMusicCover
++    {
++        // Least room around an added note, in seconds, Easy .. Expert
++        private static readonly double[] GAP = { 0.45, 0.25, 0.17, 0.1 };
++
++        public static InstrumentTrack<GuitarNote>? Guitar(SongChart chart)
++        {
++            var guitar = chart.FiveFretGuitar;
++            if (guitar.IsEmpty)
++            {
++                return null;
++            }
++
++            var sung = SungNotes(chart.Vocals);
++            var track = new InstrumentTrack<GuitarNote>(Instrument.FiveFretCoopGuitar);
++            bool added = false;
++            foreach (var difficulty in Difficulties)
++            {
++                if (!guitar.TryGetDifficulty(difficulty, out var part))
++                {
++                    continue;
++                }
++
++                var extra = new List<GuitarNote>();
++                if (chart.Keys.TryGetDifficulty(difficulty, out var keys))
++                {
++                    foreach (var note in keys.Notes)
++                    {
++                        extra.Add(Single(note.Fret, note.Time, note.Tick));
++                    }
++                }
++
++                int lanes = LanesFor(difficulty);
++                foreach (var (time, tick, step) in sung)
++                {
++                    extra.Add(Single(1 + Math.Min(lanes - 1, (int) (step * lanes)), time, tick));
++                }
++
++                var notes = Merge(part.Notes, extra, GAP[(int) difficulty - (int) Difficulty.Easy]);
++                added |= notes.Count > part.Notes.Count;
++                track.AddDifficulty(difficulty, new InstrumentDifficulty<GuitarNote>(Instrument.FiveFretCoopGuitar,
++                    difficulty, notes, part.Phrases.Duplicate(), part.TextEvents.Duplicate()));
++            }
++
++            return added ? track : null;
++        }
++
++        public static InstrumentTrack<GuitarNote>? Bass(SongChart chart)
++        {
++            var bass = chart.FiveFretBass;
++            if (bass.IsEmpty)
++            {
++                return null;
++            }
++
++            InstrumentTrack<DrumNote>? drums = null;
++            foreach (var candidate in new[] { chart.ProDrums, chart.FourLaneDrums, chart.FiveLaneDrums })
++            {
++                if (!candidate.IsEmpty)
++                {
++                    drums = candidate;
++                    break;
++                }
++            }
++            if (drums == null)
++            {
++                return null;
++            }
++
++            var track = new InstrumentTrack<GuitarNote>(Instrument.FiveFretRhythm);
++            bool added = false;
++            foreach (var difficulty in Difficulties)
++            {
++                if (!bass.TryGetDifficulty(difficulty, out var part))
++                {
++                    continue;
++                }
++
++                var extra = new List<GuitarNote>();
++                if (drums.TryGetDifficulty(difficulty, out var hits))
++                {
++                    int lanes = LanesFor(difficulty);
++                    int at = 0;
++                    foreach (var hit in hits.Notes)
++                    {
++                        // The fret of the bass note sounding at the hit
++                        while (at + 1 < part.Notes.Count && part.Notes[at + 1].Tick <= hit.Tick)
++                        {
++                            at++;
++                        }
++                        int fret = part.Notes.Count == 0 ? 1 : Math.Max(1, Math.Min(lanes, LowestFret(part.Notes[at])));
++                        bool kick = false;
++                        foreach (var pad in hit.AllNotes)
++                        {
++                            kick |= pad.Pad == (int) FourLaneDrumPad.Kick;
++                        }
++                        if (!kick)
++                        {
++                            // A snare, tom or cymbal: the fret next to it, so the two feel different
++                            fret = fret < lanes ? fret + 1 : fret - 1;
++                        }
++                        extra.Add(Single(fret, hit.Time, hit.Tick));
++                    }
++                }
++
++                var notes = Merge(part.Notes, extra, GAP[(int) difficulty - (int) Difficulty.Easy]);
++                added |= notes.Count > part.Notes.Count;
++                track.AddDifficulty(difficulty, new InstrumentDifficulty<GuitarNote>(Instrument.FiveFretRhythm,
++                    difficulty, notes, part.Phrases.Duplicate(), part.TextEvents.Duplicate()));
++            }
++
++            return added ? track : null;
++        }
++
++        private static readonly Difficulty[] Difficulties =
++            { Difficulty.Easy, Difficulty.Medium, Difficulty.Hard, Difficulty.Expert };
++
++        // Easy uses three frets, Medium four, Hard and Expert five (as the charts do)
++        private static int LanesFor(Difficulty difficulty) =>
++            difficulty == Difficulty.Easy ? 3 : difficulty == Difficulty.Medium ? 4 : 5;
++
++        private static int LowestFret(GuitarNote note)
++        {
++            int low = int.MaxValue;
++            foreach (var n in note.AllNotes)
++            {
++                if (n.Fret >= (int) FiveFretGuitarFret.Green && n.Fret <= (int) FiveFretGuitarFret.Orange)
++                {
++                    low = Math.Min(low, n.Fret);
++                }
++            }
++            return low == int.MaxValue ? 1 : low;
++        }
++
++        private static GuitarNote Single(int fret, double time, uint tick)
++        {
++            fret = Math.Max((int) FiveFretGuitarFret.Green, Math.Min((int) FiveFretGuitarFret.Orange, fret));
++            return new GuitarNote(fret, GuitarNoteType.Strum, GuitarNoteFlags.None, NoteFlags.None, time, 0, tick, 0);
++        }
++
++        /// <summary>
++        /// The sung words of the lead vocals: when each starts, and how high it is within the
++        /// singer's range (0 lowest, under 1 highest). Spoken and percussion notes are left out.
++        /// </summary>
++        private static List<(double Time, uint Tick, double Step)> SungNotes(VocalsTrack vocals)
++        {
++            var notes = new List<(double, uint, float)>();
++            if (vocals != null && vocals.Parts.Count > 0)
++            {
++                foreach (var phrase in vocals.Parts[0].NotePhrases)
++                {
++                    if (!phrase.IsLyric)
++                    {
++                        continue;
++                    }
++                    foreach (var note in phrase.PhraseParentNote.ChildNotes)
++                    {
++                        if (!note.IsPercussion && !note.IsNonPitched)
++                        {
++                            notes.Add((note.Time, note.Tick, note.Pitch));
++                        }
++                    }
++                }
++            }
++
++            var result = new List<(double, uint, double)>(notes.Count);
++            if (notes.Count == 0)
++            {
++                return result;
++            }
++
++            // The range, leaving out the odd very high or low note
++            var pitches = new List<float>(notes.Count);
++            foreach (var n in notes)
++            {
++                pitches.Add(n.Item3);
++            }
++            pitches.Sort();
++            float low = pitches[pitches.Count / 20];
++            float high = pitches[pitches.Count - 1 - pitches.Count / 20];
++            double span = Math.Max(1.0, high - low);
++            foreach (var (time, tick, pitch) in notes)
++            {
++                result.Add((time, tick, Math.Max(0, Math.Min(0.999, (pitch - low) / span))));
++            }
++            return result;
++        }
++
++        /// <summary>
++        /// The part's notes (copied), plus each extra note that has room around it, in order and
++        /// linked to each other. A held note lets go before a note added after it.
++        /// </summary>
++        private static List<GuitarNote> Merge(List<GuitarNote> part, List<GuitarNote> extra, double gap)
++        {
++            var merged = new List<GuitarNote>(part.Count + extra.Count);
++            foreach (var note in part)
++            {
++                merged.Add(note.Clone());
++            }
++
++            var times = new List<double>(merged.Count);
++            foreach (var note in merged)
++            {
++                times.Add(note.Time);
++            }
++
++            extra.Sort((a, b) => a.Tick.CompareTo(b.Tick));
++            foreach (var note in extra)
++            {
++                int k = times.BinarySearch(note.Time);
++                if (k < 0)
++                {
++                    k = ~k;
++                }
++                bool clash = (k < times.Count && times[k] - note.Time < gap) || (k > 0 && note.Time - times[k - 1] < gap);
++                if (clash)
++                {
++                    continue;
++                }
++                times.Insert(k, note.Time);
++                merged.Insert(k, note);
++            }
++
++            for (int i = 0; i < merged.Count; i++)
++            {
++                var note = merged[i];
++                var previous = i > 0 ? merged[i - 1] : null;
++                var next = i + 1 < merged.Count ? merged[i + 1] : null;
++
++                // A held note lets go a little before the next note
++                if (next != null)
++                {
++                    foreach (var n in note.AllNotes)
++                    {
++                        if (n.TickLength > 0 && n.Tick + n.TickLength > next.Tick)
++                        {
++                            double room = Math.Max(0, next.Time - n.Time - 0.05);
++                            uint ticks = next.Tick > n.Tick ? (next.Tick - n.Tick) * 3 / 4 : 0;
++                            n.TimeLength = room > 0.2 ? room : 0;
++                            n.TickLength = room > 0.2 ? ticks : 0;
++                        }
++                    }
++                }
++
++                note.PreviousNote = previous;
++                note.NextNote = next;
++                foreach (var child in note.ChildNotes)
++                {
++                    child.PreviousNote = previous;
++                    child.NextNote = next;
++                }
++            }
++
++            return merged;
++        }
++    }
++}
 diff --git a/YARG.Core/Chart/SongChart.cs b/YARG.Core/Chart/SongChart.cs
-index a12381f..ae53a21 100644
+index a12381f..c106bb1 100644
 --- a/YARG.Core/Chart/SongChart.cs
 +++ b/YARG.Core/Chart/SongChart.cs
 @@ -252,7 +252,9 @@ namespace YARG.Core.Chart
@@ -13,6 +298,35 @@ index a12381f..ae53a21 100644
                  Instrument.FiveFretRhythm => FiveFretRhythm,
                  Instrument.FiveFretBass => FiveFretBass,
                  Instrument.Keys => Keys,
+@@ -266,6 +268,8 @@ namespace YARG.Core.Chart
+         /// YARG Converter keeps its whole-song covers, when the song has notes there at this
+         /// difficulty; otherwise the normal part.
+         /// </summary>
++        private InstrumentTrack<GuitarNote>? _deepGuitar, _deepBass;
++
+         public InstrumentTrack<GuitarNote> GetFiveFretTrack(Instrument instrument, Modifier modifiers, Difficulty difficulty)
+         {
+             if ((modifiers & Modifier.DeepMusicMode) != 0)
+@@ -280,6 +284,19 @@ namespace YARG.Core.Chart
+                 {
+                     return deep;
+                 }
++
++                // A song without the converter's whole-song parts: built from its other charts
++                // (see DeepMusicCover), once per song
++                var built = instrument switch
++                {
++                    Instrument.FiveFretGuitar => _deepGuitar ??= DeepMusicCover.Guitar(this) ?? FiveFretGuitar,
++                    Instrument.FiveFretBass => _deepBass ??= DeepMusicCover.Bass(this) ?? FiveFretBass,
++                    _ => null
++                };
++                if (built != null)
++                {
++                    return built;
++                }
+             }
+ 
+             return GetFiveFretTrack(instrument);
 diff --git a/YARG.Core/Game/Modifier.cs b/YARG.Core/Game/Modifier.cs
 index 72ea39f..d177a2d 100644
 --- a/YARG.Core/Game/Modifier.cs

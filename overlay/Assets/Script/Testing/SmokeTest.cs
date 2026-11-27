@@ -866,6 +866,48 @@ namespace YARG.Testing
             }
             Note("Co-op guitar is offered on a song with only a guitar part");
 
+            // Deep Music Mode on a song without the converter's whole-song parts: built from the
+            // song's keys and drums (guitar every two beats, keys and drums on the beats between)
+            _step = "Deep Music Mode on any song";
+            {
+                var text = new StringBuilder("[Song]\n{\n  Resolution = 192\n}\n[SyncTrack]\n{\n  0 = TS 4\n  0 = B 120000\n}\n[Events]\n{\n}\n");
+                void Part(string name, int from, int step, int fret)
+                {
+                    text.Append("[" + name + "]\n{\n");
+                    for (int t = from; t < 192 * 64; t += step)
+                    {
+                        text.Append($"  {t} = N {fret} 0\n");
+                    }
+                    text.Append("}\n");
+                }
+                Part("ExpertSingle", 0, 384, 1);
+                Part("ExpertDoubleBass", 0, 384, 2);
+                Part("ExpertKeyboard", 192, 384, 3);
+                Part("ExpertDrums", 192, 384, 1);
+                var chart = YARG.Core.Chart.SongChart.FromDotChart(YARG.Core.Chart.ParseSettings.Default, text.ToString());
+                int guitarNotes = chart.GetFiveFretTrack(Instrument.FiveFretGuitar).GetDifficulty(Difficulty.Expert).Notes.Count;
+                int deepGuitar = chart.GetFiveFretTrack(Instrument.FiveFretGuitar, Modifier.DeepMusicMode, Difficulty.Expert)
+                    .GetDifficulty(Difficulty.Expert).Notes.Count;
+                int bassNotes = chart.GetFiveFretTrack(Instrument.FiveFretBass).GetDifficulty(Difficulty.Expert).Notes.Count;
+                var deepBassTrack = chart.GetFiveFretTrack(Instrument.FiveFretBass, Modifier.DeepMusicMode, Difficulty.Expert)
+                    .GetDifficulty(Difficulty.Expert);
+                bool linked = true;
+                for (int i = 1; i < deepBassTrack.Notes.Count; i++)
+                {
+                    linked &= deepBassTrack.Notes[i].PreviousNote == deepBassTrack.Notes[i - 1]
+                        && deepBassTrack.Notes[i - 1].NextNote == deepBassTrack.Notes[i]
+                        && deepBassTrack.Notes[i].Tick > deepBassTrack.Notes[i - 1].Tick;
+                }
+                int plain = chart.GetFiveFretTrack(Instrument.FiveFretGuitar, Modifier.None, Difficulty.Expert)
+                    .GetDifficulty(Difficulty.Expert).Notes.Count;
+                if (deepGuitar != guitarNotes * 2 || deepBassTrack.Notes.Count != bassNotes * 2 || !linked || plain != guitarNotes)
+                {
+                    Finish(false, $"Deep Music Mode on a song without its parts: guitar {guitarNotes} -> {deepGuitar}, bass {bassNotes} -> {deepBassTrack.Notes.Count}, in order {linked}, without the modifier {plain}");
+                    return false;
+                }
+                Note($"Deep Music Mode on any song: guitar {guitarNotes} notes + keys = {deepGuitar}, bass {bassNotes} + drums = {deepBassTrack.Notes.Count}");
+            }
+
             // Real instrument tracks: the file that says which tracks a part plays
             _step = "reading yarg-tracks.txt";
             var parts = GameManager.ParseTrackParts(new[]
