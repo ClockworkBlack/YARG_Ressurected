@@ -195,14 +195,24 @@ namespace YARG.Testing
                 _step = "adding a bot player";
                 // (-yarg-smoke-vocals: a singer instead, for looking at the lyrics; see below)
                 bool vocalsLook = Environment.GetCommandLineArgs().Contains("-yarg-smoke-vocals");
+                // (-yarg-smoke-late N: a person instead of the bot, whose controller is N ms late;
+                // see PlayLate)
+                int lateMs = int.TryParse(GetArg("-yarg-smoke-late"), out int lateArg) ? lateArg : int.MinValue;
+                bool latePlayer = lateMs != int.MinValue && !vocalsLook;
+                if (latePlayer)
+                {
+                    // (The first notes are all missed: that must not end the song)
+                    SettingsManager.Settings.NoFail.SetValueWithoutNotify(YARG.Gameplay.HUD.NoFailMode.On);
+                    SettingsManager.Settings.AutoTiming.SetValueWithoutNotify(true);
+                }
                 if (Environment.GetCommandLineArgs().Contains("-yarg-smoke-static"))
                 {
                     SettingsManager.Settings.StaticVocalsMode.SetValueWithoutNotify(true);
                 }
                 var profile = new YargProfile
                 {
-                    Name = "Smoke Test Bot",
-                    IsBot = true,
+                    Name = latePlayer ? "Late Player" : "Smoke Test Bot",
+                    IsBot = !latePlayer,
                     GameMode = vocalsLook ? GameMode.Vocals : GameMode.FiveFretGuitar,
                     CurrentInstrument = vocalsLook ? Instrument.Vocals : Instrument.FiveFretGuitar,
                     CurrentDifficulty = Difficulty.Expert,
@@ -276,7 +286,14 @@ namespace YARG.Testing
                 // 5. Start the song, with the generated guitar track switched on (the test song
                 // is a single recording, so the game has to make the guitar's track itself)
                 _step = "loading the song";
-                SettingsManager.Settings.GuitarVoice.SetValueWithoutNotify(GuitarVoiceMode.Rock);
+                // (-yarg-smoke-no-voice, -yarg-smoke-no-venue: with those left out, to see what each costs)
+                bool noVoice = Environment.GetCommandLineArgs().Contains("-yarg-smoke-no-voice");
+                if (Environment.GetCommandLineArgs().Contains("-yarg-smoke-no-venue"))
+                {
+                    SettingsManager.Settings.DisableGlobalBackgrounds.SetValueWithoutNotify(true);
+                    SettingsManager.Settings.VenueCrowd.SetValueWithoutNotify(false);
+                }
+                SettingsManager.Settings.GuitarVoice.SetValueWithoutNotify(noVoice ? GuitarVoiceMode.Off : GuitarVoiceMode.Rock);
                 GuitarVoiceLoader.LastTracksAdded = -1;
                 GlobalVariables.State.CurrentSong = song;
                 GlobalVariables.State.SongSpeed = 1f;
@@ -351,8 +368,14 @@ namespace YARG.Testing
                     return;
                 }
 
+                if (latePlayer)
+                {
+                    await PlayLate(game, profile, lateMs);
+                    return;
+                }
+
                 int tracks = GuitarVoiceLoader.LastTracksAdded;
-                if (tracks < 1)
+                if (tracks < 1 && !noVoice)
                 {
                     Finish(false, tracks < 0
                         ? "Guitar Sound On Notes never ran for the song"
@@ -370,8 +393,17 @@ namespace YARG.Testing
                 int startFrame = Time.frameCount;
                 float startReal = Time.realtimeSinceStartup;
                 bool shot = false;
+                // Smoothness: memory the game makes while playing (what the garbage collector
+                // then has to clear away, which is a hitch on a phone) and the longest frames
+                long madeBytes = 0, lastUsed = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong();
+                int collectionsBefore = GC.CollectionCount(0);
+                var frameTimes = new List<float>();
                 while (game != null && game.SongTime - startTime < SONG_SECONDS_TO_PLAY)
                 {
+                    long used = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong();
+                    if (used > lastUsed) madeBytes += used - lastUsed;
+                    lastUsed = used;
+                    frameTimes.Add(Time.unscaledDeltaTime);
                     while (mic != null && mic.DequeueOutputFrame(out var frame))
                     {
                         micReadings++;
@@ -414,6 +446,28 @@ namespace YARG.Testing
                 float seconds = Time.realtimeSinceStartup - startReal;
                 Note($"Played {game.SongTime - startTime:0.0} s of the song in {seconds:0.0} s, " +
                     $"{(Time.frameCount - startFrame) / Math.Max(seconds, 0.001f):0} fps");
+                // The volume normalizer reads the song once and stops (it used to run for the whole song)
+                if (SettingsManager.Settings.EnableNormalization.Value)
+                {
+                    bool analysing = YARG.Audio.BASS.BassNormalizer.Analysing;
+                    Note($"Volume normalizer: read {YARG.Audio.BASS.BassNormalizer.LastWindowsRead / 10.0:0} s of the song, " +
+                        (analysing ? "still running" : "finished"));
+                    if (analysing)
+                    {
+                        Finish(false, "the volume normalizer was still running 20 seconds into the song");
+                        return;
+                    }
+                }
+
+                if (frameTimes.Count > 10)
+                {
+                    var ordered = frameTimes.OrderBy(x => x).ToList();
+                    float middle = ordered[ordered.Count / 2];
+                    Note($"Smoothness: {madeBytes / 1024.0 / Math.Max(seconds, 0.001f):0} KB of memory made per second " +
+                        $"({madeBytes / 1024.0 / frameTimes.Count:0.0} KB a frame), {GC.CollectionCount(0) - collectionsBefore} garbage collections; " +
+                        $"frames: middle {middle * 1000:0} ms, longest {ordered[ordered.Count - 1] * 1000:0} ms, " +
+                        $"{ordered.Count(x => x > middle * 2.5f)} of {ordered.Count} more than 2.5 times the middle");
+                }
 
                 int hit = game.Players.Sum(p => p.BaseStats.NotesHit);
                 int total = game.Players.Sum(p => p.BaseStats.TotalNotes);
@@ -959,6 +1013,138 @@ namespace YARG.Testing
         }
 
         private bool _vocalsLook;
+
+        /// <summary>
+        /// Plays the song as a person would whose controller is <paramref name="lateMs"/> late:
+        /// every note fretted and strummed at the right moment, reaching the game that much after.
+        /// Automatic timing should find the delay within a few dozen notes, after which the notes
+        /// are hit.
+        /// </summary>
+        private async UniTask PlayLate(GameManager game, YargProfile profile, int lateMs)
+        {
+            _step = "playing with a late controller";
+            var guitar = game.Players.OfType<YARG.Gameplay.Player.FiveFretGuitarPlayer>().FirstOrDefault();
+            if (guitar == null)
+            {
+                Finish(false, "no guitar player in the song");
+                return;
+            }
+
+            var notes = guitar.NoteTrack.Notes;
+            double late = lateMs / 1000.0;
+            int next = 0;
+            await UniTask.Yield(PlayerLoopTiming.EarlyUpdate);
+            while (next < notes.Count && notes[next].Time + late < game.InputTime + 0.5) next++;
+            int first = next;
+
+            var frets = new[]
+            {
+                YARG.Core.Input.GuitarAction.GreenFret, YARG.Core.Input.GuitarAction.RedFret,
+                YARG.Core.Input.GuitarAction.YellowFret, YARG.Core.Input.GuitarAction.BlueFret,
+                YARG.Core.Input.GuitarAction.OrangeFret,
+            };
+            int held = 0;
+            double strumUntil = double.MaxValue;
+            var hitAt = new List<bool>();
+            var calibrationAt = new List<long>();
+            float began = Time.realtimeSinceStartup;
+
+            // The song's time right now, on the clock controllers are stamped with. Inputs are sent
+            // at the very start of a frame, before the game moves on to this time, the way a real
+            // controller's inputs arrive.
+            double now = 0;
+            void Send(double songTime, YARG.Core.Input.GuitarAction action, bool pressed)
+            {
+                // The moment on the controller's clock that is this moment of the song
+                double stamp = YARG.Input.InputManager.CurrentInputTime - (now - songTime);
+                guitar.InjectInput(new YARG.Core.Input.GameInput(stamp, (int) action, pressed));
+            }
+
+            while (game != null && next < notes.Count && Time.realtimeSinceStartup - began < 200f)
+            {
+                if (SceneManager.GetSceneByName("MenuScene").isLoaded)
+                {
+                    break;
+                }
+
+                now = game.GetRelativeInputTime(YARG.Input.InputManager.CurrentInputTime);
+                if (now >= strumUntil)
+                {
+                    Send(strumUntil, YARG.Core.Input.GuitarAction.StrumDown, false);
+                    strumUntil = double.MaxValue;
+                }
+
+                while (next < notes.Count && notes[next].Time + late <= now)
+                {
+                    var note = notes[next];
+                    double at = note.Time + late;
+                    if (strumUntil != double.MaxValue)
+                    {
+                        Send(at - 0.012, YARG.Core.Input.GuitarAction.StrumDown, false);
+                    }
+
+                    int want = note.NoteMask & 31;
+                    for (int f = 0; f < 5; f++)
+                    {
+                        bool isHeld = (held & (1 << f)) != 0, wanted = (want & (1 << f)) != 0;
+                        if (isHeld != wanted)
+                        {
+                            Send(at - 0.008, frets[f], wanted);
+                        }
+                    }
+                    held = want;
+                    Send(at, YARG.Core.Input.GuitarAction.StrumDown, true);
+                    strumUntil = at + 0.04;
+                    next++;
+                    calibrationAt.Add(profile.InputCalibrationMilliseconds);
+                }
+
+                await UniTask.Yield(PlayerLoopTiming.EarlyUpdate);
+            }
+
+            await UniTask.Delay(TimeSpan.FromSeconds(1.0), ignoreTimeScale: true);
+            if (game == null || SceneManager.GetSceneByName("MenuScene").isLoaded)
+            {
+                Finish(false, "the song stopped while the late controller was playing");
+                return;
+            }
+
+            int played = next - first;
+            int lastCount = Math.Min(20, played);
+            int lastHit = 0;
+            for (int i = next - lastCount; i < next; i++)
+            {
+                if (notes[i].WasHit) lastHit++;
+            }
+            int firstHit = 0, firstCount = Math.Min(8, played);
+            for (int i = first; i < first + firstCount; i++)
+            {
+                if (notes[i].WasHit) firstHit++;
+            }
+
+            long found = profile.InputCalibrationMilliseconds;
+            Note($"Late controller ({lateMs} ms): {played} notes played; of the first {firstCount}, {firstHit} hit; of the last {lastCount}, {lastHit} hit");
+            Note($"Automatic timing set the profile's input calibration to {found} ms (it was 0); as the notes went by: " +
+                string.Join(" ", calibrationAt.Where((_, i) => i % 8 == 0)));
+            await Screenshot("late-player.png");
+
+            if (played < 40)
+            {
+                Finish(false, $"only {played} notes could be played");
+                return;
+            }
+            if (Math.Abs(found - lateMs) > 25)
+            {
+                Finish(false, $"automatic timing found {found} ms for a controller {lateMs} ms late");
+                return;
+            }
+            if (lastHit < lastCount - 2)
+            {
+                Finish(false, $"with the timing found, only {lastHit} of the last {lastCount} notes were hit");
+                return;
+            }
+            Finish(true, $"a controller {lateMs} ms late was found ({found} ms) and its notes hit");
+        }
 
         private bool CheckNamesAndVerses()
         {

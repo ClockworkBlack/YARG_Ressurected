@@ -179,6 +179,42 @@ Not measured on a real guitar here: these come from how Android and the game han
 from tests of the code. If strums still go missing, the log line above says whether Android was
 saving them up.
 
+### Automatic timing for each controller
+
+Every controller is late by its own amount. A Bluetooth guitar is later than a wired one (CRKD's
+own guide rates Bluetooth as its slowest connection, and on Android Bluetooth is how the guitar
+connects), a TV is later than the phone's screen. When the delay is more than the game allows for,
+a strum made exactly on the note misses, and it feels as if you have to strum before the note
+arrives.
+
+The game now works the delay out by itself (**Settings > General > Automatic Timing For Each
+Controller**, on by default):
+
+- While you play it measures how early or late your notes land: the ones you hit, and strums that
+  found no note but had exactly one note nearby that the frets you were holding fit.
+- After the first 8 notes, and then every 16, it takes the middle of those measurements and, if it
+  is more than 12 thousandths of a second off, moves your profile's **Input Calibration** three
+  quarters of the way. A message says so when the change is 15 ms or more.
+- The value is kept for each controller a profile has used, so a guitar and a gamepad each keep
+  their own.
+
+**Play to what you see and hear. Do not strum early to make up for the delay**: that hides the
+delay from the measurement. The first few notes of the first song may miss; after that they
+should land.
+
+It is not used for bots, replays, practice, songs played at another speed, or phones joined over
+Wi-Fi (which have their own measured delay). A profile's Input Calibration can still be set by
+hand in Profiles; automatic timing carries on from whatever it is.
+
+### Smoother play: the volume normalizer no longer runs all song long
+
+With **Settings > Sound > Normalize Audio** on (the default; an advanced setting), the game reads through the whole
+song in the background to measure how loud it is. That reader never stopped: after the end of the
+song's audio it went on reading silence at full speed, using a whole processor core for as long as
+the song was on screen. On a phone that means heat, a slower game and stutter. It now stops at the
+end of the audio, runs at low priority, and reports to the game once for every second of song
+instead of ten times.
+
 ### Finding songs, rap mode, explanations (build 42)
 
 - **Browse by Artist / Genre / Album / Year / Charter**: in the song list open **More Options**

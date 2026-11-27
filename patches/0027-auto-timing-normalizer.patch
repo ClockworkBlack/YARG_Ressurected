@@ -1,0 +1,311 @@
+diff --git a/Assets/Script/Audio/Bass/BassNormalizer.cs b/Assets/Script/Audio/Bass/BassNormalizer.cs
+index 6a93da9..d6dffb4 100644
+--- a/Assets/Script/Audio/Bass/BassNormalizer.cs
++++ b/Assets/Script/Audio/Bass/BassNormalizer.cs
+@@ -44,6 +44,13 @@ namespace YARG.Audio.BASS
+         private readonly List<Stream>            _streams = new();
+         private readonly List<int>               _handles = new();
+         private          CancellationTokenSource _gainCalcCts = new();
++
++        // (YARG Resurrected) How long the longest stream is, in seconds: the analysis stops there
++        private double _longestSeconds;
++
++        /// <summary>How many 100 ms pieces the last analysis read, and whether one is running (for tests and the log).</summary>
++        public static int LastWindowsRead { get; private set; }
++        public static bool Analysing { get; private set; }
+         public float               Gain { get; private set; } = INITIAL_GAIN;
+         public event Action<float> OnGainAdjusted;
+ 
+@@ -75,6 +82,12 @@ namespace YARG.Audio.BASS
+             }
+             _handles.Add(sourceStream);
+ 
++            long sourceBytes = Bass.ChannelGetLength(sourceStream);
++            if (sourceBytes > 0)
++            {
++                _longestSeconds = Math.Max(_longestSeconds, Bass.ChannelBytes2Seconds(sourceStream, sourceBytes));
++            }
++
+             foreach (var stemInfo in stemInfos)
+             {
+                 var volumeMatrix = BassStemMixer.BuildVolumeMatrix(stemInfo);
+@@ -120,7 +133,10 @@ namespace YARG.Audio.BASS
+ 
+         private bool CreateMixer(out int mixerHandle)
+         {
+-            mixerHandle = BassMix.CreateMixerStream(44100, 2, BassFlags.Decode);
++            // (YARG Resurrected) MixerEnd: the mixer ends when its streams do. Without it the mixer
++            // goes on giving silence for ever, and the analysis below went on reading it, at full
++            // speed on one processor core, for as long as the song was on screen.
++            mixerHandle = BassMix.CreateMixerStream(44100, 2, BassFlags.Decode | BassFlags.MixerEnd);
+             if (mixerHandle == 0)
+             {
+                 YargLogger.LogFormatError("Failed to create mixer: {0}!", Bass.LastError);
+@@ -175,7 +191,27 @@ namespace YARG.Audio.BASS
+                 OnGainAdjusted?.Invoke((float) gain);
+             });
+ 
+-            Task.Run(() => CalculateRms(progress, _gainCalcCts.Token), _gainCalcCts.Token);
++            // (YARG Resurrected) On a thread of its own at low priority, not a thread-pool worker at
++            // normal priority: it reads the whole song as fast as it can, and on a phone that must
++            // give way to the game and the sound that is playing.
++            var token = _gainCalcCts.Token;
++            var thread = new Thread(() =>
++            {
++                try
++                {
++                    CalculateRms(progress, token);
++                }
++                catch (Exception e)
++                {
++                    YargLogger.LogException(e, "Volume normalization stopped");
++                }
++            })
++            {
++                IsBackground = true,
++                Priority = ThreadPriority.Lowest,
++                Name = "YARG Normalizer",
++            };
++            thread.Start();
+         }
+ 
+         private void CalculateRms(IProgress<double> progress, CancellationToken token)
+@@ -188,13 +224,26 @@ namespace YARG.Audio.BASS
+             long samplesPerWindow = (long) (windowSeconds * info.Frequency);
+             float[] level = new float[1];
+ 
++            // The song's length in windows (with a little over), or 20 minutes when it isn't known
++            int lastWindow = (int) ((_longestSeconds > 0 ? _longestSeconds + 2.0 : 1200.0) / windowSeconds);
++            int windows = 0;
++            bool unreported = false;
++            Analysing = true;
++
+             while (true)
+             {
+                 if (token.IsCancellationRequested)
+                 {
++                    Analysing = false;
+                     return;
+                 }
+ 
++                // Past the end of the song: done (see CreateMixer)
++                if (++windows > lastWindow)
++                {
++                    break;
++                }
++
+                 bool didGetLevel = Bass.ChannelGetLevel(_mixer, level, windowSeconds,
+                     LevelRetrievalFlags.Mono | LevelRetrievalFlags.RMS);
+ 
+@@ -214,9 +263,25 @@ namespace YARG.Audio.BASS
+                     float targetGain = (float) Math.Min(MAX_GAIN, TARGET_RMS / rms);
+                     float delta = Math.Clamp(targetGain - Gain, -MAX_GAIN_STEP, MAX_GAIN_STEP);
+                     Gain += delta;
+-                    progress?.Report(Gain);
++
++                    // (YARG Resurrected) Each report is a job for the game's main loop; one for every
++                    // tenth of a second of song was thousands at the start of a song. One a second.
++                    unreported = true;
++                    if (windows % 10 == 0)
++                    {
++                        progress?.Report(Gain);
++                        unreported = false;
++                    }
+                 }
+             }
++
++            if (unreported)
++            {
++                progress?.Report(Gain);
++            }
++
++            LastWindowsRead = windows;
++            Analysing = false;
+         }
+ 
+         public void Dispose()
+diff --git a/Assets/Script/Gameplay/Player/BasePlayer.cs b/Assets/Script/Gameplay/Player/BasePlayer.cs
+index c0c41e6..dc40ea8 100644
+--- a/Assets/Script/Gameplay/Player/BasePlayer.cs
++++ b/Assets/Script/Gameplay/Player/BasePlayer.cs
+@@ -54,7 +54,39 @@ namespace YARG.Gameplay.Player
+         /// Be aware that this value is negated!
+         /// Positive calibration settings will result in a negative number here.
+         /// </remarks>
+-        public double InputCalibration => -(Player.Profile.InputCalibrationSeconds + RemoteInputDelay * InputDelayScale);
++        public double InputCalibration => -((_calibrationInUse ?? Player.Profile.InputCalibrationSeconds) + RemoteInputDelay * InputDelayScale);
++
++        // YARG Resurrected: the profile's calibration as the engine has it. It follows the profile's
++        // value (which automatic timing, or the pause menu, can change mid-song) at no more than a
++        // quarter of real time, so that the engine's clock never runs backwards.
++        private double? _calibrationInUse;
++
++        /// <summary>Inputs this song, and those that reached the game too late to be played on time.</summary>
++        public int InputsSeen { get; private set; }
++        public int InputsBehind { get; private set; }
++        public double InputsBehindSeconds { get; private set; }
++
++        /// <summary>Automatic timing for this player (YARG.Input.AutoTiming), when it applies.</summary>
++        protected YARG.Input.PlayerAutoTiming AutoTimer { get; private set; }
++
++        private void FollowCalibration()
++        {
++            double target = Player.Profile.InputCalibrationSeconds;
++            if (_calibrationInUse is not double now)
++            {
++                _calibrationInUse = target;
++                return;
++            }
++
++            double step = 0.25 * System.Math.Min(0.05, Time.unscaledDeltaTime);
++            _calibrationInUse = now + System.Math.Max(-step, System.Math.Min(step, target - now));
++        }
++
++        /// <summary>The player hit a note that was due at <paramref name="noteTime"/>, just now.</summary>
++        protected void AutoTimingHit(double noteTime)
++        {
++            AutoTimer?.Add(BaseEngine.CurrentTime - noteTime);
++        }
+ 
+         // YARG Resurrected: extra delay of a phone controller/mic joined over Wi-Fi. Measured before
+         // the song and fixed for the whole song, so the engine's clock never jumps.
+@@ -199,6 +231,12 @@ namespace YARG.Gameplay.Player
+                 InputViewer.ResetButtons();
+             }
+ 
++            // (Before the first update: a controller the profile has used before brings its own timing)
++            if (!GameManager.IsPractice)
++            {
++                AutoTimer = YARG.Input.PlayerAutoTiming.For(player, GameManager.SongSpeed);
++            }
++
+             IsInitialized = true;
+         }
+ 
+@@ -211,6 +249,7 @@ namespace YARG.Gameplay.Player
+ 
+             if (!GameManager.Rewinding)
+             {
++                FollowCalibration();
+                 UpdateInputs(GameManager.InputTime);
+             }
+ 
+@@ -265,6 +304,14 @@ namespace YARG.Gameplay.Player
+ 
+         protected virtual void FinishDestruction()
+         {
++            AutoTimer?.Finish();
++            if (InputsSeen > 0 && Player?.Profile != null && !Player.IsReplay)
++            {
++                YargLogger.LogInfo(string.Format(System.Globalization.CultureInfo.InvariantCulture,
++                    "Controller inputs for {0}: {1}, of which {2} reached the game a frame or more late (by {3:0} ms on average)",
++                    Player.Profile.Name, InputsSeen, InputsBehind,
++                    InputsBehind > 0 ? InputsBehindSeconds / InputsBehind * 1000.0 : 0.0));
++            }
+         }
+ 
+         protected virtual void UpdateInputs(double time)
+@@ -343,6 +390,9 @@ namespace YARG.Gameplay.Player
+             InputsToSendOnResume.Clear();
+         }
+ 
++        /// <summary>(For the play test) An input as if it came from the player's controller.</summary>
++        public void InjectInput(GameInput input) => OnGameInput(ref input);
++
+         protected void OnGameInput(ref GameInput input)
+         {
+             // Ignore completely if the song hasn't started yet or player failed
+@@ -382,6 +432,15 @@ namespace YARG.Gameplay.Player
+             // Allow the input to be explicitly ignored before processing it
+             if (InterceptInput(ref input)) return;
+ 
++            // (YARG Resurrected) An input that reaches the game after the frame it belongs to can
++            // only be played now, not when it happened: counted, so the log can say how often
++            InputsSeen++;
++            if (adjustedTime < BaseEngine.CurrentTime - 0.002)
++            {
++                InputsBehind++;
++                InputsBehindSeconds += BaseEngine.CurrentTime - adjustedTime;
++            }
++
+             BaseEngine.QueueInput(ref input);
+             OnInputQueued(input);
+             _replayInputs.Add(input);
+diff --git a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+index 3db06a4..2596eb9 100644
+--- a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
++++ b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+@@ -566,6 +566,20 @@ namespace YARG.Gameplay.Player
+         {
+             base.OnOverhit();
+ 
++            // A strum that found no note, with one note close by that the held frets fit: that is
++            // how far out the timing is
++            if (AutoTimer != null && NoteTrack != null)
++            {
++                var notes = NoteTrack.Notes;
++                int held = Engine.EffectiveButtonMask;
++                if (YARG.Input.AutoTiming.LoneFittingNote(notes.Count, i => notes[i].Time,
++                    i => !notes[i].WasHit && YARG.Input.AutoTiming.FretsFit(held, notes[i].NoteMask),
++                    Engine.CurrentTime, out _, out double late))
++                {
++                    AutoTimer.Add(late);
++                }
++            }
++
+             if (GameManager.IsSeekingReplay)
+             {
+                 return;
+diff --git a/Assets/Script/Gameplay/Player/TrackPlayer.cs b/Assets/Script/Gameplay/Player/TrackPlayer.cs
+index d663104..b89e095 100644
+--- a/Assets/Script/Gameplay/Player/TrackPlayer.cs
++++ b/Assets/Script/Gameplay/Player/TrackPlayer.cs
+@@ -1001,6 +1001,7 @@ namespace YARG.Gameplay.Player
+             if (!Player.Profile.IsBot)
+             {
+                 _autoCalibrator.RecordAccuracy(note.Time);
++                AutoTimingHit(note.Time);
+             }
+ 
+             if (!GameManager.IsSeekingReplay)
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 16e1a7c..a13379e 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -203,6 +203,9 @@ namespace YARG.Settings
+             public ToggleSetting ForgivingGuitars { get; } = new(true, YARG.Input.ControllerLayout.OnForgivingGuitarsChanged);
+ 
+             // A strum bar that springs back past the middle strums twice; the second one is left out
++            // Works out each controller's delay from how the player's notes land (YARG.Input.AutoTiming)
++            public ToggleSetting AutoTiming { get; } = new(true);
++
+             public DropdownSetting<YARG.Input.StrumBounceFilter> StrumBounceFilter { get; }
+                 = new(YARG.Input.StrumBounceFilter.Light)
+                 {
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 01c651a..fd5d6fd 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -78,6 +78,7 @@ namespace YARG.Settings
+                 nameof(Settings.GamepadGuitarLayout),
+                 nameof(Settings.GamepadNoStrum),
+                 nameof(Settings.ForgivingGuitars),
++                nameof(Settings.AutoTiming),
+                 nameof(Settings.StrumBounceFilter),
+                 nameof(Settings.ShowControllerButtonNames),
+ #if UNITY_ANDROID
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index e36b52a..6c0dc60 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1758,6 +1758,10 @@
+                 "Name": "Forgiving Timing On Guitars",
+                 "Description": "On: a profile that plays on a guitar controller (strum bar and frets) uses the Relaxed engine. A note counts when you strum up to a tenth of a second early or late (normally 70 ms), you get more time between the strum and the fret, and touching a fret early costs nothing. Each profile is switched once; you can still pick another engine for it in Profiles. Off: guitar profiles this switched go back to the Default engine."
+             },
++            "AutoTiming": {
++                "Name": "Automatic Timing For Each Controller",
++                "Description": "Every controller is late by its own amount: a Bluetooth guitar more than a wired one, a TV more than the phone's own screen. On: while you play, the game measures how early or late your notes land (the ones you hit, and strums that just missed a note) and, a dozen notes at a time, corrects your profile's Input Calibration until they land in the middle. Just play to what you see and hear; do not strum early to make up for the delay. The value is remembered for each controller a profile uses, so a guitar and a gamepad each keep their own. Off: Input Calibration stays where you set it in Profiles."
++            },
+             "StrumBounceFilter": {
+                 "Name": "Strum Bar Bounce Filter",
+                 "Description": "A strum bar springs back when you let go, and can swing past the middle and strum a second time. The game counts that as a wrong strum and breaks your streak. This leaves out a second strum that comes right after the first: Light within 20 thousandths of a second (10 after letting go), Strong within 35 (20 after letting go). Fast up-and-down strumming is slower than that. Only for guitar controllers.",

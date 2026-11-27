@@ -140,6 +140,7 @@ namespace RemoteServerTests
             try
             {
                 StrumBounceTests.Run(Check);
+                AutoTimingTests.Run(Check);
                 GuitarVoiceTests.Run(Check, args.Length > 1 ? args[1] : null);
                 await Run(args[0]);
                 Console.WriteLine($"ALL {_checks} CHECKS PASSED");
