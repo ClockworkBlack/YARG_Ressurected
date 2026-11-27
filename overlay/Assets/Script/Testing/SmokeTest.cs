@@ -1199,6 +1199,29 @@ namespace YARG.Testing
                 return false;
             }
             Note("Verses cut at a pause and after 16 bars");
+
+            // How often a controller reports: a whammy bar moved in three bursts, a report every
+            // 11 ms (with the odd one late), and a second or so of nothing between the bursts
+            _step = "measuring a controller's pace";
+            var reports = new List<double>();
+            double stamp = 10.0;
+            for (int burst = 0; burst < 3; burst++)
+            {
+                for (int i = 0; i < 60; i++)
+                {
+                    stamp += i % 9 == 8 ? 0.022 : 0.011;
+                    reports.Add(stamp);
+                }
+                stamp += 1.3;
+            }
+            int pace = YARG.Input.BluetoothBoost.PaceOf(reports);
+            int few = YARG.Input.BluetoothBoost.PaceOf(reports.Take(20).ToList());
+            if (pace != 11 || few != 0)
+            {
+                Finish(false, $"a controller reporting every 11 ms was measured as {pace} ms (and {few} from too few reports)");
+                return false;
+            }
+            Note("A controller's pace is measured from its reports (11 ms found)");
             return true;
         }
 

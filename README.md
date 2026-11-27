@@ -206,6 +206,24 @@ It is not used for bots, replays, practice, songs played at another speed, or ph
 Wi-Fi (which have their own measured delay). A profile's Input Calibration can still be set by
 hand in Profiles; automatic timing carries on from whatever it is.
 
+### Fast Bluetooth for controllers, and how often a controller really reports
+
+A Bluetooth controller and the phone agree how often they talk. For a **Bluetooth Low Energy**
+controller the phone normally settles on a relaxed pace to save power, and an app may ask for the
+fast one. The game now asks (**Settings > General > Fast Bluetooth For Controllers**, on by
+default, Android only). The first time, on the screen before a song, it asks for the **Nearby
+devices** permission, which Android requires for looking at paired Bluetooth devices.
+
+This cannot help a controller on **classic Bluetooth**: that kind sets its own pace and nothing on
+the phone can change it. Which kind yours is, the game can only find out on the phone. Press green
+on your profile in **Profiles**: the **Connection** row says "Bluetooth Low Energy, fast connection
+asked for" or "classic Bluetooth; it sets its own pace", and, after you have played a song,
+how often the controller really reports ("reports about every 11 ms"). That number is measured
+from the controller's own reports while something on it moves (the whammy bar, the tilt sensor).
+
+For the lowest delay, CRKD's guide ranks a USB cable first, its USB receiver second and Bluetooth
+last. Whether the cable or the receiver works as a guitar on Android has not been tried here.
+
 ### Smoother play: the volume normalizer no longer runs all song long
 
 With **Settings > Sound > Normalize Audio** on (the default; an advanced setting), the game reads through the whole

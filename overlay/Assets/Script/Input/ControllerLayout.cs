@@ -110,6 +110,10 @@ namespace YARG.Input
         /// </summary>
         public static void ApplyPendingGuitarLayout()
         {
+            // (Also on the screen before a song: the fast Bluetooth pace for the controllers in use)
+            BluetoothBoost.Apply(true);
+            BluetoothBoost.Refresh(true);
+
             var settings = SettingsManager.Settings;
             if (settings == null || !settings.GuitarLayoutRebindPending)
             {

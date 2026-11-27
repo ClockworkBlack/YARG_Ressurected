@@ -268,43 +268,75 @@ index d663104..b89e095 100644
              }
  
              if (!GameManager.IsSeekingReplay)
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index fd73d98..047816b 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -607,6 +607,19 @@ namespace YARG.Menu.ProfileList
+                     return UniTask.CompletedTask;
+                 }));
+             }
++            // What is known about the controller's connection (YARG.Input.BluetoothBoost)
++            string connection = Profile.IsBot ? string.Empty
++                : YARG.Input.BluetoothBoost.Describe(PlayerContainer.GetPlayerFromProfile(Profile));
++            if (!string.IsNullOrEmpty(connection))
++            {
++                int connectionRow = rows + 1;
++                dialog.AddListButton("<size=70%>Connection: " + connection + "</size>", () => After(() =>
++                {
++                    YARG.Input.BluetoothBoost.Apply(true);
++                    return Reopen(connectionRow);
++                }));
++            }
++
+             dialog.AddListButton("Touch Screen Settings (press points, sliders)", () => After(() =>
+             {
+                 _profileSidebar.UpdateSidebar(Profile, this);
 diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
-index 16e1a7c..a13379e 100644
+index 16e1a7c..bc89850 100644
 --- a/Assets/Script/Settings/SettingsManager.Settings.cs
 +++ b/Assets/Script/Settings/SettingsManager.Settings.cs
-@@ -203,6 +203,9 @@ namespace YARG.Settings
+@@ -203,6 +203,12 @@ namespace YARG.Settings
              public ToggleSetting ForgivingGuitars { get; } = new(true, YARG.Input.ControllerLayout.OnForgivingGuitarsChanged);
  
              // A strum bar that springs back past the middle strums twice; the second one is left out
 +            // Works out each controller's delay from how the player's notes land (YARG.Input.AutoTiming)
 +            public ToggleSetting AutoTiming { get; } = new(true);
 +
++            // Asks Android for its fast Bluetooth pace for the controllers in use (YARG.Input.BluetoothBoost)
++            public ToggleSetting FasterBluetooth { get; } = new(true);
++
              public DropdownSetting<YARG.Input.StrumBounceFilter> StrumBounceFilter { get; }
                  = new(YARG.Input.StrumBounceFilter.Light)
                  {
 diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
-index 01c651a..fd5d6fd 100644
+index 01c651a..973863e 100644
 --- a/Assets/Script/Settings/SettingsManager.cs
 +++ b/Assets/Script/Settings/SettingsManager.cs
-@@ -78,6 +78,7 @@ namespace YARG.Settings
+@@ -78,6 +78,8 @@ namespace YARG.Settings
                  nameof(Settings.GamepadGuitarLayout),
                  nameof(Settings.GamepadNoStrum),
                  nameof(Settings.ForgivingGuitars),
 +                nameof(Settings.AutoTiming),
++                nameof(Settings.FasterBluetooth),
                  nameof(Settings.StrumBounceFilter),
                  nameof(Settings.ShowControllerButtonNames),
  #if UNITY_ANDROID
 diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
-index e36b52a..6c0dc60 100644
+index e36b52a..1a171d7 100644
 --- a/Assets/StreamingAssets/lang/en-US.json
 +++ b/Assets/StreamingAssets/lang/en-US.json
-@@ -1758,6 +1758,10 @@
+@@ -1758,6 +1758,14 @@
                  "Name": "Forgiving Timing On Guitars",
                  "Description": "On: a profile that plays on a guitar controller (strum bar and frets) uses the Relaxed engine. A note counts when you strum up to a tenth of a second early or late (normally 70 ms), you get more time between the strum and the fret, and touching a fret early costs nothing. Each profile is switched once; you can still pick another engine for it in Profiles. Off: guitar profiles this switched go back to the Default engine."
              },
 +            "AutoTiming": {
 +                "Name": "Automatic Timing For Each Controller",
 +                "Description": "Every controller is late by its own amount: a Bluetooth guitar more than a wired one, a TV more than the phone's own screen. On: while you play, the game measures how early or late your notes land (the ones you hit, and strums that just missed a note) and, a dozen notes at a time, corrects your profile's Input Calibration until they land in the middle. Just play to what you see and hear; do not strum early to make up for the delay. The value is remembered for each controller a profile uses, so a guitar and a gamepad each keep their own. Off: Input Calibration stays where you set it in Profiles."
++            },
++            "FasterBluetooth": {
++                "Name": "Fast Bluetooth For Controllers",
++                "Description": "Android only. A Bluetooth controller and the phone agree how often they talk, and the phone normally picks a relaxed pace to save power. On: the game asks the phone for its fast pace for the controllers you play with (it needs the \"Nearby devices\" permission to do so, and asks once). This can only work for a Bluetooth Low Energy controller; one on classic Bluetooth sets its own pace and nothing on the phone can change it. Green on a profile in Profiles shows which kind your controller is and, after a song, how often it really reports."
 +            },
              "StrumBounceFilter": {
                  "Name": "Strum Bar Bounce Filter",

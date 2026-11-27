@@ -284,6 +284,9 @@ namespace YARG.Editor.Android
                 "android.permission.WAKE_LOCK",
                 // "Start game network" (local-only hotspot)
                 "android.permission.CHANGE_WIFI_STATE",
+                // Fast Bluetooth for controllers (YargBluetoothBoost.java): to see paired controllers
+                "android.permission.BLUETOOTH_CONNECT",
+                "android.permission.BLUETOOTH",
             };
 
             foreach (var permission in permissions)

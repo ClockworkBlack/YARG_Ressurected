@@ -14,6 +14,7 @@ namespace YARG.Input
 
         public static void SongEnded()
         {
+            BluetoothBoost.SongEnded();
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
