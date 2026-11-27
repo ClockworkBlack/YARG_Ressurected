@@ -614,6 +614,10 @@ ringing, a snare, tom or cymbal on the fret next to it). Notes only go where the
 beat apart on Easy, down to a tenth of a second on Expert), and a held note lets go before an
 added one. A song with only guitar and bass charts has nothing to add from, and plays as before.
 
+Deep Music Mode is offered for **guitar, bass and co-op guitar**. On co-op guitar it plays the
+song's own co-op part when it has one (converted songs: that already is the whole-song part),
+or the part built as above. It is not offered on rhythm or keys.
+
 ## Co-op guitar on every song
 
 *(Branch `real-instrument-tracks`.)* Every song with a guitar part can be played as **co-op

@@ -284,7 +284,7 @@ index 0000000..86efcbd
 +    }
 +}
 diff --git a/YARG.Core/Chart/SongChart.cs b/YARG.Core/Chart/SongChart.cs
-index a12381f..c106bb1 100644
+index a12381f..2ef595c 100644
 --- a/YARG.Core/Chart/SongChart.cs
 +++ b/YARG.Core/Chart/SongChart.cs
 @@ -252,7 +252,9 @@ namespace YARG.Core.Chart
@@ -307,16 +307,23 @@ index a12381f..c106bb1 100644
          public InstrumentTrack<GuitarNote> GetFiveFretTrack(Instrument instrument, Modifier modifiers, Difficulty difficulty)
          {
              if ((modifiers & Modifier.DeepMusicMode) != 0)
-@@ -280,6 +284,19 @@ namespace YARG.Core.Chart
+@@ -280,6 +284,26 @@ namespace YARG.Core.Chart
                  {
                      return deep;
                  }
++
++                // Co-op guitar: the song's own co-op part is already the whole-song one
++                if (instrument == Instrument.FiveFretCoopGuitar && FiveFretCoop.TryGetDifficulty(difficulty, out var coop)
++                    && coop.Notes.Count > 0)
++                {
++                    return FiveFretCoop;
++                }
 +
 +                // A song without the converter's whole-song parts: built from its other charts
 +                // (see DeepMusicCover), once per song
 +                var built = instrument switch
 +                {
-+                    Instrument.FiveFretGuitar => _deepGuitar ??= DeepMusicCover.Guitar(this) ?? FiveFretGuitar,
++                    Instrument.FiveFretGuitar or Instrument.FiveFretCoopGuitar => _deepGuitar ??= DeepMusicCover.Guitar(this) ?? FiveFretGuitar,
 +                    Instrument.FiveFretBass => _deepBass ??= DeepMusicCover.Bass(this) ?? FiveFretBass,
 +                    _ => null
 +                };
@@ -328,7 +335,7 @@ index a12381f..c106bb1 100644
  
              return GetFiveFretTrack(instrument);
 diff --git a/YARG.Core/Game/Modifier.cs b/YARG.Core/Game/Modifier.cs
-index 72ea39f..d177a2d 100644
+index 72ea39f..51974ef 100644
 --- a/YARG.Core/Game/Modifier.cs
 +++ b/YARG.Core/Game/Modifier.cs
 @@ -28,7 +28,13 @@ namespace YARG.Core.Game
@@ -346,6 +353,19 @@ index 72ea39f..d177a2d 100644
      }
  
      public static class ModifierConflicts
+@@ -61,9 +67,9 @@ namespace YARG.Core.Game
+                     Modifier.RangeCompress |
+                     Modifier.OpensToGreens,
+ 
+-                // Deep Music Mode swaps guitar and bass for parts kept in these slots, so it
+-                // means nothing when playing them directly.
+-                Instrument.FiveFretCoopGuitar or
++                // Deep Music Mode swaps guitar and bass for parts kept in the rhythm slot, so it
++                // means nothing when playing that directly. (On co-op guitar it plays the
++                // whole-song part: the song's own, or one built from its other charts.)
+                 Instrument.FiveFretRhythm or
+                 Instrument.Keys =>
+                     Modifier.DeepMusicMode,
 @@ -88,7 +94,8 @@ namespace YARG.Core.Game
                      Modifier.TapsToHopos   |
                      Modifier.RangeCompress |

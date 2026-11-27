@@ -905,7 +905,16 @@ namespace YARG.Testing
                     Finish(false, $"Deep Music Mode on a song without its parts: guitar {guitarNotes} -> {deepGuitar}, bass {bassNotes} -> {deepBassTrack.Notes.Count}, in order {linked}, without the modifier {plain}");
                     return false;
                 }
-                Note($"Deep Music Mode on any song: guitar {guitarNotes} notes + keys = {deepGuitar}, bass {bassNotes} + drums = {deepBassTrack.Notes.Count}");
+                // ...and on co-op guitar, where it is offered too
+                var (coopModifiers, _) = GameMode.FiveFretGuitar.PossibleModifiers(Instrument.FiveFretCoopGuitar);
+                int deepCoop = chart.GetFiveFretTrack(Instrument.FiveFretCoopGuitar, Modifier.DeepMusicMode, Difficulty.Expert)
+                    .GetDifficulty(Difficulty.Expert).Notes.Count;
+                if ((coopModifiers & Modifier.DeepMusicMode) == 0 || deepCoop != guitarNotes * 2)
+                {
+                    Finish(false, $"Deep Music Mode on co-op guitar: offered {(coopModifiers & Modifier.DeepMusicMode) != 0}, notes {deepCoop}");
+                    return false;
+                }
+                Note($"Deep Music Mode on any song: guitar {guitarNotes} notes + keys = {deepGuitar}, bass {bassNotes} + drums = {deepBassTrack.Notes.Count}, co-op guitar {deepCoop}");
             }
 
             // Real instrument tracks: the file that says which tracks a part plays
