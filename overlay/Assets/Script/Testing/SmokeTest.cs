@@ -856,6 +856,20 @@ namespace YARG.Testing
             }
             Note($"Relaxed engine: notes count {relaxed.FiveFretGuitar.HitWindow.MaxWindow * 500:0} ms either side, strum to fret {relaxed.FiveFretGuitar.StrumLeniency * 1000:0} ms");
 
+            // Real instrument tracks: the file that says which tracks a part plays
+            _step = "reading yarg-tracks.txt";
+            var parts = GameManager.ParseTrackParts(new[]
+            {
+                "# a comment", "guitar=guitar,vocals,keys", "bass=bass", "rhythm = bass, drums", "nonsense", "coop=",
+            });
+            if (parts == null || parts.Count != 3 || parts["guitar"].Length != 3 || parts["guitar"][1] != SongStem.Vocals
+                || parts["rhythm"].Length != 2 || parts["rhythm"][1] != SongStem.Drums)
+            {
+                Finish(false, "yarg-tracks.txt is not read as written");
+                return false;
+            }
+            Note("Real instrument tracks: the parts file is read (guitar plays guitar, vocals and keys; Deep Music Mode bass plays bass and drums)");
+
             // Hearing a guitar sound before choosing it
             _step = "guitar sound preview";
             short[] riff = await UniTask.RunOnThreadPool(() => GuitarVoicePreview.Render(GuitarVoiceTone.Rock));

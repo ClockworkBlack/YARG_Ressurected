@@ -603,6 +603,38 @@ instruments for converted songs: picking **Co-op Guitar** or **Rhythm** plays th
 Mode guitar or bass directly. Convert a song again with the latest converter to add the parts
 to songs converted earlier.
 
+## Real instrument tracks: what you play cuts out when you miss
+
+*(Branch `real-instrument-tracks`.)* Guitar Hero songs have each instrument on its own audio
+track: the guitar plays while you hit notes and cuts out when you miss. Songs from the converter
+can now be made the same way. Convert with **TRACKS** on (Colab notebook) or `--tracks`
+(`batch_convert.py`, `ConvertSong`) and the song folder holds `guitar.ogg`, `bass.ogg`,
+`drums.ogg`, `vocals.ogg` and `keys.ogg` (the piano and every other tuned sound) in place of the
+one recording, plus `yarg-tracks.txt`:
+
+```
+guitar=guitar,vocals,keys
+bass=bass
+coop=guitar,vocals,keys
+rhythm=bass,drums
+```
+
+It says which tracks each part plays, because the converter's charts do not always follow the
+instrument they are named after: in a song carried by the voice the guitar chart follows the
+vocals and the beat's melody, and Deep Music Mode's bass (`rhythm`) plays the drum hits too
+(`coop` is Deep Music Mode's guitar). When you miss, those tracks cut out together, and they come
+back on your next hit. With two players on tracks they share (a singer and a guitarist on the
+vocals), a miss takes the track down by that player's share instead of silencing it.
+
+- "Mute On Miss" (Settings > Sound) must not be Off; its default works.
+- A song with tracks is about three to four times as big (7 MB for a two-minute song).
+- "Guitar Sound On Notes" leaves these songs alone: they have the real thing.
+- Songs converted without tracks, and every other song, play as before.
+- The phone's converter app cannot write tracks yet (it has no audio encoder); use the notebook.
+- Checked here: the five tracks played together are the original song (the difference is 22 dB
+  under it, the encoder's), and the Linux build loads and starts such a song. Hearing a track
+  cut out on a miss has not been checked on a phone.
+
 ## Guitar sound on your notes
 
 Guitar Hero songs come with the guitar on its own audio track: it plays while you hit notes and

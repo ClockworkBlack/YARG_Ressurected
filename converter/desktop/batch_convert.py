@@ -46,6 +46,9 @@ def main():
     ap.add_argument("--words-model", default=os.environ.get("YARG_WORDS", "wav2vec2-base-960h.onnx"))
     ap.add_argument("--whisper", default="large-v3")
     ap.add_argument("--jobs", default="auto")
+    ap.add_argument("--tracks", action="store_true",
+                    help="save the separated instruments as each song's audio (real instrument tracks: what you "
+                         "play cuts out when you miss); songs come out about four times as big")
     ap.add_argument("--keep", "--save-to", dest="keep", help="a folder (on Google Drive, say) that keeps every finished song and the record of "
                     "what is done, so a later run picks up where this one stopped")
     ap.add_argument("--redo-all", action="store_true", help="convert every song again, finished or not")
@@ -217,7 +220,7 @@ def main():
         cmd = ["java", "-Xmx%dm" % heap] + (["-Dyarg.cuda=1"] if args.gpu else []) + gpu_cap + ["-cp", args.classpath, "ConvertSong",
                "--audio", os.path.join(args.songs, name), "--out", out_songs, "--mode", mode, "--notes", notes,
                "--model", args.stems_model, "--words-model", args.words_model, "--find-details", "--find-lyrics",
-               "--two-singers", "--summary", base + ".json", "--known-artists", known_path, "--threads", str(max(1, (os.cpu_count() or 2) // jobs))]
+               "--two-singers", *(["--tracks"] if args.tracks and mode != "normal" else []), "--summary", base + ".json", "--known-artists", known_path, "--threads", str(max(1, (os.cpu_count() or 2) // jobs))]
         for key in ("title", "artist", "album", "year", "genre", "start", "end"):
             if p.get(key): cmd += ["--" + key, p[key]]
         if mode != "normal":

@@ -39,6 +39,8 @@ import java.util.Map;
  * the lyrics up as the app does (timed, or words only, which are then timed from the voice with
  * --words-model). --gpu runs both models on an NVIDIA card (with onnxruntime_gpu).
  * --summary file.json writes one line of JSON about the result.
+ * --tracks (with split or rnb) saves the separated instruments as the song's audio, in place of the
+ * one recording: the tracks your part plays cut out when you miss, as in Guitar Hero.
  * --start / --end (seconds) use only that part of the file: a music video's intro or outro cut off.
  *
  * --vocals-out writes the separated voice to a WAV file; with --wait-for-lyrics (and no lyrics found,
@@ -295,6 +297,7 @@ public final class ConvertSong {
         long separationMs = 0;
         if (useStems) {
             long t0 = System.currentTimeMillis();
+            if (a.containsKey("tracks")) openTracks();
             stems = separate(audio, req(a, "model"), rnb, a.get("vocals-out"), a.get("words-model"));
             separationMs = System.currentTimeMillis() - t0;
             log(String.format(Locale.US, "  split into instruments in %d min %02d s", separationMs / 60000, (separationMs / 1000) % 60));
@@ -410,7 +413,14 @@ public final class ConvertSong {
         log("notes.mid read back as the game reads it: OK");
 
         for (String old : new String[] {"song.mp3", "song.wav", "song.ogg", "song.opus"}) new File(dir, old).delete();
-        if (ext.equals("ogg") || ext.equals("opus") || ext.equals("mp3")) {
+        // (Tracks from an earlier conversion would play on top of the song)
+        for (String track : TRACK_NAMES) new File(dir, track + ".ogg").delete();
+        new File(dir, TRACKS_FILE).delete();
+        if (trackFiles != null) {
+            // Real instrument tracks instead of the one recording: the game plays them together,
+            // and the ones your part plays cut out when you miss (see writeTracks)
+            writeTracks(dir, r);
+        } else if (ext.equals("ogg") || ext.equals("opus") || ext.equals("mp3")) {
             // The sound only, as it is (no re-encoding): a file can also hold the cover art as a
             // video stream, and with one in an Ogg the game played neither the preview nor the
             // song. The cover art is saved as album.png instead (below).
@@ -608,6 +618,18 @@ public final class ConvertSong {
                     System.arraycopy(rsL, 0, voice16k[0], voice16kLength[0], made);
                     voice16kLength[0] += made;
                 }
+                if (trackOut != null) {
+                    try {
+                        // Order of TRACK_NAMES; keys holds the piano and every other tuned sound
+                        writeTrack(trackOut[0], gt, null, count);
+                        writeTrack(trackOut[1], bs, null, count);
+                        writeTrack(trackOut[2], ds, null, count);
+                        writeTrack(trackOut[3], vc, null, count);
+                        writeTrack(trackOut[4], pn, ot, count);
+                    } catch (IOException e) {
+                        throw new IllegalStateException(e);
+                    }
+                }
                 if (stemWav != null) {
                     try {
                         float[][][] which = {gt, pn, ot, bs, st[StemSplitter.DRUMS], vc};
@@ -636,6 +658,7 @@ public final class ConvertSong {
         } finally {
             if (wav != null) wav.close();
             if (stemWav != null) for (WavOut w : stemWav) w.close();
+            if (trackOut != null) for (java.io.OutputStream o : trackOut) o.close();
             pcm.delete();
         }
         SongWriter.Stems out = new SongWriter.Stems();
@@ -660,6 +683,71 @@ public final class ConvertSong {
         }
         if (vocalsOut != null) log("Separated voice written to " + vocalsOut);
         return out;
+    }
+
+    // ---------------------------------------------------------------- real instrument tracks
+    // --tracks: the separated instruments are saved as the song's audio (guitar.ogg, bass.ogg,
+    // drums.ogg, vocals.ogg, keys.ogg) in place of the one recording. The game plays them
+    // together, and the tracks a player's part plays cut out on a miss and come back on the next
+    // hit, as in Guitar Hero. Which tracks those are is written to yarg-tracks.txt, because the
+    // charts do not always follow the instrument they are named after: in a song carried by the
+    // voice the guitar chart follows the vocals and the beat's melody.
+
+    static final String[] TRACK_NAMES = {"guitar", "bass", "drums", "vocals", "keys"};
+    static final String TRACKS_FILE = "yarg-tracks.txt";
+    private static File[] trackFiles;
+    private static java.io.OutputStream[] trackOut;
+
+    private static void openTracks() throws IOException {
+        trackFiles = new File[TRACK_NAMES.length];
+        trackOut = new java.io.OutputStream[TRACK_NAMES.length];
+        for (int k = 0; k < TRACK_NAMES.length; k++) {
+            trackFiles[k] = File.createTempFile("track-" + TRACK_NAMES[k], ".pcm");
+            trackFiles[k].deleteOnExit();
+            trackOut[k] = new java.io.BufferedOutputStream(new FileOutputStream(trackFiles[k]), 1 << 16);
+        }
+    }
+
+    /** Stereo, 16 bit, as the separation gives it (a and b added together when b is given). */
+    private static void writeTrack(java.io.OutputStream out, float[][] a, float[][] b, int count) throws IOException {
+        byte[] buf = new byte[count * 4];
+        for (int i = 0; i < count; i++) {
+            for (int c = 0; c < 2; c++) {
+                float x = a[c][i] + (b == null ? 0 : b[c][i]);
+                int v = Math.max(-32768, Math.min(32767, Math.round(x * 32767f)));
+                buf[4 * i + 2 * c] = (byte) v;
+                buf[4 * i + 2 * c + 1] = (byte) (v >> 8);
+            }
+        }
+        out.write(buf);
+    }
+
+    private static void writeTracks(File dir, SongWriter.Result r) throws Exception {
+        for (int k = 0; k < TRACK_NAMES.length; k++) {
+            run("ffmpeg", "-v", "error", "-y", "-f", "s16le", "-ar", String.valueOf(StemSplitter.SAMPLE_RATE), "-ac", "2",
+                    "-i", trackFiles[k].getPath(), "-c:a", "libvorbis", "-q:a", "4", new File(dir, TRACK_NAMES[k] + ".ogg").getPath());
+            trackFiles[k].delete();
+        }
+        Files.write(new File(dir, TRACKS_FILE).toPath(), tracksFor(r).getBytes(StandardCharsets.UTF_8));
+        log("Real instrument tracks written: guitar, bass, drums, vocals, keys");
+    }
+
+    /** Which tracks each part plays (read by the game: GameManager.Tracks.cs). */
+    static String tracksFor(SongWriter.Result r) {
+        String source = r.guitarSource == null ? "" : r.guitarSource;
+        // What the guitar chart was made from
+        String guitar = r.rnb ? "vocals"
+                : source.contains("vocals") ? "guitar,vocals,keys"
+                : source.contains("keys") ? "guitar,keys"
+                : "guitar";
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Which of this song's tracks each part plays: they cut out when that part misses.\n");
+        sb.append("# Written by YARG Converter; coop and rhythm are Deep Music Mode's guitar and bass.\n");
+        sb.append("guitar=").append(guitar).append('\n');
+        sb.append("bass=bass\n");
+        if (r.deepChart != null) sb.append("coop=guitar,vocals,keys\n");
+        if (r.deepBassChart != null) sb.append("rhythm=").append(r.drumNotesInBass > 0 ? "bass,drums" : "bass").append('\n');
+        return sb.toString();
     }
 
     /** Mono 16-bit WAV, the header filled in on close. */

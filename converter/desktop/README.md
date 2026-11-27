@@ -56,6 +56,12 @@ the voice is silent dropped. Expect about 3 words in 10 to be wrong on English r
 other languages): good enough to sing along to and to time, not a lyric sheet. `lyrics_wer.py
 real.lrc heard.lrc` measures it on a song whose lyrics are known.
 
+**Real instrument tracks.** `--tracks` (with split or rnb) saves the separated instruments as the
+song's audio (`guitar.ogg`, `bass.ogg`, `drums.ogg`, `vocals.ogg`, `keys.ogg`) in place of the one
+recording, with `yarg-tracks.txt` saying which tracks each part plays. In the game (branch
+`real-instrument-tracks`) the tracks your part plays cut out when you miss, as in Guitar Hero.
+Songs come out three to four times as big.
+
 **Long batches.** `batch_convert.py ... --save-to <folder>` copies each song to `<folder>/Converted/` the
 moment it is done and keeps `<folder>/report.csv` up to date; run it again after an interruption and the
 songs already there are skipped. The Colab notebook saves to Drive this way.

@@ -1,0 +1,61 @@
+diff --git a/Assets/Script/Gameplay/GameManager.Loading.cs b/Assets/Script/Gameplay/GameManager.Loading.cs
+index f2b5483..8f44012 100644
+--- a/Assets/Script/Gameplay/GameManager.Loading.cs
++++ b/Assets/Script/Gameplay/GameManager.Loading.cs
+@@ -577,7 +577,27 @@ namespace YARG.Gameplay
+                         stem = SongStem.Rhythm;
+                     }
+ 
+-                    if (stem != _backgroundStem && _stemStates.TryGetValue(stem, out var state))
++                    // A converted song with real instrument tracks says which tracks the part plays
++                    // (GameManager.Tracks.cs): each of them counts this player
++                    var played = PlayedStems(player);
++                    bool countedPlayed = false;
++                    if (played != null)
++                    {
++                        foreach (var playedStem in played)
++                        {
++                            if (playedStem != _backgroundStem && _stemStates.TryGetValue(playedStem, out var playedState))
++                            {
++                                ++playedState.Total;
++                                ++playedState.Audible;
++                                countedPlayed = true;
++                            }
++                        }
++                    }
++
++                    if (countedPlayed)
++                    {
++                    }
++                    else if (stem != _backgroundStem && _stemStates.TryGetValue(stem, out var state))
+                     {
+                         ++state.Total;
+                         ++state.Audible;
+diff --git a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+index 6d1dfa8..3db06a4 100644
+--- a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
++++ b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+@@ -145,6 +145,7 @@ namespace YARG.Gameplay.Player
+         private int _sustainCount;
+ 
+         private SongStem _stem;
++        private SongStem[] _playedStems;
+         private double _practiceSectionStartTime;
+ 
+         public override void Initialize(int index, YargPlayer player, SongChart chart, TrackView trackView, StemMixer mixer, int? currentHighScore)
+@@ -438,7 +439,14 @@ namespace YARG.Gameplay.Player
+         {
+             if (IsStemMuted != muted)
+             {
+-                GameManager.ChangeStemMuteState(_stem, muted);
++                // Real instrument tracks: every track this part plays cuts out and comes back
++                // together (GameManager.Tracks.cs); otherwise the part's own track
++                _playedStems ??= GameManager.PlayedStems(Player) ?? new[] { _stem };
++                foreach (var stem in _playedStems)
++                {
++                    // (The track everything else is on never cuts out: see MultitrackOnly)
++                    GameManager.ChangeStemMuteState(stem, muted);
++                }
+                 IsStemMuted = muted;
+             }
+         }
