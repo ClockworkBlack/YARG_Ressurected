@@ -85,6 +85,22 @@ namespace YARG.Gameplay.VocalBattle
         private static VocalsTrack _splitTrack;
         private static readonly Dictionary<YargPlayer, int> _sideOf = new();
 
+        // Which part of the split vocals each singer has (a side's in a sing-off with turns, an
+        // artist's when the song's verses were dealt out between its artists)
+        private static readonly Dictionary<YargPlayer, int> _partOf = new();
+
+        /// <summary>True when the song's lines were dealt out in memory, for turns or for artists.</summary>
+        public static bool UsesSplitTrack => _splitTrack != null;
+
+        /// <summary>
+        /// True when the song has one vocal part for everybody and its verses were dealt out between
+        /// its credited artists, because a singer chose to be one of them. A guess: see VerseDealer.
+        /// </summary>
+        public static bool GuessedVerses { get; private set; }
+
+        /// <summary>With guessed verses: the artist each part belongs to.</summary>
+        public static string[] GuessedNames { get; private set; } = Array.Empty<string>();
+
         // For each round: when its last line ends, and whether it has been called
         private static readonly List<double> _roundEnd = new();
         private static int _roundsCalled;
@@ -98,6 +114,9 @@ namespace YARG.Gameplay.VocalBattle
             SplitLines = false;
             _splitTrack = null;
             _sideOf.Clear();
+            _partOf.Clear();
+            GuessedVerses = false;
+            GuessedNames = Array.Empty<string>();
             _roundEnd.Clear();
             _roundsCalled = 0;
             LastLineEnd = 0;
@@ -116,7 +135,7 @@ namespace YARG.Gameplay.VocalBattle
             Reset();
             try
             {
-                if (!SettingsManager.Settings.SingOff.Value || gameManager == null || chart == null || players == null ||
+                if (gameManager == null || chart == null || players == null ||
                     gameManager.IsPractice || gameManager.ReplayInfo != null)
                 {
                     return;
@@ -131,16 +150,20 @@ namespace YARG.Gameplay.VocalBattle
                     }
                 }
 
-                if (singers.Count < 2)
+                if (singers.Count == 0)
                 {
                     return;
                 }
 
+                bool battle = SettingsManager.Settings.SingOff.Value && singers.Count >= 2;
                 if (singers[0].Profile.CurrentInstrument == Instrument.Harmony)
                 {
-                    SetupArtists(chart, singers);
+                    if (battle)
+                    {
+                        SetupArtists(chart, singers);
+                    }
                 }
-                else
+                else if (!SetupVerses(gameManager.Song, chart, singers, battle) && battle)
                 {
                     SetupTurns(chart, singers);
                 }
@@ -177,6 +200,154 @@ namespace YARG.Gameplay.VocalBattle
             }
 
             Finish(false);
+        }
+
+        /// <summary>
+        /// A singer chose to be one artist of a song that has one vocal part for everybody: its
+        /// verses are dealt out between its artists (VerseDealer), each singer gets the verses of
+        /// theirs, and the rest scroll past without counting. False when nobody chose that.
+        /// </summary>
+        private static bool SetupVerses(YARG.Core.Song.SongEntry song, SongChart chart, List<YargPlayer> singers, bool battle)
+        {
+            var source = chart.Vocals;
+            bool chosen = false;
+            foreach (var singer in singers)
+            {
+                chosen |= VocalParts.GuessedArtist(singer.Profile, song) >= 0;
+            }
+
+            if (!chosen || source.Parts.Count != 1 || CountSungPhrases(source.Parts[0]) < 4)
+            {
+                return false;
+            }
+
+            var artists = VocalParts.Artists(song, 1);
+            if (artists.Count < 2 || !artists[0].Guessed)
+            {
+                return false;
+            }
+
+            int count = artists.Count;
+            var original = source.Parts[0];
+
+            var bars = new List<double>();
+            foreach (var line in chart.SyncTrack.Beatlines)
+            {
+                if (line.Type == BeatlineType.Measure) bars.Add(line.Time);
+            }
+
+            var starts = new List<double>();
+            var ends = new List<double>();
+            var sung = new List<bool>();
+            foreach (var phrase in original.NotePhrases)
+            {
+                var notes = phrase.PhraseParentNote.ChildNotes;
+                bool words = IsSung(phrase);
+                sung.Add(words);
+                starts.Add(words ? notes[0].Time : phrase.Time);
+                ends.Add(words ? notes[notes.Count - 1].TotalTimeEnd : phrase.TimeEnd);
+            }
+            var verses = VerseDealer.Verses(starts, ends, sung, bars);
+
+            var notePhrases = new List<VocalsPhrase>[count];
+            var staticPhrases = new List<VocalsPhrase>[count];
+            for (int p = 0; p < count; p++)
+            {
+                notePhrases[p] = new List<VocalsPhrase>();
+                staticPhrases[p] = new List<VocalsPhrase>();
+            }
+
+            for (int i = 0; i < original.NotePhrases.Count; i++)
+            {
+                int part = verses[i] % count;
+                var copy = Rebuild(original.NotePhrases[i], part);
+
+                var list = notePhrases[part];
+                if (list.Count > 0)
+                {
+                    var previous = list[list.Count - 1].PhraseParentNote;
+                    copy.PhraseParentNote.PreviousNote = previous;
+                    previous.NextNote = copy.PhraseParentNote;
+                }
+
+                list.Add(copy);
+                staticPhrases[part].Add(copy.Clone());
+            }
+
+            var parts = new List<VocalsPart>(count);
+            var names = new string[count];
+            for (int p = 0; p < count; p++)
+            {
+                parts.Add(new VocalsPart(true, notePhrases[p], staticPhrases[p],
+                    original.OtherPhrases.Duplicate(), original.TextEvents.Duplicate()));
+                names[p] = artists[p].Name;
+            }
+
+            // Who is who: the artist they chose; a singer who chose none gets one nobody has yet
+            var taken = new bool[count];
+            foreach (var singer in singers)
+            {
+                int artist = VocalParts.GuessedArtist(singer.Profile, song);
+                if (artist >= 0 && artist < count)
+                {
+                    _partOf[singer] = artist;
+                    taken[artist] = true;
+                }
+            }
+            foreach (var singer in singers)
+            {
+                if (_partOf.ContainsKey(singer))
+                {
+                    continue;
+                }
+
+                int free = Array.IndexOf(taken, false);
+                if (free < 0) free = 0;
+                _partOf[singer] = free;
+                taken[free] = true;
+            }
+
+            _splitTrack = new VocalsTrack(Instrument.Harmony, parts, source.RangeShifts.Duplicate(), source.Animations);
+            GuessedVerses = true;
+            GuessedNames = names;
+            YargLogger.LogFormatInfo("Vocal Challenge: the song's verses dealt out between {0} artists (a guess)", count);
+
+            // Artist against artist: the first artist anyone has, against everybody else's
+            if (battle)
+            {
+                int first = _partOf[singers[0]];
+                foreach (var singer in singers)
+                {
+                    int side = _partOf[singer] == first ? 0 : 1;
+                    _sideOf[singer] = side;
+                    Sides[side].Players.Add(singer);
+                }
+
+                if (Sides[1].Players.Count == 0)
+                {
+                    // Everyone on the same artist: nobody to sing against
+                    _sideOf.Clear();
+                    Sides[0].Players.Clear();
+                }
+                else
+                {
+                    for (int p = 0; p < count; p++)
+                    {
+                        if (taken[p])
+                        {
+                            AddSchedule(Sides[p == first ? 0 : 1], parts[p], null);
+                        }
+                    }
+                    Finish(false);
+
+                    // Each side in its artist's color
+                    Sides[0].Color = VocalTrack.Colors[first % VocalTrack.Colors.Length];
+                    int other = _partOf[Sides[1].Players[0]];
+                    Sides[1].Color = VocalTrack.Colors[other % VocalTrack.Colors.Length];
+                }
+            }
+
+            return true;
         }
 
         /// <summary>The song's lines are dealt out between the two sides in turns.</summary>
@@ -219,6 +390,7 @@ namespace YARG.Gameplay.VocalBattle
             {
                 int side = i % SIDES;
                 _sideOf[singers[i]] = side;
+                _partOf[singers[i]] = side;
                 Sides[side].Players.Add(singers[i]);
             }
 
@@ -322,20 +494,18 @@ namespace YARG.Gameplay.VocalBattle
         /// </summary>
         public static void Begin(GameManager gameManager)
         {
+            // Half a song, or one artist's guessed share of it, is not a run of the song
+            if (UsesSplitTrack)
+            {
+                foreach (var player in _partOf.Keys)
+                {
+                    player.IsScoreValid = false;
+                }
+            }
+
             if (!Active)
             {
                 return;
-            }
-
-            if (SplitLines)
-            {
-                foreach (var side in Sides)
-                {
-                    foreach (var player in side.Players)
-                    {
-                        player.IsScoreValid = false;
-                    }
-                }
             }
 
             SingOffHud.Create(gameManager);
@@ -410,15 +580,15 @@ namespace YARG.Gameplay.VocalBattle
         /// <summary>The vocals to show and sing: the dealt-out version in a sing-off with turns, else the song's own.</summary>
         public static VocalsTrack TrackOr(VocalsTrack normal)
         {
-            return Active && SplitLines && _splitTrack != null ? _splitTrack : normal;
+            return _splitTrack ?? normal;
         }
 
         /// <summary>Which part of the vocals a player sings.</summary>
         public static int PartIndex(YargPlayer player)
         {
-            if (Active && SplitLines && player != null && _sideOf.TryGetValue(player, out int side))
+            if (_splitTrack != null && player != null && _partOf.TryGetValue(player, out int part))
             {
-                return side;
+                return part;
             }
 
             return player != null ? player.Profile.HarmonyIndex : 0;

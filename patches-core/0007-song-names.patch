@@ -1,0 +1,303 @@
+diff --git a/YARG.Core/Song/Entries/SongEntry.cs b/YARG.Core/Song/Entries/SongEntry.cs
+index 3c5da69..899fd84 100644
+--- a/YARG.Core/Song/Entries/SongEntry.cs
++++ b/YARG.Core/Song/Entries/SongEntry.cs
+@@ -532,8 +532,10 @@ namespace YARG.Core.Song
+ 
+         protected void SetSortStrings()
+         {
+-            _name = new SortString(_metadata.Name);
+-            _artist = new SortString(_metadata.Artist);
++            // (YARG Resurrected) The menus show tidied names: see SongNames
++            SongNames.Clean(_metadata.Name, _metadata.Artist, out string shownName, out string shownArtist);
++            _name = new SortString(shownName);
++            _artist = new SortString(shownArtist);
+             _album = new SortString(_metadata.Album);
+             _rawGenre = new SortString(_metadata.Genre);
+             Genre = new SortString(_metadata.Genre);
+diff --git a/YARG.Core/Song/SongNames.cs b/YARG.Core/Song/SongNames.cs
+new file mode 100644
+index 0000000..d945247
+--- /dev/null
++++ b/YARG.Core/Song/SongNames.cs
+@@ -0,0 +1,280 @@
++// YARG Resurrected - tidy song and artist names for the menus, and the artists a song is credited to.
++using System;
++using System.Collections.Generic;
++using System.Text.RegularExpressions;
++
++namespace YARG.Core.Song
++{
++    /// <summary>
++    /// Songs made from a downloaded video carry what the video was called: "Rio_Da_Yung_Og_-_Douche_Bag_Official_Video",
++    /// "Title (Official Music Video) [HD]", "Artist - Title" with nobody as the artist, "Ft." one
++    /// time and "featuring" the next. The menus show (and sort and search by) the tidied names;
++    /// the song's own files are not changed.
++    ///
++    /// Only what a video site adds is taken off. "(Live)", "(Remastered)", "(Radio Edit)" and the
++    /// like stay: they tell two versions of a song apart.
++    /// </summary>
++    public static class SongNames
++    {
++        /// <summary>False: names are shown exactly as the song has them.</summary>
++        public static bool Tidy = true;
++
++        private const RegexOptions OPTIONS = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
++
++        private const string OFFICIAL =
++            @"official\s+(?:music\s+|lyrics?\s+|hd\s+|4k\s+)?(?:video|audio|visuali[sz]er|mv)";
++
++        private const string JUNK = OFFICIAL +
++            @"|official|music\s+video|lyrics?\s+video|video|audio|lyrics?|with\s+lyrics|visuali[sz]er|hd|hq|4k|m/?v|full\s+song" +
++            @"|colou?r\s+coded[^)\]]*|eng(?:lish)?\s+subs?|prod\.?\s+(?:by\s+)?[^)\]]*|(?:dir|directed|shot)\.?\s+by\s+[^)\]]*";
++
++        private static readonly Regex BracketedJunk =
++            new(@"\s*[\[(]\s*(?:" + JUNK + @")(?:\s*[-,/|]?\s*(?:" + JUNK + @"))*\s*[\])]", OPTIONS);
++        private static readonly Regex TrailingOfficial = new(@"\s+-?\s*(?:" + OFFICIAL + @")\s*$", OPTIONS);
++        // In a file's name the brackets are gone: what follows "Official Video" is the uploader's
++        private static readonly Regex FileOfficial = new(@"\s+(?:" + OFFICIAL + @")\b.*$", OPTIONS);
++        private static readonly Regex FileTrailing = new(@"\s+(?:audio|lyrics|mv|visuali[sz]er)\s*$", OPTIONS);
++        private static readonly Regex FileEnding = new(@"\.(?:mp3|wav|flac|ogg|opus|m4a|aac|wma|mp4|webm)$", OPTIONS);
++        private static readonly Regex FileId = new(@"^[0-9a-f]{8}-(?=\p{L})", RegexOptions.CultureInvariant);
++        private static readonly Regex Dash = new(@"[ _]+[-–—][ _]+", RegexOptions.CultureInvariant);
++        private static readonly Regex Feature =
++            new(@"(?<=[\s(\[_])(?:featuring|feat|ft)\.?[\s_]+(?!of\b)(?=\S)", OPTIONS);
++        private static readonly Regex Topic = new(@"\s*-\s*topic\s*$", OPTIONS);
++        private static readonly Regex Spaces = new(@"\s+", RegexOptions.CultureInvariant);
++
++        /// <summary>The name and artist to show for a song with these.</summary>
++        public static void Clean(string name, string artist, out string cleanName, out string cleanArtist)
++        {
++            cleanName = name ?? string.Empty;
++            cleanArtist = artist ?? string.Empty;
++            if (!Tidy || !MayNeedCleaning(cleanName, cleanArtist))
++            {
++                return;
++            }
++
++            try
++            {
++                string n = cleanName.Trim();
++                string a = cleanArtist.Trim();
++
++                // A file's name used as the title: underscores for spaces
++                bool file = LooksLikeFileName(n);
++                if (file)
++                {
++                    n = FileId.Replace(FileEnding.Replace(n, string.Empty), string.Empty);
++                }
++                n = Dash.Replace(n, " - ");
++
++                // "Artist - Title" with nobody (or the same artist) given as the artist
++                bool unknown = a.Length == 0 || a.Equals(SongMetadata.DEFAULT_ARTIST, StringComparison.OrdinalIgnoreCase);
++                int dash = n.IndexOf(" - ", StringComparison.Ordinal);
++                if (dash > 0 && dash + 3 < n.Length)
++                {
++                    string left = n.Substring(0, dash).Trim(' ', '_');
++                    string right = n.Substring(dash + 3).Trim(' ', '_');
++                    if (file)
++                    {
++                        // Two artists: the "&" between them could not be in a file's name
++                        left = left.Replace("__", " & ");
++                    }
++                    left = left.Replace('_', ' ');
++
++                    if (unknown && left.Length > 0 && right.Length > 0)
++                    {
++                        a = left;
++                        n = right;
++                    }
++                    else if (!unknown && Key(left) == Key(a) && right.Length > 0)
++                    {
++                        n = right;
++                    }
++                }
++
++                if (file)
++                {
++                    n = Spaces.Replace(n.Replace('_', ' '), " ").Trim();
++                    n = FileOfficial.Replace(n, string.Empty);
++                    n = FileTrailing.Replace(n, string.Empty);
++                }
++                if (LooksLikeFileName(a))
++                {
++                    a = a.Replace("__", " & ").Replace('_', ' ');
++                }
++
++                n = BracketedJunk.Replace(n, string.Empty);
++                n = TrailingOfficial.Replace(n, string.Empty);
++                n = Feature.Replace(n, "feat. ");
++                a = Feature.Replace(a, "feat. ");
++                a = Topic.Replace(a, string.Empty);
++
++                n = Spaces.Replace(n, " ").Trim(' ', '-', '_');
++                a = Spaces.Replace(a, " ").Trim(' ', '-', '_');
++
++                // Nothing left: the song keeps the name it had
++                if (n.Length > 0)
++                {
++                    cleanName = n;
++                }
++                if (a.Length > 0)
++                {
++                    cleanArtist = a;
++                }
++            }
++            catch (Exception)
++            {
++                // A name that can't be tidied is shown as it is
++                cleanName = name ?? string.Empty;
++                cleanArtist = artist ?? string.Empty;
++            }
++        }
++
++        private static bool MayNeedCleaning(string name, string artist)
++        {
++            return name.IndexOfAny(new[] { '_', '(', '[' }) >= 0 || artist.IndexOf('_') >= 0 ||
++                name.Contains(" - ") ||
++                name.IndexOf("official", StringComparison.OrdinalIgnoreCase) >= 0 ||
++                name.IndexOf("ft", StringComparison.OrdinalIgnoreCase) >= 0 ||
++                name.IndexOf("feat", StringComparison.OrdinalIgnoreCase) >= 0 ||
++                artist.IndexOf("ft", StringComparison.OrdinalIgnoreCase) >= 0 ||
++                artist.IndexOf("feat", StringComparison.OrdinalIgnoreCase) >= 0 ||
++                artist.IndexOf("topic", StringComparison.OrdinalIgnoreCase) >= 0;
++        }
++
++        /// <summary>Underscores where the spaces should be.</summary>
++        private static bool LooksLikeFileName(string s)
++        {
++            int underscores = 0;
++            foreach (char c in s)
++            {
++                if (c == '_') underscores++;
++            }
++            return underscores >= 2 || (underscores == 1 && s.IndexOf(' ') < 0);
++        }
++
++        /// <summary>Letters and digits only, lower case: for comparing names.</summary>
++        public static string Key(string s)
++        {
++            var key = new System.Text.StringBuilder();
++            foreach (char c in s ?? string.Empty)
++            {
++                if (char.IsLetterOrDigit(c))
++                {
++                    key.Append(char.ToLowerInvariant(c));
++                }
++            }
++            return key.ToString();
++        }
++
++        // ------------------------------------------------------------------ who a song is by
++
++        private static readonly string[] CreditSeparators =
++        {
++            " featuring ", " feat. ", " feat ", " ft. ", " ft ", " with ", " vs. ", " vs ", " x ", " & ", " and ", ", ", " / ", ";",
++        };
++
++        // One act, whatever the commas and ampersands say
++        private static readonly string[] OneAct =
++        {
++            "earthwindfire", "earthwindandfire", "simongarfunkel", "simonandgarfunkel", "crosbystillsnash",
++            "crosbystillsnashyoung", "emersonlakepalmer", "emersonlakeandpalmer", "bloodsweattears", "bloodsweatandtears",
++            "peterpaulandmary", "peterpaulmary", "hueylewisandthenews", "kcandthesunshineband", "angusjuliastone",
++            "ofmiceandmen", "ofmicemen", "mumfordsons", "mumfordandsons", "brooksdunn", "floridageorgialine",
++            "coheedandcambria", "coheedcambria", "ironwine", "ironandwine", "belleandsebastian", "bellesebastian",
++            "nickcavethebadseeds", "thempreston", "matesofstate", "mewithoutyou", "andyouwillknowusbythetrailofdead",
++        };
++
++        /// <summary>
++        /// The artists a song is credited to, from its artist ("Don Toliver &amp; Travis Scott",
++        /// "Bun B ft. Pimp C, Jeezy") and a "(feat. ...)" in its title. At most three, the main
++        /// artist first. A band whose name has "and the" in it is one artist.
++        /// </summary>
++        public static string[] Credits(string artist, string title)
++        {
++            var names = new List<string>();
++            artist ??= string.Empty;
++            title ??= string.Empty;
++
++            var pieces = new List<string>();
++            if (Array.IndexOf(OneAct, Key(artist)) >= 0)
++            {
++                names.Add(artist.Trim());
++            }
++            else
++            {
++                pieces.Add(artist);
++            }
++
++            // "Title (feat. Somebody)" / "Title [ft. Somebody]" / "Title feat. Somebody"
++            string lower = title.ToLowerInvariant();
++            foreach (string mark in new[] { "(feat. ", "(feat ", "(ft. ", "(ft ", "(featuring ", "(with ", "[feat. ", "[ft. ", " feat. ", " ft. " })
++            {
++                int at = lower.IndexOf(mark, StringComparison.Ordinal);
++                if (at < 0)
++                {
++                    continue;
++                }
++
++                int from = at + mark.Length;
++                int end = mark[0] == ' ' ? title.Length : title.IndexOfAny(new[] { ')', ']' }, from);
++                if (end > from)
++                {
++                    pieces.Add(title.Substring(from, end - from));
++                }
++                break;
++            }
++
++            foreach (string separator in CreditSeparators)
++            {
++                // "Florence and the Machine", "Tyler, The Creator": the second half isn't a person
++                bool weak = separator is " & " or " and " or ", ";
++                var split = new List<string>();
++                foreach (string piece in pieces)
++                {
++                    int from = 0;
++                    int search = 0;
++                    while (true)
++                    {
++                        int at = piece.IndexOf(separator, search, StringComparison.OrdinalIgnoreCase);
++                        if (at < 0)
++                        {
++                            split.Add(piece.Substring(from));
++                            break;
++                        }
++
++                        int next = at + separator.Length;
++                        if (weak && string.Compare(piece, next, "the ", 0, 4, StringComparison.OrdinalIgnoreCase) == 0)
++                        {
++                            search = next;
++                            continue;
++                        }
++
++                        split.Add(piece.Substring(from, at - from));
++                        from = search = next;
++                    }
++                }
++                pieces = split;
++            }
++
++            foreach (string piece in pieces)
++            {
++                string name = piece.Trim(' ', '(', ')', '[', ']', ',', '.');
++                if (name.Length == 0 || name.Equals(SongMetadata.DEFAULT_ARTIST, StringComparison.OrdinalIgnoreCase))
++                {
++                    continue;
++                }
++
++                bool seen = false;
++                foreach (string other in names)
++                {
++                    seen |= Key(other) == Key(name);
++                }
++                if (!seen && names.Count < 3)
++                {
++                    names.Add(name.Length > 40 ? name.Substring(0, 40) : name);
++                }
++            }
++
++            return names.ToArray();
++        }
++    }
++}

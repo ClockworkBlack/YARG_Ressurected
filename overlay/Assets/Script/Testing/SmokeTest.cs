@@ -193,12 +193,18 @@ namespace YARG.Testing
 
                 // 4. A bot guitarist
                 _step = "adding a bot player";
+                // (-yarg-smoke-vocals: a singer instead, for looking at the lyrics; see below)
+                bool vocalsLook = Environment.GetCommandLineArgs().Contains("-yarg-smoke-vocals");
+                if (Environment.GetCommandLineArgs().Contains("-yarg-smoke-static"))
+                {
+                    SettingsManager.Settings.StaticVocalsMode.SetValueWithoutNotify(true);
+                }
                 var profile = new YargProfile
                 {
                     Name = "Smoke Test Bot",
                     IsBot = true,
-                    GameMode = GameMode.FiveFretGuitar,
-                    CurrentInstrument = Instrument.FiveFretGuitar,
+                    GameMode = vocalsLook ? GameMode.Vocals : GameMode.FiveFretGuitar,
+                    CurrentInstrument = vocalsLook ? Instrument.Vocals : Instrument.FiveFretGuitar,
                     CurrentDifficulty = Difficulty.Expert,
                 };
                 PlayerContainer.AddProfile(profile);
@@ -211,6 +217,46 @@ namespace YARG.Testing
                 GlobalVariables.State = PersistentState.Default;
                 GlobalVariables.State.CurrentSong = song;
                 GlobalVariables.State.SongSpeed = 1f;
+
+                // Tidy names, and a song's verses dealt out between its artists
+                if (!CheckNamesAndVerses())
+                {
+                    return;
+                }
+
+                // (-yarg-smoke-artist N: the singer is the song's Nth credited artist)
+                int artistLook = int.TryParse(GetArg("-yarg-smoke-artist"), out int artistArg) ? artistArg : -1;
+                if (vocalsLook && artistLook >= 0)
+                {
+                    YARG.Gameplay.VocalBattle.VocalParts.SetGuessedArtist(profile, song, artistLook);
+                }
+                _vocalsLook = vocalsLook;
+
+                // (-yarg-smoke-battle: a second singer, head to head. With -yarg-smoke-artist they
+                // are the song's first artist; without, the two trade lines.)
+                bool battleLook = vocalsLook && Environment.GetCommandLineArgs().Contains("-yarg-smoke-battle");
+                SettingsManager.Settings.SingOff.SetValueWithoutNotify(battleLook);
+                if (battleLook)
+                {
+                    var second = new YargProfile
+                    {
+                        Name = "Second Singer",
+                        IsBot = true,
+                        GameMode = GameMode.Vocals,
+                        CurrentInstrument = Instrument.Vocals,
+                        CurrentDifficulty = Difficulty.Expert,
+                    };
+                    PlayerContainer.AddProfile(second);
+                    if (PlayerContainer.CreatePlayerFromProfile(second, false) == null)
+                    {
+                        Finish(false, "couldn't create the second singer");
+                        return;
+                    }
+                    if (artistLook >= 0)
+                    {
+                        YARG.Gameplay.VocalBattle.VocalParts.SetGuessedArtist(second, song, 0);
+                    }
+                }
 
                 // Guitar controllers: the forgiving engine, the sound preview, and the profile
                 // menus worked the way a controller works them (up, down and confirm)
@@ -243,6 +289,67 @@ namespace YARG.Testing
                     return game != null && game.IsSongStarted;
                 });
                 Note($"Song started after {Time.realtimeSinceStartup:0.0} s");
+
+                if (vocalsLook && artistLook >= 0)
+                {
+                    var battle = typeof(YARG.Gameplay.VocalBattle.SingOff);
+                    if (!YARG.Gameplay.VocalBattle.SingOff.GuessedVerses)
+                    {
+                        Finish(false, "the singer chose an artist, but the song's verses were not dealt out");
+                        return;
+                    }
+                    var dealt = YARG.Gameplay.VocalBattle.SingOff.TrackOr(null);
+                    var shares = dealt.Parts.Select(p => p.NotePhrases.Count(x => x.PhraseParentNote.ChildNotes.Any(n => !n.IsPercussion)));
+                    Note($"Vocal Challenge: verses dealt out between {string.Join(", ", YARG.Gameplay.VocalBattle.SingOff.GuessedNames)}" +
+                        $" (lines each: {string.Join(", ", shares)}); the singer has part {YARG.Gameplay.VocalBattle.SingOff.PartIndex(PlayerContainer.Players[0]) + 1}");
+                    if (shares.Any(x => x == 0))
+                    {
+                        Finish(false, "an artist was dealt no lines");
+                        return;
+                    }
+                }
+
+                if (battleLook)
+                {
+                    if (!YARG.Gameplay.VocalBattle.SingOff.Active)
+                    {
+                        Finish(false, "two singers head to head, but no battle was set up");
+                        return;
+                    }
+                    var sides = YARG.Gameplay.VocalBattle.SingOff.Sides;
+                    Note($"Vocal Challenge battle: {sides[0].Name} against {sides[1].Name}, " +
+                        (YARG.Gameplay.VocalBattle.SingOff.SplitLines ? "trading lines" : "artist against artist"));
+                }
+
+                if (vocalsLook)
+                {
+                    // Not a test with a verdict: pictures of the vocals at a few moments, to look at
+                    double from = game.SongTime;
+                    float began = Time.realtimeSinceStartup;
+                    int shots = 0;
+                    while (game != null && shots < 6 && Time.realtimeSinceStartup - began < 240f)
+                    {
+                        if (game.SongTime - from > 8 + shots * 3.5)
+                        {
+                            shots++;
+                            await Screenshot($"vocals-{shots}.png");
+                            Note($"Vocals picture {shots} at song time {game.SongTime:0.00} s");
+                        }
+                        await UniTask.NextFrame();
+                    }
+                    if (battleLook)
+                    {
+                        var sides = YARG.Gameplay.VocalBattle.SingOff.Sides;
+                        Note($"Battle so far: {sides[0].Name} {sides[0].Lines} lines marked, {sides[1].Name} {sides[1].Lines} lines marked");
+                        if (sides[0].Lines + sides[1].Lines == 0)
+                        {
+                            Finish(false, "no line of the battle was marked");
+                            return;
+                        }
+                    }
+                    Finish(true, "pictures of the vocals taken");
+                    return;
+                }
 
                 int tracks = GuitarVoiceLoader.LastTracksAdded;
                 if (tracks < 1)
@@ -820,6 +927,17 @@ namespace YARG.Testing
 
             SongSetupPanel.CloseFromMenu();
             await UniTask.NextFrame();
+
+            // A singer: the Vocal Challenge list
+            if (_vocalsLook && DifficultySelectMenu.Current != null)
+            {
+                _step = "opening Vocal Challenge";
+                string shown = DifficultySelectMenu.Current.OpenVocalChallenge();
+                await UniTask.Delay(TimeSpan.FromSeconds(1.0), ignoreTimeScale: true);
+                await Screenshot("vocal-challenge.png");
+                Note($"Vocal Challenge row shows: {shown.Replace("\n", " / ")}");
+            }
+
             if (DifficultySelectMenu.Current != null)
             {
                 MenuManager.Instance.PopMenu();
@@ -838,6 +956,64 @@ namespace YARG.Testing
             YARG.Input.InputManager.OnMenuAction(action, false);
             await UniTask.Delay(TimeSpan.FromSeconds(wait), ignoreTimeScale: true);
             await UniTask.NextFrame();
+        }
+
+        private bool _vocalsLook;
+
+        private bool CheckNamesAndVerses()
+        {
+            _step = "tidy song names";
+            var names = new (string Name, string Artist, string WantName, string WantArtist)[]
+            {
+                ("Rio_Da_Yung_Og__Veeze_-_Superstar_Official_Visualizer", "Unknown Artist", "Superstar", "Rio Da Yung Og & Veeze"),
+                ("Gee (Official Video) [HD]", "Girls' Generation", "Gee", "Girls' Generation"),
+                ("Get Throwed (Lyrics) Ft. Pimp C, Jeezy & Z-Ro", "Bun B", "Get Throwed feat. Pimp C, Jeezy & Z-Ro", "Bun B"),
+                ("Veeze - guillermoandrade [Official Music Video]", "Veeze", "guillermoandrade", "Veeze"),
+                // What tells two versions apart stays, and so does a name that only looks like junk
+                ("No Scrubs (Live)", "TLC", "No Scrubs (Live)", "TLC"),
+                ("Video Killed the Radio Star", "The Buggles", "Video Killed the Radio Star", "The Buggles"),
+            };
+            foreach (var (name, artist, wantName, wantArtist) in names)
+            {
+                YARG.Core.Song.SongNames.Clean(name, artist, out string gotName, out string gotArtist);
+                if (gotName != wantName || gotArtist != wantArtist)
+                {
+                    Finish(false, $"\"{name}\" by \"{artist}\" was tidied to \"{gotName}\" by \"{gotArtist}\"");
+                    return false;
+                }
+            }
+
+            string credits = string.Join(" | ", YARG.Core.Song.SongNames.Credits("Bun B", "Get Throwed feat. Pimp C, Jeezy & Z-Ro"));
+            string band = string.Join(" | ", YARG.Core.Song.SongNames.Credits("Florence and the Machine", "Dog Days Are Over"));
+            if (credits != "Bun B | Pimp C | Jeezy" || band != "Florence and the Machine")
+            {
+                Finish(false, $"credited artists read wrong: \"{credits}\", \"{band}\"");
+                return false;
+            }
+            Note($"Names tidied ({names.Length} checked); credited artists read: {credits}");
+
+            // 40 lines of 2 s, 2 s bars: a pause before line 10, then 30 lines (60 s = 30 bars) with none
+            _step = "dealing verses";
+            var starts = new List<double>();
+            var ends = new List<double>();
+            var sung = new List<bool>();
+            var bars = new List<double>();
+            for (int i = 0; i < 60; i++) bars.Add(i * 2.0);
+            for (int i = 0; i < 40; i++)
+            {
+                double at = i * 2.0 + (i >= 10 ? 6.0 : 0.0);
+                starts.Add(at);
+                ends.Add(at + 1.8);
+                sung.Add(true);
+            }
+            var verses = YARG.Gameplay.VocalBattle.VerseDealer.Verses(starts, ends, sung, bars);
+            if (verses[0] != 0 || verses[9] != 0 || verses[10] != 1 || verses[25] != 1 || verses[26] != 2 || verses[39] != 2)
+            {
+                Finish(false, "verses cut wrong: " + string.Join(",", verses));
+                return false;
+            }
+            Note("Verses cut at a pause and after 16 bars");
+            return true;
         }
 
         private async UniTask<bool> CheckControllerMenus()

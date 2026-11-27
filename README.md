@@ -15,7 +15,9 @@ BASS callbacks, `/storage/emulated/0/YARG/songs`, touch controls, the all-files-
 - the **phone's own mic** for vocals, a **USB mic and the built-in mic at the same time**, plus **other phones as
   controllers and mics** over Wi-Fi (see below),
 - **vocals as a game of their own**: pick an artist's lines on two-singer songs, and a **sing-off** mode,
-- **fairer singing scores** and a **Challenge Mode** for vocals that makes you really sing the song (see below),
+- **Vocal Challenge**: sing the whole song, one artist's part on any song with two or three artists, or trade lines with
+  another singer; lyrics that are readable while singing; tidy song names in the menus (see below),
+- **fairer singing scores** and a **Challenge Mode** (now shown as **Strict Judging**) for vocals that makes you really sing the song (see below),
 - a controller-type prompt on Android (gamepad / CRKD guitar / other guitar),
 - a **Deep Music Mode** modifier: guitar and bass cover the whole song (see below),
 - CI that publishes the APK as a GitHub Release.
@@ -304,7 +306,72 @@ Arabic, Hebrew, Hindi and more) the fonts already on the phone are used, so lyri
 artist names in those languages are drawn instead of empty boxes. Arabic and Indian scripts are
 shown letter by letter, not joined up as they should be.
 
+## Vocal Challenge, clearer lyrics, tidy names
+
+### Lyrics you can read while singing
+
+The words above the notes used to fly past in small grey italics. Now:
+
+- Every word is **bold and upright**.
+- **Settings > Gameplay > Lyrics When Singing** has three choices. **Automatic** (the default)
+  scrolls the words as slowly as the song allows (down to 55% of the old speed) and, on a song
+  whose words come too fast to read while moving (most rap), shows **still lines** instead: the
+  whole line stands still and each word lights up as it is sung, like karaoke. **Scrolling** and
+  **Still lines** force one or the other.
+
+### Vocal Challenge (was Rap Mode, Sing-Off and Whose Lines)
+
+A singer's screen before a song has one row, **Vocal Challenge**, with everything in one list:
+
+- **Whole song**: every verse, hook and ad-lib.
+- **<Artist>'s part**, one row for each artist of the song. On a song that has a part for each
+  artist (a Rock Band harmony chart, or a converted song with `vocal_parts.txt`) these are the
+  artist's real lines. On **any other song credited to two or three artists** ("A & B", "A ft. B",
+  "Title (feat. B)") the row says **(verses dealt out)**: the song doesn't say who has which lines,
+  so its verses are cut at pauses in the words (or every 16 bars) and dealt out between the artists
+  in turn. That gives each artist a fair share in sensible pieces; it is **not** the exact lines
+  they have on the record, and such a run leaves no high score. A song by one artist has no artist
+  rows: the whole song is theirs.
+- **Artist against artist** (On/Off): when two singers are different artists, every line is marked
+  out of 100 and the winner is called at the end.
+- **Trade every line / 2 lines / 4 lines / 4 bars / 8 bars / 16 bars**: two singers share the song
+  in turns, each in their own color, every exchange a round with a winner.
+- **Strict judging** (On/Off): the modifier that used to be called Challenge Mode (you have to
+  really sing it). It is still under Modifiers too, as **Strict Judging**.
+
+The settings **Sing-Off** and **Sing-Off Turn Length** are now called **Vocal Challenge: Head To
+Head** and **Vocal Challenge: Turn Length**; the list above sets them for you.
+
+### Tidy song and artist names
+
+Songs made from a downloaded video often carry the video's name. The menus now show, sort and
+search by a tidied name (the song's own files are not changed):
+
+| The song says | The menus show |
+| --- | --- |
+| `Rio_Da_Yung_Og__Veeze_-_Superstar_Official_Visualizer` by Unknown Artist | **Superstar** by **Rio Da Yung Og & Veeze** |
+| `Gee (Official Video) [HD]` | **Gee** |
+| `Veeze - guillermoandrade [Official Music Video]` by Veeze | **guillermoandrade** |
+| `Get Throwed (Lyrics) Ft. Pimp C` | **Get Throwed feat. Pimp C** |
+
+Only what a video site adds is taken off: "(Official Video)", "[Lyrics]", "(Audio)", "(Prod. by
+...)", underscores, "Artist - " in front of the title. "(Live)", "(Remastered)", "(Radio Edit)" and
+the like stay, since they tell two versions apart. This tidies what the song already says; it does
+not look names up online, so a song whose files name the wrong artist still shows the wrong artist
+(fix its `song.ini`, or convert it again with YARG Converter, which does look names up).
+
+### Renaming a profile and changing its settings with a controller or guitar
+
+On **Profiles**, move to a profile and press **green** (Cross on a gamepad). The button bar now
+calls this **Rename / Settings**, and the list that opens starts with **Rename** (pick letters
+with up/down and green, then Save) and **Profile Settings** (highway length, calibration, theme,
+colors, camera...), followed by instrument type, engine, note speed, lefty flip, buttons and
+devices.
+
 ## Vocals: sing or rap, pick an artist, sing-off
+
+> The rows described below (Whose Lines, Rap Mode, Sing-Off) are now one row, **Vocal Challenge**:
+> see the section above. What they do is unchanged.
 
 Any song with a vocals part can be sung: Rock Band style charts, and every song made with
 [YARG Converter](converter/README.md) from lyrics (convert it again with the newest converter to

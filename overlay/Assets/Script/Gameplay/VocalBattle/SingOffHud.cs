@@ -265,7 +265,7 @@ namespace YARG.Gameplay.VocalBattle
             string header = SingOff.SplitLines
                 ? "ROUNDS  " + first.RoundsWon.ToString(CultureInfo.InvariantCulture) + " - " +
                     second.RoundsWon.ToString(CultureInfo.InvariantCulture)
-                : "SING-OFF";
+                : "VOCAL CHALLENGE";
             if (header != _shownHeader)
             {
                 _shownHeader = header;
@@ -279,7 +279,7 @@ namespace YARG.Gameplay.VocalBattle
                 int leader = SingOff.Leader();
                 ShowCallout(leader < 0
                     ? "IT'S A TIE!"
-                    : SingOff.Sides[leader].Name.ToUpperInvariant() + " WINS THE SING-OFF!",
+                    : SingOff.Sides[leader].Name.ToUpperInvariant() + " WINS THE VOCAL CHALLENGE!",
                     leader < 0 ? Color.white : SingOff.Sides[leader].Color, float.MaxValue);
                 Play(SfxSample.StarGold);
             }

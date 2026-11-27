@@ -1,0 +1,937 @@
+diff --git a/Assets/Script/Gameplay/Player/Vocals/VocalLyricContainer.cs b/Assets/Script/Gameplay/Player/Vocals/VocalLyricContainer.cs
+index 9c5bb90..fdc045e 100644
+--- a/Assets/Script/Gameplay/Player/Vocals/VocalLyricContainer.cs
++++ b/Assets/Script/Gameplay/Player/Vocals/VocalLyricContainer.cs
+@@ -80,7 +80,7 @@ namespace YARG.Gameplay.Player
+             if (!string.IsNullOrEmpty(displayText))
+             {
+                 var tester = GetScrollingWidthTester(GetLaneIndex(totalHarms, harmIndex));
+-                tester.fontStyle = lyric.NonPitched ? FontStyles.Italic : FontStyles.Normal;
++                tester.fontStyle = SCROLLING_STYLE;
+                 tester.text = displayText;
+                 width = tester.GetPreferredValues().x;
+             }
+@@ -193,6 +193,23 @@ namespace YARG.Gameplay.Player
+             }
+         }
+ 
++        /// <summary>The style every scrolling word is drawn in (see VocalScrollingLyricSyllableElement).</summary>
++        public const FontStyles SCROLLING_STYLE = FontStyles.Bold;
++
++        /// <summary>How wide a word is when it scrolls (in track units, as it is drawn).</summary>
++        public float MeasureScrollingWidth(string text)
++        {
++            if (string.IsNullOrEmpty(text))
++            {
++                return 0f;
++            }
++
++            var tester = GetScrollingWidthTester(0);
++            tester.fontStyle = SCROLLING_STYLE;
++            tester.text = text;
++            return tester.GetPreferredValues().x;
++        }
++
+         private TextMeshPro GetScrollingWidthTester(int laneIndex)
+         {
+             _scrollingWidthTesters ??= new TextMeshPro[_scrollingPools.Length];
+diff --git a/Assets/Script/Gameplay/Player/Vocals/VocalTrack.Spawning.cs b/Assets/Script/Gameplay/Player/Vocals/VocalTrack.Spawning.cs
+index ca062b0..ff12aa3 100644
+--- a/Assets/Script/Gameplay/Player/Vocals/VocalTrack.Spawning.cs
++++ b/Assets/Script/Gameplay/Player/Vocals/VocalTrack.Spawning.cs
+@@ -49,13 +49,13 @@ namespace YARG.Gameplay.Player
+                 SpawnNotesInPhrase(_scrollingNoteTrackers[i], i);
+                 SpawnPhraseLines(i);
+ 
+-                if (!SettingsManager.Settings.StaticVocalsMode.Value)
++                if (!StillLyrics)
+                 {
+                     SpawnScrollingLyrics(_scrollingLyricTrackers[i], i);
+                 }
+             }
+ 
+-            if (SettingsManager.Settings.StaticVocalsMode.Value)
++            if (StillLyrics)
+             {
+                 for (int i = 0; i < LyricLaneCount; i++)
+                 {
+diff --git a/Assets/Script/Gameplay/Player/Vocals/VocalTrack.cs b/Assets/Script/Gameplay/Player/Vocals/VocalTrack.cs
+index 662bee8..905ceb0 100644
+--- a/Assets/Script/Gameplay/Player/Vocals/VocalTrack.cs
++++ b/Assets/Script/Gameplay/Player/Vocals/VocalTrack.cs
+@@ -15,6 +15,14 @@ using YARG.Settings;
+ 
+ namespace YARG.Gameplay.Player
+ {
++    /// <summary>How the words are shown when singing (Settings > Lyrics When Singing).</summary>
++    public enum LyricStyle
++    {
++        Automatic,
++        Scrolling,
++        Still,
++    }
++
+     public partial class VocalTrack : GameplayBehaviour
+     {
+         private struct Range
+@@ -271,19 +279,16 @@ namespace YARG.Gameplay.Player
+             if (trackSpeed is not null)
+             {
+                 scalingFactor = trackSpeed.Value;
++                StillLyrics = SettingsManager.Settings.StaticVocalsMode.Value ||
++                    SettingsManager.Settings.LyricStyle.Value == LyricStyle.Still;
+             }
+ 
+             // If we're in scrolling lyrics mode and weren't provided a vocal scroll speed, determine if we need
+             // to increase the speed to keep the lyrics from being pushed too far out of sync.
+-            else if (!SettingsManager.Settings.StaticVocalsMode.Value)
+-            {
+-                scalingFactor = GetScrollSpeedScalingFactor(vocalsTrack.Parts);
+-            }
+-
+-            // If we're in static lyrics mode, we don't need to worry about checking the lyric offsets.
+             else
+             {
+-                scalingFactor = 1f;
++                // (Also decides between scrolling words and still lines: StillLyrics)
++                scalingFactor = ChooseScrollSpeed(vocalsTrack.Parts);
+             }
+ 
+             TrackSpeed = scalingFactor * STANDARD_SCROLL_SPEED;
+@@ -625,6 +630,113 @@ namespace YARG.Gameplay.Player
+         // Should only be used when the chart did not provide an explicit vocal scroll speed. Finds the largest distance
+         // between a note tube and its associated lyric element (computed with respect to the default scroll speed). If
+         // that distance is too big, returns an increased vocal scroll speed
++        // ---------------------------------------------------------------- how fast the words go by
++        // At the standard speed a word crosses a third of the screen every second, whatever the
++        // song: a blur on a phone. Words only have to move as fast as it takes to fit them in one
++        // after another, so each song gets the slowest speed at which its words still arrive on
++        // time (Settings > Graphics > Lyric Scroll Speed: Automatic), never faster than standard.
++
++        /// <summary>The slowest the words may go, against the standard speed.</summary>
++        public const float SLOWEST_SCROLL = 0.55f;
++
++        /// <summary>How late a word may arrive at the sing line, at most, for a speed to be slow enough (seconds).</summary>
++        private const double LATEST_WORD = 0.25;
++
++        /// <summary>The speed the last song's lyrics scrolled at (1 = standard). For the play test and the log.</summary>
++        public static float LastScrollSpeed { get; private set; } = 1f;
++
++        /// <summary>
++        /// True when this song's lines stand still and light up word by word, instead of scrolling:
++        /// chosen in the settings, or (Automatic) because the words are too close together to go
++        /// by slowly. Set when a song's vocals are set up.
++        /// </summary>
++        public static bool StillLyrics { get; private set; }
++
++        /// <summary>Above this speed scrolling words are a blur, so Automatic shows still lines instead.</summary>
++        private const float FASTEST_READABLE_SCROLL = 0.8f;
++
++        private float ChooseScrollSpeed(List<VocalsPart> parts)
++        {
++            var style = SettingsManager.Settings.StaticVocalsMode.Value
++                ? LyricStyle.Still
++                : SettingsManager.Settings.LyricStyle.Value;
++
++            float speed = style == LyricStyle.Still ? 1f : SlowestOnTime(parts);
++            StillLyrics = style == LyricStyle.Still ||
++                (style == LyricStyle.Automatic && speed > FASTEST_READABLE_SCROLL + 0.001f);
++            if (StillLyrics)
++            {
++                // (The notes still scroll; at the standard speed, as before)
++                speed = 1f;
++            }
++
++            LastScrollSpeed = speed;
++            YARG.Core.Logging.YargLogger.LogFormatInfo("Lyrics when singing: {0}, notes scroll at {1}% of the standard speed",
++                StillLyrics ? "still lines" : "scrolling", (int) Math.Round(speed * 100));
++            return speed;
++        }
++
++        /// <summary>The slowest speed, in steps of 5%, at which no word reaches the sing line late.</summary>
++        private float SlowestOnTime(List<VocalsPart> parts)
++        {
++            // Every word's time and width, once
++            var words = new List<(double Time, float Width, int Part)>();
++            try
++            {
++                for (int p = 0; p < parts.Count; p++)
++                {
++                    foreach (var phrase in parts[p].NotePhrases)
++                    {
++                        foreach (var lyric in phrase.Lyrics)
++                        {
++                            if (!lyric.PitchSlide)
++                            {
++                                words.Add((lyric.Time, _lyricContainer.MeasureScrollingWidth(lyric.Text), p));
++                            }
++                        }
++                    }
++                }
++            }
++            catch (Exception e)
++            {
++                YARG.Core.Logging.YargLogger.LogException(e, "Could not measure the lyrics");
++                return 1f;
++            }
++
++            for (float speed = SLOWEST_SCROLL; speed < 0.999f; speed += 0.05f)
++            {
++                if (LatestWord(words, parts.Count, speed * STANDARD_SCROLL_SPEED) <= LATEST_WORD)
++                {
++                    return speed;
++                }
++            }
++
++            return 1f;
++        }
++
++        /// <summary>
++        /// How late the latest word gets at a speed (units a second). Words follow each other with
++        /// a gap, as they are laid out in VocalLyricContainer: a word that has no room yet waits.
++        /// </summary>
++        public static double LatestWord(List<(double Time, float Width, int Part)> words, int parts, float unitsPerSecond)
++        {
++            var edge = new double[Math.Max(1, parts)];
++            for (int i = 0; i < edge.Length; i++)
++            {
++                edge[i] = double.NegativeInfinity;
++            }
++
++            double latest = 0;
++            foreach (var (time, width, part) in words)
++            {
++                double shown = Math.Max(time, edge[part]);
++                latest = Math.Max(latest, shown - time);
++                edge[part] = shown + (width + VocalLyricContainer.LYRIC_SPACING) / unitsPerSecond;
++            }
++
++            return latest;
++        }
++
+         private float GetScrollSpeedScalingFactor(List<VocalsPart> parts)
+         {
+             var textWidthTester = GetLyricWidthTester();
+diff --git a/Assets/Script/Gameplay/Player/VocalsPlayer.cs b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
+index ed7a60a..f46a834 100644
+--- a/Assets/Script/Gameplay/Player/VocalsPlayer.cs
++++ b/Assets/Script/Gameplay/Player/VocalsPlayer.cs
+@@ -308,7 +308,7 @@ namespace YARG.Gameplay.Player
+             if (_handlesCountdown)
+             {
+                 if (Player.Profile.CurrentInstrument == Instrument.Vocals &&
+-                    !YARG.Gameplay.VocalBattle.SingOff.SplitLines)
++                    !YARG.Gameplay.VocalBattle.SingOff.UsesSplitTrack)
+                 {
+                     engine.BuildCountdownsFromSelectedPart();
+                 }
+diff --git a/Assets/Script/Gameplay/Visuals/VocalElements/PhraseLineElement.cs b/Assets/Script/Gameplay/Visuals/VocalElements/PhraseLineElement.cs
+index 94ea183..070d53f 100644
+--- a/Assets/Script/Gameplay/Visuals/VocalElements/PhraseLineElement.cs
++++ b/Assets/Script/Gameplay/Visuals/VocalElements/PhraseLineElement.cs
+@@ -26,7 +26,7 @@ namespace YARG.Gameplay.Visuals
+ 
+         protected override void InitializeElement()
+         {
+-            if (SettingsManager.Settings.StaticVocalsMode.Value)
++            if (YARG.Gameplay.Player.VocalTrack.StillLyrics)
+             {
+                 if (_scaleZ is null || _positionZ is null)
+                 {
+diff --git a/Assets/Script/Gameplay/Visuals/VocalElements/VocalScrollingLyricSyllableElement.cs b/Assets/Script/Gameplay/Visuals/VocalElements/VocalScrollingLyricSyllableElement.cs
+index f9d70cc..c00ec42 100644
+--- a/Assets/Script/Gameplay/Visuals/VocalElements/VocalScrollingLyricSyllableElement.cs
++++ b/Assets/Script/Gameplay/Visuals/VocalElements/VocalScrollingLyricSyllableElement.cs
+@@ -21,7 +21,9 @@ namespace YARG.Gameplay.Visuals
+                 Lyric = lyric;
+                 NoteLength = probableNote?.TotalTimeLength ?? 0;
+                 DisplayText = lyric.HarmonyHidden && allowHiding ? string.Empty : lyric.Text;
+-                FontStyle = lyric.NonPitched ? FontStyles.Italic : FontStyles.Normal;
++                // Bold and upright for every word, rapped or sung: small grey slanted letters going
++                // past were hard to read (rapped words used to be in italics)
++                FontStyle = YARG.Gameplay.Player.VocalLyricContainer.SCROLLING_STYLE;
+                 IsHidden = string.IsNullOrEmpty(DisplayText);
+                 Width = IsHidden ? 0f : width;
+             }
+diff --git a/Assets/Script/Gameplay/Visuals/VocalElements/VocalStaticLyricPhraseElement.cs b/Assets/Script/Gameplay/Visuals/VocalElements/VocalStaticLyricPhraseElement.cs
+index 40bc24b..f326498 100644
+--- a/Assets/Script/Gameplay/Visuals/VocalElements/VocalStaticLyricPhraseElement.cs
++++ b/Assets/Script/Gameplay/Visuals/VocalElements/VocalStaticLyricPhraseElement.cs
+@@ -70,10 +70,9 @@ namespace YARG.Gameplay.Visuals
+                 TimeEnd = timeEnd;
+                 IsStarpower = isStarpower;
+ 
+-                if ((flags & LyricSymbolFlags.NonPitched) != 0)
+-                {
+-                    builder.Append("<i>");
+-                }
++                // Bold and upright for every word (rapped words used to be in italics, which read
++                // worse at this size)
++                builder.Append("<b>");
+ 
+                 if ((flags & LyricSymbolFlags.JoinWithNext) != 0)
+                 {
+@@ -84,10 +83,7 @@ namespace YARG.Gameplay.Visuals
+                     builder.Append(text);
+                 }
+ 
+-                if ((flags & LyricSymbolFlags.NonPitched) != 0)
+-                {
+-                    builder.Append("</i>");
+-                }
++                builder.Append("</b>");
+ 
+                 if (!isLastLyricOfPhrase && (flags & LyricSymbolFlags.JoinWithNext) == 0 &&
+                     (flags & LyricSymbolFlags.HyphenateWithNext) == 0)
+diff --git a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+index 7f89a40..0b0c2a9 100644
+--- a/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
++++ b/Assets/Script/Menu/DifficultySelect/DifficultySelectMenu.cs
+@@ -31,12 +31,11 @@ namespace YARG.Menu.DifficultySelect
+ 
+         private enum State
+         {
+-            RapMode,
++            VocalChallenge,
+             Main,
+             Instrument,
+             Difficulty,
+-            Modifiers,
+-            Harmony
++            Modifiers
+         }
+ 
+         [SerializeField]
+@@ -79,8 +78,8 @@ namespace YARG.Menu.DifficultySelect
+         private int _playerIndex;
+         private int _vocalModifierSelectIndex = -1;
+ 
+-        // Keeps the Sing-Off row highlighted after it has been switched
+-        private bool _reselectSingOff;
++        // Keeps a row of the Vocal Challenge list highlighted after it has been switched
++        private string _reselectChallenge;
+ 
+         // (Main, not the first state in the list: the cursor starts on Ready)
+         private State _lastMenuState = State.Main;
+@@ -266,11 +265,8 @@ namespace YARG.Menu.DifficultySelect
+                 case State.Modifiers:
+                     CreateModifierMenu();
+                     break;
+-                case State.Harmony:
+-                    CreateHarmonyMenu();
+-                    break;
+-                case State.RapMode:
+-                    CreateRapModeMenu();
++                case State.VocalChallenge:
++                    CreateVocalChallengeMenu();
+                     break;
+             }
+ 
+@@ -333,54 +329,16 @@ namespace YARG.Menu.DifficultySelect
+                     UpdateForPlayer();
+                 });
+ 
+-                // Harmony players must pick their harmony index. A song that names its vocal parts
+-                // (two artists, from YARG Converter) shows the artists instead of numbers.
+-                if (player.Profile.CurrentInstrument == Instrument.Harmony)
+-                {
+-                    var partSong = GlobalVariables.State.CurrentSong;
+-                    CreateItem(YARG.Gameplay.VocalBattle.VocalParts.HasNames(partSong)
+-                            ? "Whose Lines"
+-                            : LocalizeHeader("Harmony"),
+-                        YARG.Gameplay.VocalBattle.VocalParts.Label(partSong, player.Profile.HarmonyIndex),
+-                        _lastMenuState == State.Harmony, () =>
+-                    {
+-                        _menuState = State.Harmony;
+-                        UpdateForPlayer();
+-                    });
+-                }
+-
+-                // Rap mode: whose verses to do, or trade bars with another singer
+-                if (player.Profile.GameMode == GameMode.Vocals && !GlobalVariables.State.IsPractice)
++                // Vocal Challenge: the whole song, one artist's part, or trade lines with another
++                // singer (this row was Rap Mode, Sing-Off and Whose Lines)
++                if (player.Profile.GameMode == GameMode.Vocals)
+                 {
+-                    _nextHint = "Pick whose verses you rap (on a song with each artist marked), or split the song evenly with another singer, a few bars each.";
+-                    CreateItem("Rap Mode", RapModeText(), _lastMenuState == State.RapMode, () =>
++                    _nextHint = "How you take on the song: all of it, one artist's part, or trading lines or bars with another singer, scored head to head.";
++                    CreateItem("Vocal Challenge", VocalChallengeText(), _lastMenuState == State.VocalChallenge, () =>
+                     {
+-                        _menuState = State.RapMode;
+-                        UpdateForPlayer();
+-                    });
+-                }
+-
+-                // With more than one player, the singers can make it a sing-off
+-                if (player.Profile.GameMode == GameMode.Vocals && PlayerContainer.Players.Count > 1 &&
+-                    !GlobalVariables.State.IsPractice)
+-                {
+-                    var singOff = YARG.Settings.SettingsManager.Settings.SingOff;
+-                    string singOffText = !singOff.Value
+-                        ? "Off"
+-                        : player.Profile.CurrentInstrument == Instrument.Harmony
+-                            ? "On: artist against artist"
+-                            : "On: take turns, best singer wins";
+-                    _nextHint = "Turns the vocals into a battle: every line is marked out of 100 and the bar under the lyrics leans to whoever is ahead. " +
+-                        "On Vocals the lines are dealt out in turns; on Harmonies it's artist against artist.";
+-                    CreateItem("Sing-Off", singOffText, _reselectSingOff, () =>
+-                    {
+-                        // (Not through Value: that also pokes the settings menu, which isn't open here)
+-                        singOff.SetValueWithoutNotify(!singOff.Value);
+-                        YARG.Settings.SettingsManager.SaveSettings();
+-                        _reselectSingOff = true;
++                        _menuState = State.VocalChallenge;
+                         UpdateForPlayer();
+                     });
+-                    _reselectSingOff = false;
+                 }
+ 
+                 // Only allow vocal modifiers to be selected once (so they don't conflict)
+@@ -625,115 +583,272 @@ namespace YARG.Menu.DifficultySelect
+             };
+         }
+ 
+-        // ------------------------------------------------------------------ rap mode
++        // ------------------------------------------------------------------ vocal challenge
+ 
+-        /// <summary>The Rap Mode row shows this.</summary>
+-        private string RapModeText()
++        private static int SingerCount() =>
++            PlayerContainer.Players.Count(p => !p.SittingOut && p.Profile.GameMode == GameMode.Vocals);
++
++        /// <summary>The artists a singer can be on this song (none when it is one artist's).</summary>
++        private List<YARG.Gameplay.VocalBattle.VocalParts.Artist> ChallengeArtists()
+         {
+-            var settings = YARG.Settings.SettingsManager.Settings;
+-            var song = GlobalVariables.State.CurrentSong;
+-            if (settings.SingOff.Value && IsBarTurns(settings.SingOffTurnLength.Value) &&
+-                CurrentPlayer.Profile.CurrentInstrument == Instrument.Vocals)
++            bool parts = _possibleInstruments.Contains(Instrument.Harmony) && _maxHarmonyIndex >= 2;
++            // (Practice plays the song's own parts: verses can't be dealt out there)
++            var artists = YARG.Gameplay.VocalBattle.VocalParts.Artists(GlobalVariables.State.CurrentSong,
++                parts ? _maxHarmonyIndex : 1);
++            if (artists.Count > 0 && artists[0].Guessed &&
++                (GlobalVariables.State.IsPractice || !_possibleInstruments.Contains(Instrument.Vocals)))
+             {
+-                return "Trade every " + Bars(settings.SingOffTurnLength.Value) + " bars";
++                artists.Clear();
+             }
++            return artists;
++        }
+ 
+-            if (CurrentPlayer.Profile.CurrentInstrument == Instrument.Harmony &&
+-                YARG.Gameplay.VocalBattle.VocalParts.HasNames(song))
++        /// <summary>Which of those a player has chosen, or -1 for none.</summary>
++        private static int ChosenArtist(YargPlayer player, List<YARG.Gameplay.VocalBattle.VocalParts.Artist> artists)
++        {
++            if (artists.Count == 0 || player.Profile.GameMode != GameMode.Vocals)
+             {
+-                return YARG.Gameplay.VocalBattle.VocalParts.Label(song, CurrentPlayer.Profile.HarmonyIndex) + "'s verses";
++                return -1;
+             }
+ 
+-            return "Whole song";
++            if (artists[0].Guessed)
++            {
++                int guessed = YARG.Gameplay.VocalBattle.VocalParts.GuessedArtist(player.Profile, GlobalVariables.State.CurrentSong);
++                return guessed < artists.Count ? guessed : -1;
++            }
++
++            return player.Profile.CurrentInstrument == Instrument.Harmony
++                ? Mathf.Min(player.Profile.HarmonyIndex, artists.Count - 1)
++                : -1;
++        }
++
++        private static bool AnySingerHasArtist(List<YARG.Gameplay.VocalBattle.VocalParts.Artist> artists, YargPlayer except)
++        {
++            foreach (var other in PlayerContainer.Players)
++            {
++                if (other != except && !other.SittingOut && ChosenArtist(other, artists) >= 0)
++                {
++                    return true;
++                }
++            }
++            return false;
+         }
+ 
+-        private static bool IsBarTurns(YARG.Gameplay.VocalBattle.SingOffTurns turns) =>
+-            turns is YARG.Gameplay.VocalBattle.SingOffTurns.FourBars or YARG.Gameplay.VocalBattle.SingOffTurns.EightBars
+-                or YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars;
++        /// <summary>Two singers trading lines or bars (rather than each being an artist).</summary>
++        private bool IsTrading(List<YARG.Gameplay.VocalBattle.VocalParts.Artist> artists)
++        {
++            return !GlobalVariables.State.IsPractice && YARG.Settings.SettingsManager.Settings.SingOff.Value &&
++                CurrentPlayer.Profile.CurrentInstrument == Instrument.Vocals && !AnySingerHasArtist(artists, null);
++        }
+ 
+-        private static int Bars(YARG.Gameplay.VocalBattle.SingOffTurns turns) => turns switch
++        private static string TradeLabel(YARG.Gameplay.VocalBattle.SingOffTurns turns) => turns switch
+         {
+-            YARG.Gameplay.VocalBattle.SingOffTurns.FourBars => 4,
+-            YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars => 16,
+-            _ => 8,
++            YARG.Gameplay.VocalBattle.SingOffTurns.OneLine => "Trade every line",
++            YARG.Gameplay.VocalBattle.SingOffTurns.TwoLines => "Trade every 2 lines",
++            YARG.Gameplay.VocalBattle.SingOffTurns.FourLines => "Trade every 4 lines",
++            YARG.Gameplay.VocalBattle.SingOffTurns.FourBars => "Trade every 4 bars",
++            YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars => "Trade every 16 bars",
++            _ => "Trade every 8 bars",
+         };
+ 
+-        private void SetVocalInstrument(Instrument instrument)
++        /// <summary>The Vocal Challenge row shows this.</summary>
++        private string VocalChallengeText()
++        {
++            var settings = YARG.Settings.SettingsManager.Settings;
++            var artists = ChallengeArtists();
++            int chosen = ChosenArtist(CurrentPlayer, artists);
++            if (chosen >= 0)
++            {
++                bool against = settings.SingOff.Value && SingerCount() >= 2 && !GlobalVariables.State.IsPractice;
++                return artists[chosen].Name + "'s part" + (against ? "\nArtist against artist" : string.Empty);
++            }
++
++            return IsTrading(artists) ? TradeLabel(settings.SingOffTurnLength.Value) : "Whole song";
++        }
++
++        private void SetVocalInstrument(YargPlayer player, Instrument instrument)
+         {
+-            if (!_possibleInstruments.Contains(instrument) || CurrentPlayer.Profile.CurrentInstrument == instrument)
++            if (!_possibleInstruments.Contains(instrument) || player.Profile.CurrentInstrument == instrument)
+             {
+                 return;
+             }
+ 
+-            CurrentPlayer.Profile.CurrentInstrument = instrument;
+-            UpdatePossibleDifficulties();
+-            UpdatePossibleModifiers();
++            player.Profile.CurrentInstrument = instrument;
++            if (player == CurrentPlayer)
++            {
++                UpdatePossibleDifficulties();
++                UpdatePossibleModifiers();
++            }
++        }
++
++        private void SetSingOff(bool on)
++        {
++            // (Not through Value: that also pokes the settings menu, which isn't open here)
++            YARG.Settings.SettingsManager.Settings.SingOff.SetValueWithoutNotify(on);
++            YARG.Settings.SettingsManager.SaveSettings();
+         }
+ 
+-        private void CreateRapModeMenu()
++        /// <summary>Opens the Vocal Challenge list (for the play test), and says what its row showed.</summary>
++        public string OpenVocalChallenge()
++        {
++            string shown = VocalChallengeText();
++            _menuState = State.VocalChallenge;
++            UpdateForPlayer();
++            return shown;
++        }
++
++        private void CreateVocalChallengeMenu()
+         {
+             var settings = YARG.Settings.SettingsManager.Settings;
+             var song = GlobalVariables.State.CurrentSong;
+-            string current = RapModeText();
+-
++            var player = CurrentPlayer;
++            var artists = ChallengeArtists();
++            int chosen = ChosenArtist(player, artists);
++            bool trading = IsTrading(artists);
++            bool practice = GlobalVariables.State.IsPractice;
++            int singers = SingerCount();
++            string reselect = _reselectChallenge;
++            _reselectChallenge = null;
++
++            bool whole = chosen < 0 && !trading;
+             _nextHint = "You do the whole song: every verse, hook and ad-lib.";
+-            CreateItem("Whole song", current == "Whole song", () =>
++            CreateItem("Whole song" + CurrentMark(whole), whole && reselect == null, () =>
+             {
+-                settings.SingOff.SetValueWithoutNotify(false);
+-                YARG.Settings.SettingsManager.SaveSettings();
+-                SetVocalInstrument(Instrument.Vocals);
++                // (Left on while another singer still has an artist: that is their battle setting)
++                if (trading || !AnySingerHasArtist(artists, player))
++                {
++                    SetSingOff(false);
++                }
++                YARG.Gameplay.VocalBattle.VocalParts.SetGuessedArtist(player.Profile, song, -1);
++                SetVocalInstrument(player, Instrument.Vocals);
+                 _menuState = State.Main;
+                 UpdateForPlayer();
+             });
+ 
+-            // A song with each artist's part marked: rap one artist's verses
+-            if (YARG.Gameplay.VocalBattle.VocalParts.HasNames(song) && _possibleInstruments.Contains(Instrument.Harmony))
++            // One artist's part. A song with a part for each artist has their real lines; any other
++            // song with two or three artists has its verses dealt out between them.
++            foreach (var artist in artists)
+             {
+-                for (int i = 0; i < _maxHarmonyIndex && i < YARG.Gameplay.VocalBattle.VocalParts.NamesFor(song).Length; i++)
++                var choice = artist;
++                bool current = chosen == choice.Index;
++                _nextArtist = choice.Name;
++                _nextHint = choice.Guessed
++                    ? "You do " + choice.Name + "'s share of the song. The song doesn't say who has which lines, so its verses are dealt out " +
++                        "between the artists in turn: a fair share each, not the exact lines on the record. The other verses play and scroll " +
++                        "past without counting against you. Leaves no high score."
++                    : "You do " + choice.Name + "'s lines only. The other lines play and scroll past without counting against you.";
++                CreateItem(choice.Name + "'s part" + (choice.Guessed ? " (verses dealt out)" : string.Empty) + CurrentMark(current),
++                    current && reselect == null, () =>
+                 {
+-                    int part = i;
+-                    string name = YARG.Gameplay.VocalBattle.VocalParts.Label(song, i);
+-                    _nextArtist = name;
+-                    _nextHint = "You rap " + name + "'s verses only. The other verses play and scroll past without counting against you. " +
+-                        "Two players can each take an artist: with Sing-Off on, it becomes artist against artist.";
+-                    CreateItem(name + "'s verses", current == name + "'s verses", () =>
++                    if (trading)
+                     {
+-                        settings.SingOff.SetValueWithoutNotify(false);
++                        SetSingOff(false);
++                    }
++
++                    if (choice.Guessed)
++                    {
++                        SetVocalInstrument(player, Instrument.Vocals);
++                        YARG.Gameplay.VocalBattle.VocalParts.SetGuessedArtist(player.Profile, song, choice.Index);
++                    }
++                    else
++                    {
++                        SetVocalInstrument(player, Instrument.Harmony);
++                        player.Profile.HarmonyIndex = (byte) choice.Index;
++                    }
++
++                    _menuState = State.Main;
++                    UpdateForPlayer();
++                });
++            }
++
++            if (artists.Count >= 2 && !practice)
++            {
++                bool against = settings.SingOff.Value && !trading;
++                const string AGAINST = "against";
++                _nextHint = "When two singers are different artists, make it a battle: every line is marked out of 100, the bar under the " +
++                    "lyrics leans to whoever is ahead, and the winner is called at the end." +
++                    (singers < 2 ? " Needs two singers: use Add Another Player, and have them pick Vocals." : string.Empty);
++                CreateItem("Artist against artist", against ? "On" : "Off", reselect == AGAINST, () =>
++                {
++                    if (!against && !AnySingerHasArtist(artists, null))
++                    {
++                        ToastManager.ToastInformation("Pick an artist's part first, then switch this on.");
++                    }
++                    else
++                    {
++                        SetSingOff(!against);
++                    }
++                    _reselectChallenge = AGAINST;
++                    UpdateForPlayer();
++                });
++            }
++
++            // Two singers share the song, a few lines or bars each
++            if (!practice && _possibleInstruments.Contains(Instrument.Vocals))
++            {
++                foreach (var turns in new[]
++                         {
++                             YARG.Gameplay.VocalBattle.SingOffTurns.OneLine,
++                             YARG.Gameplay.VocalBattle.SingOffTurns.TwoLines,
++                             YARG.Gameplay.VocalBattle.SingOffTurns.FourLines,
++                             YARG.Gameplay.VocalBattle.SingOffTurns.FourBars,
++                             YARG.Gameplay.VocalBattle.SingOffTurns.EightBars,
++                             YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars,
++                         })
++                {
++                    var choice = turns;
++                    string label = TradeLabel(choice);
++                    bool bars = choice >= YARG.Gameplay.VocalBattle.SingOffTurns.FourBars;
++                    bool current = trading && settings.SingOffTurnLength.Value == choice;
++                    _nextHint = (bars
++                            ? "The song is split evenly by bars: the first singer takes a block, the next singer the next, and so on. Good for rap."
++                            : "The song's lines are dealt out in turns: the first singer takes a turn, then the next, to the end.") +
++                        " Each singer's lines come in their own color, every exchange is a round with a winner, and the best singer wins. Leaves no high score." +
++                        (singers < 2 ? " Needs two singers: use Add Another Player, and have them pick Vocals." : string.Empty);
++                    CreateItem(label + CurrentMark(current), current && reselect == null, () =>
++                    {
++                        SetSingOff(true);
++                        settings.SingOffTurnLength.SetValueWithoutNotify(choice);
+                         YARG.Settings.SettingsManager.SaveSettings();
+-                        SetVocalInstrument(Instrument.Harmony);
+-                        CurrentPlayer.Profile.HarmonyIndex = (byte) part;
++
++                        // Everybody trades: nobody is an artist any more
++                        foreach (var other in PlayerContainer.Players)
++                        {
++                            if (other.Profile.GameMode == GameMode.Vocals)
++                            {
++                                YARG.Gameplay.VocalBattle.VocalParts.SetGuessedArtist(other.Profile, song, -1);
++                                SetVocalInstrument(other, Instrument.Vocals);
++                            }
++                        }
++
++                        if (singers < 2)
++                        {
++                            ToastManager.ToastInformation("Trading needs a second singer. Add another player who picks Vocals.");
++                        }
+                         _menuState = State.Main;
+                         UpdateForPlayer();
+                     });
+                 }
+             }
+ 
+-            // Split the song evenly between singers, a block of bars each
+-            int singers = PlayerContainer.Players.Count(p => !p.SittingOut && p.Profile.GameMode == GameMode.Vocals);
+-            foreach (var turns in new[]
+-                     {
+-                         YARG.Gameplay.VocalBattle.SingOffTurns.FourBars,
+-                         YARG.Gameplay.VocalBattle.SingOffTurns.EightBars,
+-                         YARG.Gameplay.VocalBattle.SingOffTurns.SixteenBars,
+-                     })
+-            {
+-                var choice = turns;
+-                int bars = Bars(choice);
+-                string label = "Trade every " + bars + " bars";
+-                _nextHint = "The song is split evenly: the first singer raps " + bars + " bars, the next singer the next " + bars +
+-                    ", and so on, each in their own color, scored head to head." +
+-                    (singers < 2 ? " Needs two singers: use Add Another Player, and have them pick Vocals." : string.Empty);
+-                CreateItem(label, current == label, () =>
++            // How strictly the singing is marked (the Strict Judging modifier)
++            if (_possibleModifiers.Contains(Modifier.VocalsChallenge) &&
++                (_vocalModifierSelectIndex == -1 || _vocalModifierSelectIndex == _playerIndex))
++            {
++                bool strict = player.Profile.IsModifierActive(Modifier.VocalsChallenge);
++                const string STRICT = "strict";
++                _nextHint = "On: you have to really sing it. Tighter on pitch, more of each line, and every note counts. Off: forgiving.";
++                CreateItem("Strict judging", strict ? "On" : "Off", reselect == STRICT, () =>
+                 {
+-                    settings.SingOff.SetValueWithoutNotify(true);
+-                    settings.SingOffTurnLength.SetValueWithoutNotify(choice);
+-                    YARG.Settings.SettingsManager.SaveSettings();
+-                    SetVocalInstrument(Instrument.Vocals);
+-                    if (singers < 2)
++                    if (strict)
+                     {
+-                        ToastManager.ToastInformation("Trading bars needs a second singer. Add another player who picks Vocals.");
++                        player.Profile.RemoveModifiers(Modifier.VocalsChallenge);
+                     }
+-                    _menuState = State.Main;
++                    else
++                    {
++                        player.Profile.AddSingleModifier(Modifier.VocalsChallenge);
++                    }
++                    _reselectChallenge = STRICT;
+                     UpdateForPlayer();
+                 });
+             }
+@@ -777,33 +892,6 @@ namespace YARG.Menu.DifficultySelect
+             _navGroup.SelectFirst();
+         }
+ 
+-        private void CreateHarmonyMenu()
+-        {
+-            for (int i = 0; i < _maxHarmonyIndex; i++)
+-            {
+-                int capture = i;
+-                bool selected = CurrentPlayer.Profile.HarmonyIndex == i;
+-                var partSong = GlobalVariables.State.CurrentSong;
+-                if (YARG.Gameplay.VocalBattle.VocalParts.HasNames(partSong))
+-                {
+-                    string name = YARG.Gameplay.VocalBattle.VocalParts.Label(partSong, i);
+-                    _nextArtist = name;
+-                    _nextHint = "You sing or rap " + name + "'s lines. The other artist's lines are shown too, but only yours count for you.";
+-                }
+-                else
+-                {
+-                    _nextHint = "Harmony part " + (i + 1) + ". Part 1 is usually the lead.";
+-                }
+-                CreateItem(YARG.Gameplay.VocalBattle.VocalParts.Label(GlobalVariables.State.CurrentSong, i) + CurrentMark(selected), selected, () =>
+-                {
+-                    CurrentPlayer.Profile.HarmonyIndex = (byte) capture;
+-
+-                    _menuState = State.Main;
+-                    UpdateForPlayer();
+-                });
+-            }
+-        }
+-
+         private void UpdateModifierMenu()
+         {
+             var profile = CurrentPlayer.Profile;
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index 88029ae..50e448a 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -53,7 +53,8 @@ namespace YARG.Menu.ProfileList
+                 // done with the one that is lit up
+                 NavigationScheme.Entry.NavigateUp,
+                 NavigationScheme.Entry.NavigateDown,
+-                new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", OpenSelectedProfileActions),
++                // (Named for what it opens: with a controller or a guitar this is where a profile is renamed and set up)
++                new NavigationScheme.Entry(MenuAction.Green, "Menu.ProfileList.EditProfile", OpenSelectedProfileActions),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu(), hide: true),
+                 new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfileOrBot),
+                 // The MIC TEST and PHONES bars on this screen were for touch only
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index 2e62cad..fd73d98 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -509,6 +509,23 @@ namespace YARG.Menu.ProfileList
+ 
+             // Rows are counted so that the list can come back with the cursor where it was
+             int rows = 0;
++            // First, what people look for: the name and the profile's settings
++            int renameRow = rows++;
++            dialog.AddListButton("Rename (now: " + Profile.Name + ")", () => After(() =>
++            {
++                ProfileControllerMenus.ShowRename(Profile, () =>
++                {
++                    UpdateDisplay(Profile);
++                    Reopen(renameRow);
++                });
++                return UniTask.CompletedTask;
++            }));
++            rows++;
++            dialog.AddListButton("Profile Settings (highway, calibration, colors, camera...)", () => After(() =>
++            {
++                ShowSettings(0);
++                return UniTask.CompletedTask;
++            }));
+             if (!Profile.IsBot)
+             {
+                 dialog.AddListButton("Add Device (controller or microphone)", () => After(async () =>
+@@ -580,24 +597,9 @@ namespace YARG.Menu.ProfileList
+                 Profile.LeftyFlip = !Profile.LeftyFlip;
+                 After(() => Reopen(leftyRow));
+             });
+-            dialog.AddListButton("Profile Settings (highway, calibration, colors, camera...)", () => After(() =>
+-            {
+-                ShowSettings(0);
+-                return UniTask.CompletedTask;
+-            }));
+-            int renameRow = rows + 1;
+-            dialog.AddListButton("Rename", () => After(() =>
+-            {
+-                ProfileControllerMenus.ShowRename(Profile, () =>
+-                {
+-                    UpdateDisplay(Profile);
+-                    Reopen(renameRow);
+-                });
+-                return UniTask.CompletedTask;
+-            }));
+             if (!Profile.IsBot)
+             {
+-                int buttonsRow = rows + 2;
++                int buttonsRow = rows;
+                 dialog.AddListButton("Buttons (what each button does)", () => After(() =>
+                 {
+                     ProfileControllerMenus.ShowButtons(PlayerContainer.GetPlayerFromProfile(Profile),
+@@ -721,7 +723,7 @@ namespace YARG.Menu.ProfileList
+             Row("Rock Meter: " + PresetName(meters, Profile.RockMeterPreset) + "  (change)",
+                 () => Profile.RockMeterPreset = NextPreset(meters, Profile.RockMeterPreset));
+ 
+-            dialog.AddListButton("Back", () => After(() => Reopen(0)));
++            dialog.AddListButton("Back", () => After(() => Reopen(1)));
+             dialog.SelectListIndex(select);
+         }
+ 
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index caf5cf6..16e1a7c 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -503,6 +503,15 @@ namespace YARG.Settings
+ 
+             public SliderSetting SongBackgroundOpacity { get; } = new(1f, 0f, 1f);
+             public ToggleSetting StaticVocalsMode { get; } = new(false);
++
++            // How the words are shown when singing: scrolling slowly, or lines that stand still
++            public DropdownSetting<YARG.Gameplay.Player.LyricStyle> LyricStyle { get; }
++                = new(YARG.Gameplay.Player.LyricStyle.Automatic)
++                {
++                    YARG.Gameplay.Player.LyricStyle.Automatic,
++                    YARG.Gameplay.Player.LyricStyle.Scrolling,
++                    YARG.Gameplay.Player.LyricStyle.Still
++                };
+             public ToggleSetting UseThreeLaneLyricsInHarmony { get; } = new(true);
+             public ToggleSetting EnableTrackEffects { get; } = new(true);
+             public ToggleSetting EnableHighwayAnimation { get; } = new(true);
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 54f6137..01c651a 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -197,7 +197,7 @@ namespace YARG.Settings
+                 nameof(Settings.ReduceFlashingLights),
+ 
+                 new HeaderMetadata("Gameplay"),
+-                nameof(Settings.StaticVocalsMode),
++                nameof(Settings.LyricStyle),
+                 new FieldMetadata(nameof(Settings.UseThreeLaneLyricsInHarmony), isAdvanced: true),
+                 nameof(Settings.EnableTrackEffects),
+                 nameof(Settings.EnableHighwayAnimation),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index fbf46bd..e36b52a 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -66,7 +66,7 @@
+             "NoVocalPercussion" : "No Percussion",
+             "RangeCompress": "No Range Shifts",
+             "OpensToGreens": "Opens To Greens",
+-            "VocalsChallenge": "Challenge Mode",
++            "VocalsChallenge": "Strict Judging",
+             "DeepMusicMode": "Deep Music Mode",
+             "TrackMode": "Track Mode"
+         },
+@@ -514,6 +514,7 @@
+             "ActiveProfiles" : "Active Profiles",
+             "AddBot": "Add Bot",
+             "AddProfile": "Add Profile",
++            "EditProfile": "Rename / Settings",
+             "Bots" : "Bots",
+             "Players" : "Players"
+         },
+@@ -1734,19 +1735,19 @@
+                 }
+             },
+             "SingOff": {
+-                "Name": "Sing-Off",
+-                "Description": "Turns the vocals into a battle when two or more players sing. On the Vocals instrument the lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. On Harmonies (a song with a part for each artist) each player sings the artist they picked and the two artists' singers face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. A sing-off with turns leaves no high score, since each singer has only half the song. Can also be switched on the screen before a song."
++                "Name": "Vocal Challenge: Head To Head",
++                "Description": "Turns the vocals into a battle when two or more players sing. With trading on, the song's lines are dealt out in turns, each singer's lines in their own color, and every exchange is a round with a winner. When the singers are different artists of the song, the artists face off. Every line is marked out of 100 for how much of it was sung right (a harder level earns a little more), the bar under the lyrics leans towards whoever is ahead, and the winner is called at the end. With more than two singers the players alternate between two teams. Trading leaves no high score, since each singer has only half the song. Easier to set on the screen before a song: Vocal Challenge."
+             },
+             "SingOffTurnLength": {
+-                "Name": "Sing-Off Turn Length",
+-                "Description": "In a sing-off on the Vocals instrument: how many lines a singer gets before the other takes over.",
++                "Name": "Vocal Challenge: Turn Length",
++                "Description": "When two singers trade: how many lines or bars a singer gets before the other takes over. Easier to set on the screen before a song: Vocal Challenge.",
+                 "Dropdown": {
+                     "OneLine": "One line each",
+                     "TwoLines": "Two lines each",
+                     "FourLines": "Four lines each",
+-                    "FourBars": "Four bars each (rap mode)",
+-                    "EightBars": "Eight bars each (rap mode)",
+-                    "SixteenBars": "Sixteen bars each (rap mode)"
++                    "FourBars": "Four bars each",
++                    "EightBars": "Eight bars each",
++                    "SixteenBars": "Sixteen bars each"
+                 }
+             },
+             "GamepadNoStrum": {
+@@ -1823,6 +1824,15 @@
+                 "Name": "Show Player Name When Starting Song",
+                 "Description": "If enabled, the player name and instrument icon will appear when the song starts."
+             },
++			"LyricStyle": {
++				"Name": "Lyrics When Singing",
++				"Description": "How the words are shown when you sing or rap. Scrolling: the words go by under the notes, as slowly as the song's words allow (down to 55% of the old speed). Still lines: the whole line stands still and each word lights up as it is sung, like karaoke; nothing to chase with your eyes. Automatic picks per song: scrolling when the words have room to go by slowly, still lines when they are packed too close for that (most rap).",
++				"Dropdown": {
++					"Automatic": "Automatic (still lines for fast songs)",
++					"Scrolling": "Scrolling",
++					"Still": "Still lines"
++				}
++			},
+ 			"StaticVocalsMode": {
+ 				"Name": "Static Vocals Mode",
+ 				"Description": "When enabled, lyrics stay stationary on the left side of the vocal highway. When disabled, lyrics scroll across the vocal highway."

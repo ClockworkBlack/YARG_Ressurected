@@ -67,6 +67,113 @@ namespace YARG.Gameplay.VocalBattle
             return _cachedNames;
         }
 
+        // ---------------------------------------------------------------- an artist's part on any song
+
+        /// <summary>One artist a singer can choose to be on a song.</summary>
+        public readonly struct Artist
+        {
+            public readonly string Name;
+            /// <summary>Which part: of the song's own vocal parts, or of the guessed split.</summary>
+            public readonly int Index;
+            /// <summary>
+            /// False: the song has a vocal part for this artist. True: it has one vocal part for
+            /// everybody, and the artists take its verses in turn (a guess: see SingOff.SetupVerses).
+            /// </summary>
+            public readonly bool Guessed;
+
+            public Artist(string name, int index, bool guessed)
+            {
+                Name = name;
+                Index = index;
+                Guessed = guessed;
+            }
+        }
+
+        /// <summary>
+        /// The artists a singer can pick on this song. A song with a part for each artist gives
+        /// those (named by vocal_parts.txt, else by the artists the song is credited to, else by
+        /// number). A song with one vocal part and two or three credited artists gives them too,
+        /// with its verses dealt out between them in turn. A song by one artist gives none: the
+        /// whole song is theirs.
+        /// </summary>
+        /// <param name="vocalParts">How many vocal parts the song's chart has.</param>
+        public static List<Artist> Artists(SongEntry song, int vocalParts)
+        {
+            var artists = new List<Artist>();
+            if (song == null)
+            {
+                return artists;
+            }
+
+            var named = NamesFor(song);
+            var credited = CreditedArtists(song);
+            if (vocalParts >= 2)
+            {
+                for (int i = 0; i < vocalParts && i < 3; i++)
+                {
+                    string name = i < named.Length ? named[i]
+                        : named.Length == 0 && credited.Length == vocalParts ? credited[i]
+                        : "Part " + (i + 1).ToString(CultureInfo.InvariantCulture);
+                    artists.Add(new Artist(name, i, false));
+                }
+            }
+            else if (credited.Length >= 2)
+            {
+                for (int i = 0; i < credited.Length; i++)
+                {
+                    artists.Add(new Artist(credited[i], i, true));
+                }
+            }
+
+            return artists;
+        }
+
+        /// <summary>
+        /// The artists a song is credited to, from its artist ("Don Toliver &amp; Travis Scott",
+        /// "Bun B ft. Pimp C, Jeezy") and a "(feat. ...)" in its title. At most three.
+        /// </summary>
+        public static string[] CreditedArtists(SongEntry song)
+        {
+            try
+            {
+                return SongNames.Credits((string) song.Artist, (string) song.Name);
+            }
+            catch (Exception)
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        // Which artist each profile picked on a song whose verses are dealt out (not saved, and
+        // only for that song: the next one has other artists)
+        private static readonly Dictionary<Guid, (string Song, int Index)> _guessedArtist = new();
+
+        /// <summary>The artist a profile chose to be on this song, or -1 for the whole song.</summary>
+        public static int GuessedArtist(YargProfile profile, SongEntry song)
+        {
+            return profile != null && song != null && _guessedArtist.TryGetValue(profile.Id, out var choice) &&
+                choice.Song == song.ActualLocation
+                    ? choice.Index
+                    : -1;
+        }
+
+        public static void SetGuessedArtist(YargProfile profile, SongEntry song, int index)
+        {
+            if (profile == null)
+            {
+                return;
+            }
+
+            if (index < 0 || song == null)
+            {
+                _guessedArtist.Remove(profile.Id);
+            }
+            else
+            {
+                _guessedArtist[profile.Id] = (song.ActualLocation, index);
+            }
+        }
+
         public static bool HasNames(SongEntry song)
         {
             return NamesFor(song).Length >= 2;
