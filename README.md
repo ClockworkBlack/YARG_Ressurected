@@ -313,7 +313,7 @@ shown letter by letter, not joined up as they should be.
 The words above the notes used to fly past in small grey italics. Now:
 
 - Every word is **bold and upright**.
-- **Settings > Gameplay > Lyrics When Singing** has three choices. **Automatic** (the default)
+- **Settings > Graphics > Lyrics When Singing** (under the Gameplay heading) has three choices. **Automatic** (the default)
   scrolls the words as slowly as the song allows (down to 55% of the old speed) and, on a song
   whose words come too fast to read while moving (most rap), shows **still lines** instead: the
   whole line stands still and each word lights up as it is sung, like karaoke. **Scrolling** and
