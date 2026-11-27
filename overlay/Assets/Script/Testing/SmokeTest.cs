@@ -212,6 +212,13 @@ namespace YARG.Testing
                 GlobalVariables.State.CurrentSong = song;
                 GlobalVariables.State.SongSpeed = 1f;
 
+                // Guitar controllers: the forgiving engine, the sound preview, and the profile
+                // menus worked the way a controller works them (up, down and confirm)
+                if (!await CheckControllerMenus())
+                {
+                    return;
+                }
+
                 // The instrument screen, and Song Setup on it (once the messages about the
                 // phone have gone from the corner of the screen)
                 await UniTask.Delay(TimeSpan.FromSeconds(6), ignoreTimeScale: true);
@@ -822,6 +829,125 @@ namespace YARG.Testing
         }
 
         #endregion
+
+        private async UniTask Press(YARG.Core.Input.MenuAction action, double wait = 0.35)
+        {
+            // The same call a controller's menu button ends in
+            YARG.Input.InputManager.OnMenuAction(action, true);
+            await UniTask.NextFrame();
+            YARG.Input.InputManager.OnMenuAction(action, false);
+            await UniTask.Delay(TimeSpan.FromSeconds(wait), ignoreTimeScale: true);
+            await UniTask.NextFrame();
+        }
+
+        private async UniTask<bool> CheckControllerMenus()
+        {
+            var green = YARG.Core.Input.MenuAction.Green;
+            var up = YARG.Core.Input.MenuAction.Up;
+            var down = YARG.Core.Input.MenuAction.Down;
+
+            // The engine guitar controllers are given
+            _step = "the Relaxed engine";
+            var relaxed = YARG.Settings.Customization.CustomContentManager.EnginePresets.GetPresetById(EnginePreset.Relaxed.Id);
+            if (relaxed == null || relaxed.FiveFretGuitar.HitWindow.MaxWindow < 0.19 || relaxed.FiveFretGuitar.AntiGhosting)
+            {
+                Finish(false, "the Relaxed engine is not among the engines, or is not the forgiving one");
+                return false;
+            }
+            Note($"Relaxed engine: notes count {relaxed.FiveFretGuitar.HitWindow.MaxWindow * 500:0} ms either side, strum to fret {relaxed.FiveFretGuitar.StrumLeniency * 1000:0} ms");
+
+            // Hearing a guitar sound before choosing it
+            _step = "guitar sound preview";
+            short[] riff = await UniTask.RunOnThreadPool(() => GuitarVoicePreview.Render(GuitarVoiceTone.Rock));
+            int loudest = 0;
+            foreach (short v in riff)
+            {
+                loudest = Math.Max(loudest, Math.Abs((int) v));
+            }
+            if (riff.Length < GuitarVoiceSynth.SAMPLE_RATE * 2 * 3 || loudest < 3000)
+            {
+                Finish(false, $"the guitar sound preview is silent or too short ({riff.Length} samples, loudest {loudest})");
+                return false;
+            }
+            GuitarVoicePreview.Play(GuitarVoiceMode.Rock);
+            await UniTask.Delay(TimeSpan.FromSeconds(2.0), ignoreTimeScale: true);
+            GuitarVoicePreview.Stop();
+            Note($"Guitar sound preview: {riff.Length / 2.0 / GuitarVoiceSynth.SAMPLE_RATE:0.0} s riff made and played");
+
+            // Renaming with up / down / confirm: "A", then "b", then Save
+            _step = "renaming a profile with a controller";
+            var profile = new YargProfile
+            {
+                Name = "Smoke Rename",
+                GameMode = GameMode.FiveFretGuitar,
+                CurrentInstrument = Instrument.FiveFretGuitar,
+                CurrentDifficulty = Difficulty.Easy,
+            };
+            PlayerContainer.AddProfile(profile);
+            bool renameLeft = false;
+            YARG.Menu.ProfileList.ProfileControllerMenus.ShowRename(profile, () => renameLeft = true);
+            await UniTask.Delay(TimeSpan.FromSeconds(0.8), ignoreTimeScale: true);
+            // Rows: Save, Delete, Space, A, B, ...
+            await Press(down);
+            await Press(down);
+            await Press(down);
+            await Press(green, 1.2);     // "A"; the list comes back on the same row
+            await Press(down);
+            await Press(green, 1.2);     // "b"
+            await Screenshot("rename.png");
+            for (int i = 0; i < 4; i++)
+            {
+                await Press(up);
+            }
+            await Press(green, 1.2);     // Save
+            if (!renameLeft || profile.Name != "Ab")
+            {
+                DialogManager.Instance.ClearDialog();
+                Finish(false, $"renaming with a controller gave '{profile.Name}' (expected 'Ab'), list left: {renameLeft}");
+                return false;
+            }
+            Note("Profile renamed with up, down and confirm alone: 'Smoke Rename' is now 'Ab'");
+
+            // Changing what a button does: pick the first action, "press a button", press one
+            _step = "changing a button with a controller";
+            var pad = InputSystem.AddDevice<Gamepad>("Smoke Test Pad");
+            var player = PlayerContainer.CreatePlayerFromProfile(profile, false);
+            if (player == null)
+            {
+                Finish(false, "couldn't create a player for the button test");
+                return false;
+            }
+            player.Bindings.AddDevice(pad);
+            var first = player.Bindings[GameMode.FiveFretGuitar].OfType<YARG.Input.ButtonBinding>().First();
+
+            bool buttonsLeft = false;
+            YARG.Menu.ProfileList.ProfileControllerMenus.ShowButtons(player, () => buttonsLeft = true);
+            await UniTask.Delay(TimeSpan.FromSeconds(0.8), ignoreTimeScale: true);
+            await Screenshot("buttons.png");
+            await Press(down);
+            await Press(green, 1.2);     // the first action
+            await Press(green, 1.5);     // "Press a button to use": now waiting for the controller
+            InputSystem.QueueStateEvent(pad, new UnityEngine.InputSystem.LowLevel.GamepadState()
+                .WithButton(UnityEngine.InputSystem.LowLevel.GamepadButton.North));
+            await UniTask.Delay(TimeSpan.FromSeconds(0.5), ignoreTimeScale: true);
+            InputSystem.QueueStateEvent(pad, new UnityEngine.InputSystem.LowLevel.GamepadState());
+            await UniTask.Delay(TimeSpan.FromSeconds(2.5), ignoreTimeScale: true);
+
+            bool bound = first.ContainsControl(pad.buttonNorth);
+            bool inputsBack = player.InputsEnabled;
+            DialogManager.Instance.ClearDialog();
+            await UniTask.Delay(TimeSpan.FromSeconds(0.5), ignoreTimeScale: true);
+            PlayerContainer.DisposePlayer(player);
+            PlayerContainer.RemoveProfile(profile);
+            InputSystem.RemoveDevice(pad);
+            if (!bound || !inputsBack)
+            {
+                Finish(false, $"changing a button with a controller: button taken {bound}, player's buttons working again {inputsBack}, list left {buttonsLeft}");
+                return false;
+            }
+            Note($"Button changed with a controller: '{first.Name}' is now the pad's {pad.buttonNorth.displayName} button");
+            return true;
+        }
 
         private async UniTask Screenshot(string name)
         {

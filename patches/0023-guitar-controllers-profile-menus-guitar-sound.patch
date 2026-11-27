@@ -1,0 +1,351 @@
+diff --git a/Assets/Plugins/Android/AndroidManifest.xml b/Assets/Plugins/Android/AndroidManifest.xml
+index ae38e0d..691f8d7 100644
+--- a/Assets/Plugins/Android/AndroidManifest.xml
++++ b/Assets/Plugins/Android/AndroidManifest.xml
+@@ -22,7 +22,7 @@
+         android:extractNativeLibs="true"
+         android:requestLegacyExternalStorage="true">
+         <activity
+-            android:name="com.unity3d.player.UnityPlayerActivity"
++            android:name="in.yarg.resurrected.YargActivity"
+             android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize|fontScale|layoutDirection|density"
+             android:exported="true"
+             android:hardwareAccelerated="false"
+diff --git a/Assets/Script/Gameplay/GameManager.cs b/Assets/Script/Gameplay/GameManager.cs
+index da8e2c3..c5cdfa2 100644
+--- a/Assets/Script/Gameplay/GameManager.cs
++++ b/Assets/Script/Gameplay/GameManager.cs
+@@ -247,6 +247,7 @@ namespace YARG.Gameplay
+             DisposeDebug();
+             _pauseMenu.PopAllMenus();
+             YARG.Audio.GuitarVoice.GuitarFreestyle.Clear();
++            YARG.Input.ControllerEventLog.SongEnded();
+             _mixer?.Dispose();
+             _songRunner?.Dispose();
+             BackgroundManager.Dispose();
+diff --git a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+index 9260e2d..6d1dfa8 100644
+--- a/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
++++ b/Assets/Script/Gameplay/Player/FiveFretGuitarPlayer.cs
+@@ -679,12 +679,53 @@ namespace YARG.Gameplay.Player
+ 
+         protected override bool InterceptInput(ref GameInput input)
+         {
++            var action = input.GetAction<GuitarAction>();
++
+             // Ignore SP in practice mode
+-            if (input.GetAction<GuitarAction>() == GuitarAction.StarPower && GameManager.IsPractice) return true;
++            if (action == GuitarAction.StarPower && GameManager.IsPractice) return true;
++
++            // A strum bar's spring-back is not a strum (Settings > General > Strum Bar Bounce Filter)
++            if (action is GuitarAction.StrumUp or GuitarAction.StrumDown && IsStrumBounce(action, input.Button, input.Time))
++            {
++                return true;
++            }
+ 
+             return false;
+         }
+ 
++        protected override void FinishDestruction()
++        {
++            YARG.Input.ControllerEventLog.StrumBounces(Player?.Profile?.Name, StrumBouncesFiltered);
++            base.FinishDestruction();
++        }
++
++        // ---------------------------------------------------------------- strum bar bounce
++        // (Settings > General > Strum Bar Bounce Filter; see StrumBounceGate)
++
++        private bool _bounceChecked;
++        private YARG.Input.StrumBounceGate _bounceGate;
++
++        /// <summary>How many strums the bounce filter has left out in this song (for the log).</summary>
++        public int StrumBouncesFiltered => _bounceGate?.Filtered ?? 0;
++
++        private bool IsStrumBounce(GuitarAction action, bool pressed, double time)
++        {
++            if (!_bounceChecked)
++            {
++                _bounceChecked = true;
++                var mode = YARG.Settings.SettingsManager.Settings.StrumBounceFilter.Value;
++                if (mode != YARG.Input.StrumBounceFilter.Off && !Player.IsReplay && !Player.Profile.IsBot &&
++                    YARG.Input.ControllerLayout.PlaysOnGuitarController(Player))
++                {
++                    _bounceGate = mode == YARG.Input.StrumBounceFilter.Strong
++                        ? new YARG.Input.StrumBounceGate(0.035, 0.020)
++                        : new YARG.Input.StrumBounceGate(0.020, 0.010);
++                }
++            }
++
++            return _bounceGate != null && _bounceGate.IsBounce(action == GuitarAction.StrumUp, pressed, time);
++        }
++
+         protected override void OnInputQueued(GameInput input)
+         {
+             base.OnInputQueued(input);
+diff --git a/Assets/Script/Gameplay/Visuals/IndicatorStripes.cs b/Assets/Script/Gameplay/Visuals/IndicatorStripes.cs
+index e407cb4..ec4a2b0 100644
+--- a/Assets/Script/Gameplay/Visuals/IndicatorStripes.cs
++++ b/Assets/Script/Gameplay/Visuals/IndicatorStripes.cs
+@@ -44,7 +44,7 @@ namespace YARG.Gameplay.Visuals
+                 // Don't spawn any stripes in if it's the default
+                 // or solo taps, too, since it doesn't alter hit windows
+             }
+-            else if (enginePreset == EnginePreset.Casual)
++            else if (enginePreset == EnginePreset.Casual || enginePreset == EnginePreset.Relaxed)
+             {
+                 SpawnStripe(_casual);
+             }
+diff --git a/Assets/Script/Input/Touch/TouchControlsManager.cs b/Assets/Script/Input/Touch/TouchControlsManager.cs
+index ccf6627..9d75a82 100644
+--- a/Assets/Script/Input/Touch/TouchControlsManager.cs
++++ b/Assets/Script/Input/Touch/TouchControlsManager.cs
+@@ -422,18 +422,12 @@ namespace YARG.Input.Touch
+             if (gm == null)
+                 return null;
+ 
+-            // Single-player focus: first human, non-sitting-out five-fret player.
+-            foreach (BasePlayer basePlayer in gm.Players)
++            // The same player the buttons are shown for (see TouchControlsVisibility): the first
++            // five-fret player without a controller, so with several players the screen never
++            // plays over somebody's guitar.
++            var player = TouchControlsVisibility.TouchPlayer();
++            if (player != null)
+             {
+-                if (basePlayer == null || basePlayer.Player == null)
+-                    continue;
+-
+-                var player = basePlayer.Player;
+-                if (player.Profile.GameMode != GameMode.FiveFretGuitar)
+-                    continue;
+-                if (player.Profile.IsBot || player.SittingOut || player.IsReplay)
+-                    continue;
+-
+                 var bindings = player.Bindings[GameMode.FiveFretGuitar];
+                 return bindings.TryGetBindingByAction(action);
+             }
+diff --git a/Assets/Script/Menu/ProfileInfo/ProfileInfoMenu.cs b/Assets/Script/Menu/ProfileInfo/ProfileInfoMenu.cs
+index c5a0705..0a20d38 100644
+--- a/Assets/Script/Menu/ProfileInfo/ProfileInfoMenu.cs
++++ b/Assets/Script/Menu/ProfileInfo/ProfileInfoMenu.cs
+@@ -24,7 +24,15 @@ namespace YARG.Menu.ProfileInfo
+             _tabs.TabChanged += OnTabChanged;
+             _tabs.SelectFirstTab();
+ 
+-            Navigator.Instance.PushScheme(NavigationScheme.EmptyWithMusicPlayer);
++            // This screen is worked by touch, but a controller must at least be able to leave it:
++            // it used to have no buttons at all, and "More Settings" from a controller ended here.
++            // (On the binds tab the profile's own buttons are switched off while its bindings are
++            // being changed; another player's controller, or the tab's own back button, leaves it.)
++            Navigator.Instance.PushScheme(new NavigationScheme(new()
++            {
++                new NavigationScheme.Entry(YARG.Core.Input.MenuAction.Red, "Menu.Common.Back",
++                    () => MenuManager.Instance.PopMenu()),
++            }, true));
+         }
+ 
+         private void OnDisable()
+diff --git a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+index f575908..88029ae 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileListMenu.cs
+@@ -55,7 +55,7 @@ namespace YARG.Menu.ProfileList
+                 NavigationScheme.Entry.NavigateDown,
+                 new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Confirm", OpenSelectedProfileActions),
+                 new NavigationScheme.Entry(MenuAction.Red, "Menu.Common.Back", () => MenuManager.Instance.PopMenu(), hide: true),
+-                new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfile),
++                new NavigationScheme.Entry(MenuAction.Yellow, "Menu.ProfileList.AddProfile", AddProfileOrBot),
+                 // The MIC TEST and PHONES bars on this screen were for touch only
+                 new NavigationScheme.Entry(MenuAction.Blue, "Menu.Common.MicTest", () => YARG.Audio.MicTest.OpenFromMenu()),
+ #if (UNITY_ANDROID || UNITY_STANDALONE) && !UNITY_EDITOR
+@@ -212,6 +212,14 @@ namespace YARG.Menu.ProfileList
+             RefreshList(profile);
+         }
+ 
++        /// <summary>On a controller: a player's profile or a bot (the bot button was touch only).</summary>
++        public void AddProfileOrBot()
++        {
++            var dialog = YARG.Menu.Persistent.DialogManager.Instance.ShowList("Add a profile");
++            dialog.AddListButton("New player profile", AddProfile);
++            dialog.AddListButton("New bot (plays by itself)", AddBotProfile);
++        }
++
+         public void AddBotProfile()
+         {
+             PlayerContainer.AddProfile(new YargProfile
+diff --git a/Assets/Script/Menu/ProfileList/ProfileSidebar.cs b/Assets/Script/Menu/ProfileList/ProfileSidebar.cs
+index 4f17253..e44145b 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileSidebar.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileSidebar.cs
+@@ -194,6 +194,8 @@ namespace YARG.Menu.ProfileList
+             if (profile.GameMode is not GameMode.FiveFretGuitar)
+             {
+                 RemoveDropdownOption(_engineDropdown, _enginePresetsByIndex, EnginePreset.SoloTaps.Id);
++                // Relaxed is Casual with wider guitar timing; elsewhere it would be Casual twice
++                RemoveDropdownOption(_engineDropdown, _enginePresetsByIndex, EnginePreset.Relaxed.Id);
+             }
+ 
+             // Casual only changes FiveFretGuitar and Vocals
+diff --git a/Assets/Script/Menu/ProfileList/ProfileView.cs b/Assets/Script/Menu/ProfileList/ProfileView.cs
+index fb8fb95..2e62cad 100644
+--- a/Assets/Script/Menu/ProfileList/ProfileView.cs
++++ b/Assets/Script/Menu/ProfileList/ProfileView.cs
+@@ -498,6 +498,11 @@ namespace YARG.Menu.ProfileList
+                     dialog.AddListButton(Profile.IsBot ? "Add this bot to the band" : "Connect (play as this profile)",
+                         () => After(() => Connect(true)));
+                 }
++                dialog.AddListButton("Rename", () => After(() =>
++                {
++                    ProfileControllerMenus.ShowRename(Profile, () => _profileListMenu.RefreshList(Profile));
++                    return UniTask.CompletedTask;
++                }));
+                 dialog.AddListButton("Delete this profile", () => After(ConfirmDeleteWithController));
+                 return;
+             }
+@@ -545,10 +550,14 @@ namespace YARG.Menu.ProfileList
+                     { YARG.Core.Game.EnginePreset.Default };
+                 if (Profile.GameMode is YARG.Core.GameMode.FiveFretGuitar or YARG.Core.GameMode.Vocals)
+                     choices.Add(YARG.Core.Game.EnginePreset.Casual);
++                if (Profile.GameMode is YARG.Core.GameMode.FiveFretGuitar)
++                    choices.Add(YARG.Core.Game.EnginePreset.Relaxed);
+                 if (Profile.GameMode is not YARG.Core.GameMode.ProKeys)
+                     choices.Add(YARG.Core.Game.EnginePreset.Precision);
+                 if (Profile.GameMode is YARG.Core.GameMode.FiveFretGuitar)
+                     choices.Add(YARG.Core.Game.EnginePreset.SoloTaps);
++                // ...and the ones you made yourself (Settings > Presets)
++                choices.AddRange(YARG.Settings.Customization.CustomContentManager.EnginePresets.CustomPresets);
+                 int at = choices.FindIndex(e => e.Id == Profile.EnginePreset);
+                 Profile.EnginePreset = choices[(at + 1) % choices.Count].Id;
+                 After(() => Reopen(engineRow));
+@@ -576,7 +585,27 @@ namespace YARG.Menu.ProfileList
+                 ShowSettings(0);
+                 return UniTask.CompletedTask;
+             }));
+-            dialog.AddListButton("More Settings and Button Bindings", () => After(() =>
++            int renameRow = rows + 1;
++            dialog.AddListButton("Rename", () => After(() =>
++            {
++                ProfileControllerMenus.ShowRename(Profile, () =>
++                {
++                    UpdateDisplay(Profile);
++                    Reopen(renameRow);
++                });
++                return UniTask.CompletedTask;
++            }));
++            if (!Profile.IsBot)
++            {
++                int buttonsRow = rows + 2;
++                dialog.AddListButton("Buttons (what each button does)", () => After(() =>
++                {
++                    ProfileControllerMenus.ShowButtons(PlayerContainer.GetPlayerFromProfile(Profile),
++                        () => Reopen(buttonsRow));
++                    return UniTask.CompletedTask;
++                }));
++            }
++            dialog.AddListButton("Touch Screen Settings (press points, sliders)", () => After(() =>
+             {
+                 _profileSidebar.UpdateSidebar(Profile, this);
+                 _profileSidebar.EditProfile();
+diff --git a/Assets/Script/Menu/ScoreScreen/ScoreCards/ScoreCard.cs b/Assets/Script/Menu/ScoreScreen/ScoreCards/ScoreCard.cs
+index e44597f..174ddb3 100644
+--- a/Assets/Script/Menu/ScoreScreen/ScoreCards/ScoreCard.cs
++++ b/Assets/Script/Menu/ScoreScreen/ScoreCards/ScoreCard.cs
+@@ -222,6 +222,10 @@ namespace YARG.Menu.ScoreScreen
+                 _enginePresetTag.SetValues(Localize.Key("Settings.PresetSetting.EnginePreset.DefaultEngines.CasualEngine"),
+                     ColoredPillElement.ColoredPillPreset.CasualEngine);
+             }
++            else if (enginePresetId == EnginePreset.Relaxed.Id)
++            {
++                _enginePresetTag.SetValues("Relaxed Engine", ColoredPillElement.ColoredPillPreset.CasualEngine);
++            }
+             else if (enginePresetId == EnginePreset.Precision.Id)
+             {
+                 _enginePresetTag.SetValues(Localize.Key("Settings.PresetSetting.EnginePreset.DefaultEngines.PrecisionEngine"),
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 9a656ce..08aec3f 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -81,6 +81,9 @@ namespace YARG.Settings
+ 
+             // Profiles (ids) that "No Strumming On Gamepads" has switched to tap notes
+             public List<string> NoStrumProfiles = new();
++
++            // Profiles (ids) that "Forgiving Timing On Guitars" has given the Relaxed engine
++            public List<string> RelaxedGuitarProfiles = new();
+             public bool ShowEngineInconsistencyDialog = true;
+             public bool ShowExperimentalWarningDialog = true;
+ 
+@@ -196,6 +199,18 @@ namespace YARG.Settings
+             // Gamepad guitar players hit notes by pressing the fret, without strumming
+             public ToggleSetting GamepadNoStrum { get; } = new(true, YARG.Input.ControllerLayout.OnNoStrumChanged);
+ 
++            // Guitar controllers (strum bar and frets) get the Relaxed engine: wide timing windows
++            public ToggleSetting ForgivingGuitars { get; } = new(true, YARG.Input.ControllerLayout.OnForgivingGuitarsChanged);
++
++            // A strum bar that springs back past the middle strums twice; the second one is left out
++            public DropdownSetting<YARG.Input.StrumBounceFilter> StrumBounceFilter { get; }
++                = new(YARG.Input.StrumBounceFilter.Light)
++                {
++                    YARG.Input.StrumBounceFilter.Off,
++                    YARG.Input.StrumBounceFilter.Light,
++                    YARG.Input.StrumBounceFilter.Strong
++                };
++
+             // The on-screen fret / strum buttons during a song (Android)
+             public DropdownSetting<YARG.Input.Touch.TouchControlsMode> TouchControls { get; }
+                 = new(YARG.Input.Touch.TouchControlsMode.Auto)
+@@ -391,7 +406,8 @@ namespace YARG.Settings
+ 
+             // Plays the player's notes on a generated guitar or bass, in tune with the song,
+             // for songs that have no separate guitar / bass audio of their own
+-            public DropdownSetting<GuitarVoiceMode> GuitarVoice { get; } = new(GuitarVoiceMode.Off)
++            // (Picking a sound plays a short riff with it: GuitarVoicePreview)
++            public DropdownSetting<GuitarVoiceMode> GuitarVoice { get; } = new(GuitarVoiceMode.Off, GuitarVoicePreview.OnSettingChanged)
+             {
+                 GuitarVoiceMode.Off,
+                 GuitarVoiceMode.Clean,
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 733cb25..5380216 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -77,6 +77,8 @@ namespace YARG.Settings
+                 nameof(Settings.ControllerLayout),
+                 nameof(Settings.GamepadGuitarLayout),
+                 nameof(Settings.GamepadNoStrum),
++                nameof(Settings.ForgivingGuitars),
++                nameof(Settings.StrumBounceFilter),
+                 nameof(Settings.ShowControllerButtonNames),
+ #if UNITY_ANDROID
+                 nameof(Settings.TouchControls),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index d387755..24c56dc 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1331,7 +1331,7 @@
+             },
+             "GuitarVoice": {
+                 "Name": "Guitar Sound On Notes",
+-                "Description": "For songs with no separate guitar or bass audio: plays your notes on an electric guitar (or bass), in tune and in key with the song. The notes are recordings of a real guitar and bass, played through a modelled amplifier and speaker. It sounds as the notes go by, drops out when you miss, and bends with the whammy bar. Uses the Guitar and Bass volume sliders. Adds a few seconds to loading.",
++                "Description": "Picking a sound here plays a short sample of it. For songs with no separate guitar or bass audio: plays your notes on an electric guitar (or bass), in tune and in key with the song. The notes are recordings of a real guitar and bass, played through a modelled amplifier and speaker. It sounds as the notes go by, drops out when you miss, and bends with the whammy bar. Uses the Guitar and Bass volume sliders. Adds a few seconds to loading.",
+                 "Dropdown": {
+                     "Off": "Off",
+                     "Clean": "Clean",
+@@ -1748,6 +1748,19 @@
+                 "Name": "No Strumming On Gamepads",
+                 "Description": "On: when you play guitar or bass on a gamepad, pressing the fret button plays the note, with no strumming. Hold the buttons of a chord together; press again for a repeated note. It works by giving the profile the \"All Taps\" modifier and the Casual engine preset, which you can see and change on the screen before a song and in the profile. Off: notes need a strum (D-pad up or down) like on a guitar controller. Takes effect the next time you choose a song."
+             },
++            "ForgivingGuitars": {
++                "Name": "Forgiving Timing On Guitars",
++                "Description": "On: a profile that plays on a guitar controller (strum bar and frets) uses the Relaxed engine. A note counts when you strum up to a tenth of a second early or late (normally 70 ms), you get more time between the strum and the fret, and touching a fret early costs nothing. Each profile is switched once; you can still pick another engine for it in Profiles. Off: guitar profiles this switched go back to the Default engine."
++            },
++            "StrumBounceFilter": {
++                "Name": "Strum Bar Bounce Filter",
++                "Description": "A strum bar springs back when you let go, and can swing past the middle and strum a second time. The game counts that as a wrong strum and breaks your streak. This leaves out a second strum that comes right after the first: Light within 20 thousandths of a second (10 after letting go), Strong within 35 (20 after letting go). Fast up-and-down strumming is slower than that. Only for guitar controllers.",
++                "Dropdown": {
++                    "Off": "Off",
++                    "Light": "Light",
++                    "Strong": "Strong"
++                }
++            },
+             "VenueChoice": {
+                 "Name": "Venue",
+                 "Description": "Where songs are played. Each venue is a stage drawn in the spirit of a place that matters to Hip Hop and R&B history, from Harlem, the Bronx and Atlanta to Detroit, Los Angeles, London and Tokyo. Pick one, or let the game choose at random (any, street and club only, or high class only). To use your own picture or video for a venue, put it in the venue's folder in Internal storage/YARG/venues. A song that comes with its own background still uses that."

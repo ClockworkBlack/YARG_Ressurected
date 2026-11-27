@@ -329,7 +329,7 @@ namespace YARG.Editor.Android
             // restarted). A non-resizeable activity is letterboxed instead, or Android offers to
             // restart it. Either landscape side (userLandscape follows the rotation lock); no
             // aspect-ratio cap, so the long cover screen is filled too.
-            xml = Regex.Replace(xml, @"(<activity\b[^>]*android:name=""com\.unity3d\.player\.UnityPlayer[^""]*""[^>]*>)", match =>
+            xml = Regex.Replace(xml, @"(<activity\b[^>]*android:name=""(?:com\.unity3d\.player\.UnityPlayer[^""]*|in\.yarg\.resurrected\.YargActivity)""[^>]*>)", match =>
             {
                 string tag = match.Value;
                 tag = SetAttribute(tag, "android:resizeableActivity", "true");

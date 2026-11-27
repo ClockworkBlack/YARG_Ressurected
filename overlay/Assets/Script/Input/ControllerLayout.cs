@@ -5,6 +5,14 @@ using YARG.Settings;
 
 namespace YARG.Input
 {
+    /// <summary>How much of a strum bar's spring-back is left out (Settings > General).</summary>
+    public enum StrumBounceFilter
+    {
+        Off,
+        Light,
+        Strong,
+    }
+
     /// <summary>
     /// Which controller the menus are set up for. The PlayStation (PS5 DualSense) layout is the base:
     /// Cross confirms, Circle goes back, Options pauses. The others move confirm / back to where those
@@ -304,6 +312,115 @@ namespace YARG.Input
         }
 
         /// <summary>
+        /// True when this player plays five-fret on a guitar controller: a device that is not the
+        /// keyboard, the touch screen, a phone remote or an ordinary gamepad. (On Android guitars
+        /// show up as gamepads, so "not an ordinary gamepad" is how they are told apart.)
+        /// </summary>
+        public static bool PlaysOnGuitarController(YARG.Player.YargPlayer player)
+        {
+            if (player?.Bindings == null || player.Profile == null ||
+                player.Profile.GameMode != YARG.Core.GameMode.FiveFretGuitar)
+            {
+                return false;
+            }
+
+            bool guitar = false;
+            foreach (var device in player.Bindings.InputDevices)
+            {
+                if (device is Keyboard or Pointer or Sensor)
+                {
+                    continue;
+                }
+
+                if (device is Gamepad gamepad)
+                {
+                    if (YARG.Remote.RemotePlayManager.IsRemoteDevice(gamepad) ||
+                        IsStandardGamepad(gamepad) || _plainGamepads.Contains(gamepad.deviceId))
+                    {
+                        // Somebody holding a gamepad as well is not on a guitar
+                        return false;
+                    }
+                }
+
+                guitar = true;
+            }
+
+            return guitar;
+        }
+
+        /// <summary>
+        /// "Forgiving Timing On Guitars": a profile that plays on a guitar controller, and is still
+        /// on the Default engine, gets the Relaxed one (wide timing windows, forgiving strums).
+        /// Like <see cref="EnsureNoStrum"/> it is an ordinary per-profile option, shown and changed
+        /// in the menus, and each profile is only switched once.
+        /// </summary>
+        public static void EnsureForgivingGuitar(YARG.Player.YargPlayer player)
+        {
+            var settings = SettingsManager.Settings;
+            if (settings == null || !settings.ForgivingGuitars.Value || player == null)
+            {
+                return;
+            }
+
+            var profile = player.Profile;
+            if (profile == null || profile.IsBot || player.IsReplay || !PlaysOnGuitarController(player))
+            {
+                return;
+            }
+
+            string id = profile.Id.ToString();
+            if (settings.RelaxedGuitarProfiles.Contains(id))
+            {
+                return;
+            }
+
+            if (profile.EnginePreset == YARG.Core.Game.EnginePreset.Default.Id)
+            {
+                profile.EnginePreset = YARG.Core.Game.EnginePreset.Relaxed.Id;
+                player.RefreshPresets();
+            }
+
+            settings.RelaxedGuitarProfiles.Add(id);
+            SettingsManager.SaveSettings();
+        }
+
+        private static bool? _appliedForgiving;
+
+        /// <summary>Turning the setting off puts the profiles it switched back on the Default engine.</summary>
+        public static void OnForgivingGuitarsChanged(bool enabled)
+        {
+            bool first = _appliedForgiving == null;
+            bool changed = _appliedForgiving != enabled;
+            _appliedForgiving = enabled;
+            if (first || !changed || enabled)
+            {
+                return;
+            }
+
+            var settings = SettingsManager.Settings;
+            if (settings == null)
+            {
+                return;
+            }
+
+            foreach (var profile in YARG.Player.PlayerContainer.Profiles)
+            {
+                if (!settings.RelaxedGuitarProfiles.Contains(profile.Id.ToString()))
+                {
+                    continue;
+                }
+
+                if (profile.EnginePreset == YARG.Core.Game.EnginePreset.Relaxed.Id)
+                {
+                    profile.EnginePreset = YARG.Core.Game.EnginePreset.Default.Id;
+                    YARG.Player.PlayerContainer.GetPlayerFromProfile(profile)?.RefreshPresets();
+                }
+            }
+
+            settings.RelaxedGuitarProfiles.Clear();
+        }
+
+        /// <summary>
         /// "No Strumming On Gamepads": makes every note of a gamepad guitar player a tap note, so pressing
         /// the fret button plays it, and uses the Casual engine preset, which doesn't punish a press that
         /// comes a little early. Both are ordinary per-profile options (the All Taps modifier and the
@@ -312,6 +429,9 @@ namespace YARG.Input
         /// </summary>
         public static void EnsureNoStrum(YARG.Player.YargPlayer player)
         {
+            // The other half of the same question (called wherever this is): a guitar controller
+            EnsureForgivingGuitar(player);
+
             var settings = SettingsManager.Settings;
             if (settings == null || !settings.GamepadNoStrum.Value || player == null)
             {

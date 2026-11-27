@@ -11,6 +11,7 @@
 //     has a real speaker's shape.
 
 using System;
+using System.Collections.Generic;
 
 namespace YARG.Audio.GuitarVoice
 {
@@ -57,6 +58,104 @@ namespace YARG.Audio.GuitarVoice
 
             Level(stereo, targetRms);
             return stereo;
+        }
+
+        /// <summary>
+        /// Makes the rendered guitar rise and fall with the song. A band plays quietly in a quiet
+        /// intro and digs in for the chorus; a guitar at one level all the way through sits on
+        /// top of the record instead of in it (far too loud over the quiet parts, the first thing
+        /// that makes it sound stuck on). The guitar moves a little over half as far as the song
+        /// does, never more than 10 dB down or 3 dB up, and only as fast as a player would.
+        /// </summary>
+        /// <param name="stereo">The rendered guitar (left and right alternating), changed in place.</param>
+        /// <param name="song">The song, mono, starting at the same moment.</param>
+        public static void FollowSong(float[] stereo, float[] song, int songRate)
+        {
+            const double HOP_SECONDS = 0.25;
+            const double FOLLOW = 0.6, MAX_DOWN_DB = -10, MAX_UP_DB = 3;
+            int hop = (int) (songRate * HOP_SECONDS);
+            int frames = hop > 0 ? song.Length / hop : 0;
+            if (frames < 8 || stereo.Length < 2)
+            {
+                return;
+            }
+
+            // The song's level, a second at a time (four hops around each point)
+            var power = new double[frames];
+            for (int f = 0; f < frames; f++)
+            {
+                double p = 0;
+                int from = f * hop;
+                for (int i = 0; i < hop; i++)
+                {
+                    double v = song[from + i];
+                    p += v * v;
+                }
+                power[f] = p / hop;
+            }
+
+            var level = new double[frames];
+            double loudest = double.NegativeInfinity;
+            for (int f = 0; f < frames; f++)
+            {
+                double p = 0;
+                int count = 0;
+                for (int k = Math.Max(0, f - 2); k <= Math.Min(frames - 1, f + 1); k++)
+                {
+                    p += power[k];
+                    count++;
+                }
+                level[f] = 10 * Math.Log10(p / count + 1e-12);
+                loudest = Math.Max(loudest, level[f]);
+            }
+
+            // Its usual level: the middle one of the moments it is really playing
+            var playing = new List<double>(frames);
+            foreach (double l in level)
+            {
+                if (l > loudest - 30)
+                {
+                    playing.Add(l);
+                }
+            }
+            if (playing.Count < 4)
+            {
+                return;
+            }
+            playing.Sort();
+            double usual = playing[playing.Count / 2];
+
+            var gain = new double[frames];
+            for (int f = 0; f < frames; f++)
+            {
+                gain[f] = Math.Max(MAX_DOWN_DB, Math.Min(MAX_UP_DB, FOLLOW * (level[f] - usual)));
+            }
+
+            // Smoothed forwards and backwards (about 0.6 s), so it swells and never jumps
+            const double KEEP = 0.66;
+            for (int f = 1; f < frames; f++)
+            {
+                gain[f] = KEEP * gain[f - 1] + (1 - KEEP) * gain[f];
+            }
+            for (int f = frames - 2; f >= 0; f--)
+            {
+                gain[f] = KEEP * gain[f + 1] + (1 - KEEP) * gain[f];
+            }
+
+            int n = stereo.Length / 2;
+            double perSample = (double) songRate / SAMPLE_RATE / hop;
+            for (int i = 0; i < n; i++)
+            {
+                // Each gain belongs to the middle of its hop
+                double at = i * perSample - 0.5;
+                int f0 = (int) Math.Floor(at);
+                double t = at - f0;
+                double g0 = gain[Math.Max(0, Math.Min(frames - 1, f0))];
+                double g1 = gain[Math.Max(0, Math.Min(frames - 1, f0 + 1))];
+                float g = (float) Math.Pow(10, (g0 + (g1 - g0) * t) / 20);
+                stereo[2 * i] *= g;
+                stereo[2 * i + 1] *= g;
+            }
         }
 
         /// <summary>

@@ -136,12 +136,45 @@ before a song. The note style is per profile: **Profiles > (profile) > Theme**, 
 *Rectangular* is the Rock Band look and *Circular* the Guitar Hero look.
 
 **Touch buttons.** The big colored squares and strum bar are the on-screen controls for playing
-on the phone's screen. They now only appear when the guitar player has no controller. Change it
-in **Settings > General > Touch Buttons** (Automatic / Always show / Never show).
+on the phone's screen. They only appear when nobody playing has a controller: with several
+players, one guitar, gamepad or phone remote among them keeps them off the screen (they used to
+be judged by the first guitar player alone, and could come up over a multiplayer song). When they
+are shown they play for the guitar player without a controller. Change it in **Settings >
+General > Touch Buttons** (Automatic / Always show / Never show).
 
 Vocals: Cross / A hits percussion notes, Create / View is Star Power. In the pause menu the menu buttons above apply.
 Any button can be remapped in the profile's binding menu. For a guitar controller, pick
 **CRKD Guitar** or **Other guitar** instead of Gamepad.
+
+### Guitar controllers (CRKD Gibson Les Paul and others)
+
+A guitar controller is harder on the player than a gamepad: every note has to be strummed in
+time, where a gamepad (with No Strumming) only needs the button. Three things make it fair:
+
+- **Every strum reaches the game.** A guitar's strum bar is its D-pad, and Android does not
+  treat a D-pad as buttons: its movements are saved up and handed over once per screen frame,
+  as one event holding the newest position, with the earlier ones tucked inside. A quick strum
+  (down and back to the middle within one frame) arrived as "in the middle": no strum. Fret
+  buttons are never saved up, which is why a gamepad felt fine. The game now asks Android to
+  deliver controller movements as they happen (Android 11 and later) and, where one still
+  arrives with earlier positions inside, passes each of them on with its own time. The game's
+  log says after every song how many there were ("Controller input this song: ...").
+- **Forgiving timing** (**Settings > General > Forgiving Timing On Guitars**, on by default). A
+  profile that plays on a guitar controller gets the **Relaxed** engine: a note counts when you
+  strum up to a tenth of a second early or late (the Default engine: 70 ms), you have 80 ms
+  between the strum and the fret instead of 50, and touching a fret early costs nothing. Each
+  profile is switched once and shows "Relaxed" as its engine; pick another in Profiles if you
+  want it stricter. Turning the setting off puts those profiles back on Default.
+- **Strum bar bounce** (**Settings > General > Strum Bar Bounce Filter**: Off / Light / Strong,
+  Light by default). Let go of a strum bar and it springs back; if it swings past the middle it
+  strums a second time, which the game counts as a wrong strum (streak gone, guitar cut out).
+  A second strum within 20 ms of the first, or within 10 ms of letting go in the other
+  direction, is left out (Strong: 35 and 20 ms). Fast up-and-down strumming is slower than
+  that, and is checked to pass untouched at 20 strokes a second.
+
+Not measured on a real guitar here: these come from how Android and the game handle input, and
+from tests of the code. If strums still go missing, the log line above says whether Android was
+saving them up.
 
 ### Finding songs, rap mode, explanations (build 42)
 
@@ -167,6 +200,14 @@ Any button can be remapped in the profile's binding menu. For a guitar controlle
 - **Profiles screen on a controller**: up/down moves through the profiles, **Cross** opens a list
   for the lit-up profile (Connect, Add Device, Remove Device, note speed, lefty flip, move, more
   settings, Disconnect), **Triangle** adds a profile.
+- **Everything in the profile menus with a controller or a guitar** (strum to move, green to
+  pick, red to go back): **Rename** puts the name together a letter at a time from a list;
+  **Buttons** shows what each button does while playing and in the menus, and changes one by
+  picking it and pressing the button that should do it (do nothing for 8 seconds to leave it);
+  the **Engine** row now goes through your own engine presets as well as the built-in ones;
+  **Triangle / yellow** offers a new player profile or a new bot. The touch screen's own
+  settings page (sliders such as press points) can be left with **red** instead of trapping a
+  controller there.
 - **Add a controller, a mic or another player after picking a song**: the screen where you choose
   instrument and difficulty has **Add Controller or Mic** and **Add Another Player**.
 - **R2 / L2** skip to the next / previous menu song wherever the music player shows (main menu,
@@ -571,6 +612,12 @@ drops out when you miss and comes back on the next hit, bends with the whammy ba
 gets the Star Power reverb, follows the Guitar / Bass volume sliders, and works in practice mode
 at any speed. A wrong strum still makes the game's own "clunk".
 
+- **Hear a sound before you choose it**: picking Clean, Rock or Heavy in the setting plays a
+  short riff with it (single notes, a power chord and a held note).
+- **It plays with the song's dynamics.** The guitar follows the song's loudness, a little over
+  half as far as the song moves (never more than 10 dB down or 3 dB up, and smoothly): quiet in
+  a quiet intro, digging in for the chorus. At one level all the way through it sat on top of
+  the record instead of in it.
 - Only for five-fret guitar, bass and rhythm, and only when the song has no separate audio for
   that instrument. Songs with a real guitar track are left alone.
 - With several guitarists on one instrument, the hardest difficulty in play is the one you hear.

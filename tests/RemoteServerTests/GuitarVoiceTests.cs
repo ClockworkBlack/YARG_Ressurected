@@ -899,6 +899,59 @@ namespace RemoteServerTests
                 check(Peak(nothing, 0, nothing.Length) == 0f, "no notes, no sound");
             }
 
+            // ---- The guitar rises and falls with the song
+            {
+                const int SONG_RATE = SongHarmony.SAMPLE_RATE;
+                // A song that is quiet for its first third (15.6 dB down), then at full level
+                var quietLoud = new float[SONG_RATE * 60];
+                var steady = new float[SONG_RATE * 60];
+                for (int i = 0; i < quietLoud.Length; i++)
+                {
+                    float noise = (float) (Rand() * 2 - 1);
+                    quietLoud[i] = noise * (i < SONG_RATE * 20 ? 0.05f : 0.3f);
+                    steady[i] = noise * 0.3f;
+                }
+
+                float[] Tone()
+                {
+                    var y = new float[SR * 60 * 2];
+                    for (int i = 0; i < y.Length / 2; i++)
+                    {
+                        y[2 * i] = y[2 * i + 1] = (float) (0.1 * Math.Sin(2 * Math.PI * 220 * i / SR));
+                    }
+                    return y;
+                }
+
+                var followed = Tone();
+                GuitarVoiceSynth.FollowSong(followed, quietLoud, SONG_RATE);
+                double quietDb = 20 * Math.Log10(Rms(followed, SR * 2 * 5, SR * 2 * 15));
+                double loudDb = 20 * Math.Log10(Rms(followed, SR * 2 * 30, SR * 2 * 55));
+                double plainDb = 20 * Math.Log10(Rms(Tone(), SR * 2 * 30, SR * 2 * 55));
+                check(loudDb - quietDb > 7.5 && loudDb - quietDb < 10.5,
+                    $"guitar is quieter where the song is quiet ({loudDb - quietDb:0.0} dB for a song 15.6 dB quieter)");
+                check(Math.Abs(loudDb - plainDb) < 0.7, $"guitar keeps its level where the song is at its usual level ({loudDb - plainDb:+0.0;-0.0} dB)");
+
+                // The change from quiet to loud is a swell, not a step: under 1 dB in any 50 ms
+                double biggestStep = 0;
+                int block = SR / 20;
+                double before = 0;
+                for (int b = SR * 15 / block; b < SR * 26 / block; b++)
+                {
+                    double now = 20 * Math.Log10(Rms(followed, b * block * 2, (b + 1) * block * 2) + 1e-9);
+                    if (before != 0)
+                    {
+                        biggestStep = Math.Max(biggestStep, Math.Abs(now - before));
+                    }
+                    before = now;
+                }
+                check(biggestStep < 1.0, $"the level moves smoothly ({biggestStep:0.00} dB at most in 50 ms)");
+
+                var same = Tone();
+                GuitarVoiceSynth.FollowSong(same, steady, SONG_RATE);
+                double sameDb = 20 * Math.Log10(Rms(same, SR * 2 * 5, SR * 2 * 55));
+                check(Math.Abs(sameDb - plainDb) < 0.5, $"a song at one level leaves the guitar alone ({Math.Abs(sameDb - plainDb):0.00} dB)");
+            }
+
             // ---- WAV file
             {
                 var wav = GuitarVoiceSynth.ToWav(new[] { 0f, 1f, -1f, 0.5f }, 44100, 2);

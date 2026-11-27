@@ -1,0 +1,62 @@
+diff --git a/YARG.Core/Game/Presets/EnginePreset.Defaults.cs b/YARG.Core/Game/Presets/EnginePreset.Defaults.cs
+index 43bb24d..ea9deeb 100644
+--- a/YARG.Core/Game/Presets/EnginePreset.Defaults.cs
++++ b/YARG.Core/Game/Presets/EnginePreset.Defaults.cs
+@@ -42,6 +42,49 @@ namespace YARG.Core.Game
+             }
+         };
+ 
++        // For guitar controllers (strum bar and frets), where every note has to be strummed in time:
++        // the same forgiving rules as Casual, a wider hit window (a tenth of a second either side
++        // of the note, as in Rock Band, instead of 70 ms) and more time between the strum and
++        // the fret. A strum that comes a little early or late still plays the note.
++        public static EnginePreset Relaxed = new("Relaxed", true)
++        {
++            FiveFretGuitar =
++            {
++                AntiGhosting = false,
++                InfiniteFrontEnd = true,
++                HopoLeniency = 0.11,
++                StrumLeniency = 0.08,
++                StrumLeniencySmall = 0.04,
++                HitWindow =
++                {
++                    MaxWindow = 0.20,
++                    MinWindow = 0.20,
++                    LaneAutohitWindow = 0.200,
++                    LaneProximityProtectionWindow = 0.100
++                }
++            },
++            Drums =
++            {
++                HitWindow =
++                {
++                    LaneAutohitWindow = 0.200,
++                    LaneProximityProtectionWindow = 0.100
++                }
++            },
++            ProKeys =
++            {
++                HitWindow =
++                {
++                    LaneAutohitWindow = 0.200,
++                    LaneProximityProtectionWindow = 0.100
++                }
++            },
++            Vocals =
++            {
++                PerfectPitchPercent = 0.85f
++            }
++        };
++
+         public static EnginePreset Precision = new("Precision", true)
+         {
+             FiveFretGuitar =
+@@ -96,6 +139,7 @@ namespace YARG.Core.Game
+         {
+             Default,
+             Casual,
++            Relaxed,
+             Precision,
+             SoloTaps
+         };

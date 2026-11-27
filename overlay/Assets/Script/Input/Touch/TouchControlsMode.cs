@@ -29,20 +29,49 @@ namespace YARG.Input.Touch
                     return false;
             }
 
-            // Auto: the buttons play for the first five-fret player. Show them only if that player
-            // has nothing else to play with.
+            // Auto: only when the screen is the controller, that is when nobody playing has a
+            // controller of their own. With several players, one controller (a guitar, a gamepad,
+            // a phone remote) among them is enough to keep the buttons off the screen: they used
+            // to be judged by the first guitar player alone, and came up over a multiplayer song
+            // when that player's profile had no controller in it.
+            return !AnyoneHasController() && TouchPlayer() != null;
+        }
+
+        /// <summary>
+        /// The player the touch buttons play for: the first five-fret player without a controller
+        /// (or, when they all have one and the buttons are forced on, the first five-fret player).
+        /// </summary>
+        public static YargPlayer TouchPlayer()
+        {
+            YargPlayer first = null;
             foreach (var player in PlayerContainer.Players)
             {
-                if (player == null || player.Profile.IsBot || player.SittingOut || player.IsReplay)
-                    continue;
-                if (player.Profile.GameMode != GameMode.FiveFretGuitar)
+                if (!IsPlaying(player) || player.Profile.GameMode != GameMode.FiveFretGuitar)
                     continue;
 
-                return !HasController(player);
+                if (!HasController(player))
+                    return player;
+
+                first ??= player;
             }
 
-            // Nobody the buttons could play for
+            return first;
+        }
+
+        private static bool AnyoneHasController()
+        {
+            foreach (var player in PlayerContainer.Players)
+            {
+                if (IsPlaying(player) && HasController(player))
+                    return true;
+            }
+
             return false;
+        }
+
+        private static bool IsPlaying(YargPlayer player)
+        {
+            return player != null && !player.Profile.IsBot && !player.SittingOut && !player.IsReplay;
         }
 
         private static bool HasController(YargPlayer player)

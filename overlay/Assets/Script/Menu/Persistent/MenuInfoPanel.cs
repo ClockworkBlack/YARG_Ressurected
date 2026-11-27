@@ -210,6 +210,7 @@ namespace YARG.Menu.Persistent
         public static string ExplainEngine(string presetName) => presetName switch
         {
             "Casual" => "Casual: bigger timing windows, so notes count even when you're a little early or late, and strumming is more forgiving. Best for gamepads, phones and new players.",
+            "Relaxed" => "Relaxed: for guitar controllers. The widest timing windows (a tenth of a second either side of a note), more time between the strum and the fret, and no penalty for touching a fret early. The most forgiving way to play with a strum bar.",
             "Precision" => "Precision: tight timing windows for players who want every hit to be exact.",
             "Solo Taps" => "Solo Taps: guitar solos can be played without strumming.",
             "Default" => "Default: the normal timing windows.",

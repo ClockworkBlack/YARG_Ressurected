@@ -234,6 +234,8 @@ namespace YARG.Audio.GuitarVoice
                     float target = Math.Min(0.2f, Math.Max(0.04f, harmony.Rms * (bass ? 0.7f : 0.6f)));
                     var rendered = GuitarVoiceSynth.Render(notes, seconds, tone, bass, harmony.Cents, target,
                         Strings(bass));
+                    // ...and rising and falling with it, like one
+                    GuitarVoiceSynth.FollowSong(rendered, audio, SongHarmony.SAMPLE_RATE);
                     var wav = GuitarVoiceSynth.ToWav(rendered, GuitarVoiceSynth.SAMPLE_RATE, 2);
 
                     // The mixer owns the stream from here on
