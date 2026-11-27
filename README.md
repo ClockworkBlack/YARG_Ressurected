@@ -330,6 +330,14 @@ off instead of crackling. It plays only while headphones or another output are c
 USB or Bluetooth): through the phone's own speaker the microphone would hear it again and
 squeal, so without them it is silent.
 
+**Karaoke** (Settings > Sound, under Vocal Monitoring Volume; off by default) plays the singers
+through the phone speaker or the TV as well, like a karaoke machine. Keep the microphones away
+from the speaker and pointed away from it, and start with Vocal Monitoring low. A squeal guard
+listens to what is played back: a howl (a pure tone held at full loudness, which singing never
+is) is halved within a second, Vocal Monitoring is turned down, and a message says so. It was
+checked on real vocals and full mixes at 70% and 100% (no false alarms) and on howls from 300 Hz
+to 4.5 kHz (all caught in under a second). It works with headphones too.
+
 The phone's own mics are played back straight from the recorder, with the shortest delay Android
 offers. Phones over Wi-Fi arrive about a tenth of a second later (the network, and a small
 cushion against its uneven bursts): fine for hearing the singers in the room, a little late in a

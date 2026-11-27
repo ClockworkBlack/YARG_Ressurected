@@ -578,6 +578,11 @@ namespace YARG.Remote
                     _monitor.Call("write", pcm, pcm.Length);
                 }
 
+                if (Time.frameCount % 15 == 0 && _monitor.Call<int>("takeSqueals") > 0)
+                {
+                    YARG.Audio.SingerHelp.OnSquealed();
+                }
+
                 if (!_checkedBluetooth && Time.unscaledTime > _monitorStartedAt + 1.5f)
                 {
                     _checkedBluetooth = true;

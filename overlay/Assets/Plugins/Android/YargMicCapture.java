@@ -339,6 +339,12 @@ public final class YargMicCapture {
         if (m != null) m.setOutput(appContext, deviceId);
     }
 
+    /** How many times the voice played back squealed and was turned down, since last asked. */
+    public int takeMonitorSqueals() {
+        YargVoiceMonitor m = monitor;
+        return m == null ? 0 : m.takeSqueals();
+    }
+
     /** Whether the voice is played back over Bluetooth (which adds a delay of its own). */
     public boolean isMonitorOnBluetooth() {
         YargVoiceMonitor m = monitor;

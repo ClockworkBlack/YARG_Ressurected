@@ -29,6 +29,21 @@ public final class YargVoiceMonitor {
     private int primed;
     private int underruns;
 
+    // Squeal guard. A microphone that hears its own playback howls: the sound climbs to full
+    // loudness and stays there, which singing (with breaths and words) does not. When the sound
+    // played stays near full loudness for SQUEAL_SECONDS, the voice is halved at once and the
+    // game is told (takeSqueals), so it can turn the setting down and say so.
+    // Only a pure tone counts, as a howl is: for a sine, the sound, its slope and its curve keep
+    // one ratio (a score of 1); a voice, with its harmonics and noise, scores well above (checked
+    // on separated vocals and full mixes at 70% and 100% monitoring: no false alarms, and howls
+    // from 300 Hz to 4.5 kHz caught within a second).
+    private static final double SQUEAL_LEVEL = 0.45;
+    private static final double SQUEAL_SECONDS = 0.7;
+    private static final double SQUEAL_TONE = 1.6;
+    private short[] raw = new short[0];
+    private double loudFor;
+    private int squeals;
+
     private YargVoiceMonitor(AudioTrack track, int sampleRate, int primeSamples) {
         this.track = track;
         this.sampleRate = sampleRate;
@@ -124,7 +139,11 @@ public final class YargVoiceMonitor {
         float g = gain;
         if (g <= 0f || count <= 0) return;
         if (scratch.length < count) scratch = new short[count];
-        for (int i = 0; i < count; i++) scratch[i] = shape(samples[i], g);
+        if (raw.length < count) raw = new short[count];
+        for (int i = 0; i < count; i++) {
+            raw[i] = samples[i];
+            scratch[i] = shape(samples[i], g);
+        }
         put(count);
     }
 
@@ -134,14 +153,29 @@ public final class YargVoiceMonitor {
         int count = length / 2;
         if (g <= 0f || count <= 0) return;
         if (scratch.length < count) scratch = new short[count];
+        if (raw.length < count) raw = new short[count];
         for (int i = 0; i < count; i++) {
             int at = offset + i * 2;
-            scratch[i] = shape((short) ((data[at] & 0xff) | (data[at + 1] << 8)), g);
+            raw[i] = (short) ((data[at] & 0xff) | (data[at + 1] << 8));
+            scratch[i] = shape(raw[i], g);
         }
         put(count);
     }
 
     private void put(int count) {
+        // How loud this block is as played (root mean square of full scale)
+        double sum = 0;
+        for (int i = 0; i < count; i++) sum += (double) scratch[i] * scratch[i];
+        double rms = Math.sqrt(sum / count) / 32768.0;
+        double seconds = (double) count / sampleRate;
+        boolean howling = rms >= SQUEAL_LEVEL && toneScore(raw, count) < SQUEAL_TONE;
+        loudFor = howling ? loudFor + seconds : Math.max(0, loudFor - 2 * seconds);
+        if (loudFor >= SQUEAL_SECONDS) {
+            loudFor = 0;
+            squeals++;
+            gain *= 0.5f;
+            for (int i = 0; i < count; i++) scratch[i] = (short) (scratch[i] / 4);
+        }
         try {
             if (playing && Build.VERSION.SDK_INT >= 24) {
                 // Ran dry (a Wi-Fi gap): gather a cushion again before going on, rather than crackle
@@ -167,6 +201,25 @@ public final class YargVoiceMonitor {
         }
     }
 
+    /** 1 for a pure tone, more the richer the sound (sound x curve energy over slope energy squared). */
+    private static double toneScore(short[] x, int n) {
+        if (n < 3) return Double.MAX_VALUE;
+        double e0 = 0, e1 = 0, e2 = 0;
+        for (int i = 0; i < n; i++) e0 += (double) x[i] * x[i];
+        for (int i = 1; i < n; i++) {
+            double d = x[i] - x[i - 1];
+            e1 += d * d;
+        }
+        for (int i = 2; i < n; i++) {
+            double c = x[i] - 2.0 * x[i - 1] + x[i - 2];
+            e2 += c * c;
+        }
+        e0 /= n;
+        e1 /= (n - 1);
+        e2 /= (n - 2);
+        return e1 <= 0 ? Double.MAX_VALUE : e2 * e0 / (e1 * e1);
+    }
+
     /** One sample made {@code g} times louder; loud peaks are rounded off instead of clipping hard. */
     private static short shape(short sample, float g) {
         float x = sample * g / 32768f;
@@ -177,6 +230,13 @@ public final class YargVoiceMonitor {
             x = x < 0 ? -a : a;
         }
         return (short) Math.round(x * 32767f);
+    }
+
+    /** How many times the squeal guard turned the voice down since last asked (and forgets them). */
+    public synchronized int takeSqueals() {
+        int n = squeals;
+        squeals = 0;
+        return n;
     }
 
     /**

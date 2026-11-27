@@ -1,0 +1,52 @@
+diff --git a/Assets/Script/Settings/SettingsManager.Settings.cs b/Assets/Script/Settings/SettingsManager.Settings.cs
+index 9a656ce..f3cc4e0 100644
+--- a/Assets/Script/Settings/SettingsManager.Settings.cs
++++ b/Assets/Script/Settings/SettingsManager.Settings.cs
+@@ -355,6 +355,8 @@ namespace YARG.Settings
+             // Old single startup song (builds 19-20); moved into the Startup Songs playlist on first run
+             public StartupSongSetting MenuMusicStartupSong { get; } = new(string.Empty);
+             public VolumeSetting VocalMonitoring { get; } = new(0.7f, VocalMonitoringCallback);
++            // YARG Resurrected: singers played back through the phone speaker or a TV too
++            public ToggleSetting Karaoke { get; } = new(false, KaraokeCallback);
+ 
+             public IntSetting PlaybackBufferLength { get; }
+                 = new(75, 0, GlobalAudioHandler.MaximumBufferLength,
+@@ -930,6 +932,11 @@ namespace YARG.Settings
+                 SettingsMenu.Instance.RefreshPreview();
+             }
+ 
++            private static void KaraokeCallback(bool on)
++            {
++                YARG.Audio.SingerHelp.OnKaraokeChanged(on);
++            }
++
+             private static void VocalMonitoringCallback(float volume)
+             {
+                 foreach (var player in PlayerContainer.Players)
+diff --git a/Assets/Script/Settings/SettingsManager.cs b/Assets/Script/Settings/SettingsManager.cs
+index 733cb25..55894ec 100644
+--- a/Assets/Script/Settings/SettingsManager.cs
++++ b/Assets/Script/Settings/SettingsManager.cs
+@@ -141,6 +141,7 @@ namespace YARG.Settings
+                 nameof(Settings.MenuMusicShuffle),
+                 nameof(Settings.MenuMusicPlayStartupSongs),
+                 new FieldMetadata(nameof(Settings.VocalMonitoring)),
++                nameof(Settings.Karaoke),
+                 new FieldMetadata(nameof(Settings.MetronomeVolume), isAdvanced: true),
+ 
+                 new HeaderMetadata("Customization", isAdvanced: true),
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index d387755..6887d8e 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -1575,6 +1575,10 @@
+                 "Name": "Vocal Monitoring Volume",
+                 "PauseName": "Monitoring",
+                 "Description": "Adjusts the feedback you hear when singing."
++            },
++            "Karaoke": {
++                "Name": "Karaoke (Singers Out Loud)",
++                "Description": "Plays the singers' voices through the phone speaker or the TV as well, like a karaoke machine. Off, they are only played back through headphones, USB or Bluetooth, because a microphone near a speaker hears itself again and squeals. With it on, keep the microphones away from the speaker and pointed away from it, and start with Vocal Monitoring Volume low. If the sound starts to howl, the game turns the voices down by itself and says so."
+             },
+ 			"VocalStreakFrequency": {
+                 "Name": "Vocal Streak Frequency",

@@ -422,6 +422,12 @@ namespace YARG.Audio
                     CalculatePitchAndAmplitude(_chunk);
                 }
 
+                // A howl the player caught and turned down: the setting follows, and the singers are told
+                if (_monitorGain > 0f && Time.frameCount % 15 == 0 && _capture.Call<int>("takeMonitorSqueals") > 0)
+                {
+                    SingerHelp.OnSquealed();
+                }
+
                 // The voice comes out where the game's sound does (Settings > Sound Output)
                 int output = AndroidOutput.DeviceId;
                 if (output != _monitorOutput)
