@@ -856,6 +856,16 @@ namespace YARG.Testing
             }
             Note($"Relaxed engine: notes count {relaxed.FiveFretGuitar.HitWindow.MaxWindow * 500:0} ms either side, strum to fret {relaxed.FiveFretGuitar.StrumLeniency * 1000:0} ms");
 
+            // Co-op guitar on every song with guitar (the test song has no co-op part of its own)
+            _step = "co-op guitar on a song without a co-op part";
+            var anySong = YARG.Song.SongContainer.Songs.FirstOrDefault(x => x.HasInstrument(Instrument.FiveFretGuitar));
+            if (anySong != null && !anySong.HasInstrument(Instrument.FiveFretCoopGuitar))
+            {
+                Finish(false, "a song with guitar does not offer co-op guitar");
+                return false;
+            }
+            Note("Co-op guitar is offered on a song with only a guitar part");
+
             // Real instrument tracks: the file that says which tracks a part plays
             _step = "reading yarg-tracks.txt";
             var parts = GameManager.ParseTrackParts(new[]

@@ -1,3 +1,18 @@
+diff --git a/YARG.Core/Chart/SongChart.cs b/YARG.Core/Chart/SongChart.cs
+index a12381f..ae53a21 100644
+--- a/YARG.Core/Chart/SongChart.cs
++++ b/YARG.Core/Chart/SongChart.cs
+@@ -252,7 +252,9 @@ namespace YARG.Core.Chart
+             return instrument switch
+             {
+                 Instrument.FiveFretGuitar => FiveFretGuitar,
+-                Instrument.FiveFretCoopGuitar => FiveFretCoop,
++                // YARG Resurrected: a song with no co-op guitar part plays its guitar part as co-op
++                // guitar (see SongEntry.CoopGuitarPart)
++                Instrument.FiveFretCoopGuitar => FiveFretCoop.IsEmpty ? FiveFretGuitar : FiveFretCoop,
+                 Instrument.FiveFretRhythm => FiveFretRhythm,
+                 Instrument.FiveFretBass => FiveFretBass,
+                 Instrument.Keys => Keys,
 diff --git a/YARG.Core/Game/Modifier.cs b/YARG.Core/Game/Modifier.cs
 index 72ea39f..d177a2d 100644
 --- a/YARG.Core/Game/Modifier.cs
@@ -27,3 +42,49 @@ index 72ea39f..d177a2d 100644
  
                  GameMode.FourLaneDrums or
                  GameMode.FiveLaneDrums or
+diff --git a/YARG.Core/Song/Entries/SongEntry.cs b/YARG.Core/Song/Entries/SongEntry.cs
+index d538cb5..3c5da69 100644
+--- a/YARG.Core/Song/Entries/SongEntry.cs
++++ b/YARG.Core/Song/Entries/SongEntry.cs
+@@ -217,7 +217,7 @@ namespace YARG.Core.Song
+                     Instrument.FiveFretGuitar => _parts.FiveFretGuitar,
+                     Instrument.FiveFretBass => _parts.FiveFretBass,
+                     Instrument.FiveFretRhythm => _parts.FiveFretRhythm,
+-                    Instrument.FiveFretCoopGuitar => _parts.FiveFretCoopGuitar,
++                    Instrument.FiveFretCoopGuitar => CoopGuitarPart,
+                     Instrument.Keys => _parts.Keys,
+ 
+                     Instrument.SixFretGuitar => _parts.SixFretGuitar,
+@@ -249,6 +249,14 @@ namespace YARG.Core.Song
+             }
+         }
+ 
++        /// <summary>
++        /// YARG Resurrected: every song with a guitar part can be played as co-op guitar. A song
++        /// with no co-op guitar part of its own (most songs; converted songs from before Deep
++        /// Music Mode, or converted without splitting) offers it with the guitar part's notes,
++        /// so a second guitarist always has the choice (see SongChart.GetFiveFretTrack).
++        /// </summary>
++        private PartValues CoopGuitarPart => _parts.FiveFretCoopGuitar.IsActive() ? _parts.FiveFretCoopGuitar : _parts.FiveFretGuitar;
++
+         public bool HasInstrument(Instrument instrument)
+         {
+             return instrument switch
+@@ -256,7 +264,7 @@ namespace YARG.Core.Song
+                 Instrument.FiveFretGuitar => _parts.FiveFretGuitar.IsActive(),
+                 Instrument.FiveFretBass => _parts.FiveFretBass.IsActive(),
+                 Instrument.FiveFretRhythm => _parts.FiveFretRhythm.IsActive(),
+-                Instrument.FiveFretCoopGuitar => _parts.FiveFretCoopGuitar.IsActive(),
++                Instrument.FiveFretCoopGuitar => CoopGuitarPart.IsActive(),
+                 Instrument.Keys => _parts.Keys.IsActive(),
+ 
+                 Instrument.SixFretGuitar => _parts.SixFretGuitar.IsActive(),
+@@ -298,7 +306,7 @@ namespace YARG.Core.Song
+                 Instrument.FiveFretGuitar     => _parts.FiveFretGuitar,
+                 Instrument.FiveFretBass       => _parts.FiveFretBass,
+                 Instrument.FiveFretRhythm     => _parts.FiveFretRhythm,
+-                Instrument.FiveFretCoopGuitar => _parts.FiveFretCoopGuitar,
++                Instrument.FiveFretCoopGuitar => CoopGuitarPart,
+                 Instrument.Keys               => _parts.Keys,
+ 
+                 Instrument.SixFretGuitar     => _parts.SixFretGuitar,

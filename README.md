@@ -603,6 +603,14 @@ instruments for converted songs: picking **Co-op Guitar** or **Rhythm** plays th
 Mode guitar or bass directly. Convert a song again with the latest converter to add the parts
 to songs converted earlier.
 
+## Co-op guitar on every song
+
+*(Branch `real-instrument-tracks`.)* Every song with a guitar part can be played as **co-op
+guitar**, so a second guitarist always has the choice. Converted songs that were split into
+instruments have a co-op part of their own (Deep Music Mode's whole-song guitar). Songs without
+one (converted without splitting, converted before Deep Music Mode, and most other songs) now
+offer co-op guitar anyway, with the guitar part's notes.
+
 ## Real instrument tracks: what you play cuts out when you miss
 
 *(Branch `real-instrument-tracks`.)* Guitar Hero songs have each instrument on its own audio

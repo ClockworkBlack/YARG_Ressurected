@@ -745,7 +745,8 @@ public final class ConvertSong {
         sb.append("# Written by YARG Converter; coop and rhythm are Deep Music Mode's guitar and bass.\n");
         sb.append("guitar=").append(guitar).append('\n');
         sb.append("bass=bass\n");
-        if (r.deepChart != null) sb.append("coop=guitar,vocals,keys\n");
+        // (Without a co-op part of its own the game plays the guitar part as co-op guitar)
+        sb.append("coop=").append(r.deepChart != null ? "guitar,vocals,keys" : guitar).append('\n');
         if (r.deepBassChart != null) sb.append("rhythm=").append(r.drumNotesInBass > 0 ? "bass,drums" : "bass").append('\n');
         return sb.toString();
     }
