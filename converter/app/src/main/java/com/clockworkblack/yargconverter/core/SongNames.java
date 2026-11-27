@@ -18,7 +18,10 @@ public final class SongNames {
     private static final String JUNK = "official|video|audio|lyrics?|lyric video|visuali[sz]er|hd|hq|4k|explicit|clean|dirty|"
             + "remaster(ed)?( \\d{4})?|\\d{4} remaster(ed)?|radio edit|single version|album version|original mix|"
             + "bonus track|deluxe( edition)?|mono|stereo|live|prod\\.? by [^)\\]]*|prod\\.? [^)\\]]*|"
-            + "official (music )?video|official audio|official lyric video|music video|full song|with lyrics";
+            + "official (music )?video|official audio|official lyric video|music video|full song|with lyrics|"
+            // K-pop uploads: "(Color Coded Lyrics Han/Rom/Eng)", "[Eng Sub]", "(MV)", "(Dance Practice)"
+            + "colou?r coded( lyrics)?[^)\\]]*|lyrics? [a-z]{2,4}(/[a-z]{2,4})+|[a-z]{3}(/[a-z]{3})+|eng(lish)? sub(s|titles?)?|"
+            + "m/?v|performance video|dance practice|teaser|special video";
 
     /** A title without the extras: brackets of junk and features, "- Remastered", a track number, a file ending. */
     public static String cleanTitle(String title) {
@@ -33,6 +36,8 @@ public final class SongNames {
         t = t.replaceAll("(?i)\\s*[\\[(]\\s*(" + JUNK + ")(\\s*[-,/|]?\\s*(" + JUNK + "))*\\s*[\\])]", "");
         t = t.replaceAll("(?i)\\s+(feat\\.?|ft\\.?|featuring)\\s+.*$", "");
         t = t.replaceAll("(?i)\\s+-\\s+(" + JUNK + ")(\\s+(" + JUNK + "))*\\s*$", "");
+        // A bracket left open at the end: a file name cut short ("Genie (Color Coded Lyr")
+        t = t.replaceFirst("\\s*[\\[(][^\\])]*$", "");
         return t.replaceAll("\\s+", " ").trim();
     }
 
@@ -91,13 +96,148 @@ public final class SongNames {
      */
     public static String[] fromFileName(String name) {
         String base = name == null ? "" : name.replaceFirst("\\.[A-Za-z0-9]{2,5}$", "");
-        base = base.replace(" \u2013 ", " - ").replace(" \u2014 ", " - ");
+        // A dash between the two, with spaces or underscores round it, of any length
+        base = base.replaceAll("[ _]+[\u2013\u2014-][ _]+", " - ");
         if (!base.contains(" - ")) base = base.replaceFirst("_{3,}", " - ");
         base = base.replace('_', ' ').replaceAll("\\s+", " ").trim();
+        // A TV show's upload: "[Music Bank] KBS WORLD TV 241108"
+        base = base.replaceAll("(?i)\\s*[\\[(](music bank|inkigayo|m ?countdown|show champion|show! music core|music core|the show|"
+                + "simply k-pop|immortal songs|sketchbook|mpd직캠|직캠|fancam|stage mix|교차편집)[^\\])]*[\\])]", "");
+        base = base.replaceAll("(?i)\\s+(kbs|mbc|sbs|mnet|jtbc|arirang|kbs world)( world)?( tv)?( k-?pop)?( \\d{6})?\\s*$", "").trim();
+        String artist, title;
         int dash = base.indexOf(" - ");
-        String artist = dash > 0 ? base.substring(0, dash).trim() : "";
-        String title = dash > 0 ? base.substring(dash + 3).trim() : base;
+        java.util.regex.Matcher quoted = QUOTED.matcher(base);
+        java.util.regex.Matcher kLyrics = K_LYRICS.matcher(base);
+        if (dash > 0) {
+            artist = base.substring(0, dash).trim();
+            title = base.substring(dash + 3).trim();
+            // "Came And Left Me - MINHO 민호": the side with the name in two alphabets is the artist
+            if (hasAlias(title) && !hasAlias(artist)) {
+                String swap = artist;
+                artist = title;
+                title = swap;
+            }
+        } else if (quoted.find() && quoted.start() > 0) {
+            // "Artist 'Title' MV", "Artist 'Title' Lyrics (...) [Color Coded]": the title is what is
+            // in quotes (with a feature in it kept); what follows is the uploader's
+            artist = base.substring(0, quoted.start()).trim();
+            title = quoted.group(1).trim();
+        } else if (kLyrics.find()) {
+            // "MINHO CALL BACK Lyrics (민호 CALL BACK 가사)": the title is the Latin part of the bracket
+            String inside = kLyrics.group(2).replaceAll("[\\p{IsHangul}]+", " ").replaceAll("\\s+", " ").trim();
+            String before = kLyrics.group(1).trim();
+            if (!inside.isEmpty() && before.toLowerCase(Locale.ROOT).endsWith(inside.toLowerCase(Locale.ROOT))
+                    && before.length() > inside.length()) {
+                artist = before.substring(0, before.length() - inside.length()).trim();
+                title = inside;
+            } else {
+                artist = "";
+                title = before;
+            }
+        } else {
+            artist = "";
+            title = base;
+        }
+        artist = withoutAlias(artist);
+        // A K-pop soloist with the group in brackets: "NAYEON (TWICE)", "SEULGI (RED VELVET)"
+        String solo = artist.replaceFirst("^(\\p{Lu}[\\p{Lu}\\d .&-]*?)\\s*\\((\\p{Lu}[\\p{Lu}\\d .&'-]*)( of [^)]*)?\\)$", "$1");
+        if (!solo.isEmpty()) artist = solo;
         return new String[] {artist, dropVideoWords(title)};
+    }
+
+    /** "Title Lyrics (한글 가사)": the way lyric videos of Korean songs are named. */
+    private static final java.util.regex.Pattern K_LYRICS =
+            java.util.regex.Pattern.compile("(?i)^(.*?)\\s+lyrics\\s*[(\\[]([^)\\]]*\uAC00\uC0AC)\\s*[)\\]].*$");
+
+    /** A name followed by the same name in another alphabet: "MINHO 민호", "Girls' Generation (소녀시대)". */
+    private static boolean hasAlias(String s) {
+        return s.matches(".*\\p{IsLatin}.*") && !withoutAlias(s).equals(s.trim());
+    }
+
+    /**
+     * Artist and title from a file's tags, put right where a video site wrote them: the channel
+     * as the artist ("anthonyhamiltonVEVO", "Bad Boy Entertainment", "BigGucci Sosa") and
+     * "Artist - Title" as the title. {artist, title}; tags that look right come back as they are.
+     */
+    public static String[] fromTags(String title, String artist, String fileName) {
+        String t = title == null ? "" : title.trim(), a = artist == null ? "" : artist.trim();
+        // YouTube's own channels for an artist are called "Artist - Topic"
+        a = a.replaceFirst("(?i)\\s*-\\s*topic\\s*$", "").trim();
+        String[] named = fromFileName(fileName);
+        int dash = t.indexOf(" - ");
+        if (dash > 0) {
+            String left = t.substring(0, dash).trim(), right = t.substring(dash + 3).trim();
+            String kl = key(left), ka = key(a);
+            boolean channel = a.isEmpty() || looksLikeChannel(a) || (!named[0].isEmpty() && key(named[0]).equals(kl))
+                    || (kl.length() >= 3 && ka.contains(kl) && !ka.equals(kl));
+            if (channel && !right.isEmpty() && !key(a).equals(key(right))) return new String[] {left, right};
+        }
+        if (looksLikeChannel(a) && !named[0].isEmpty()) return new String[] {named[0], t.isEmpty() ? named[1] : t};
+        return new String[] {a, t};
+    }
+
+    /** A video channel or a label rather than a performer: "...VEVO", "Atlantic Records", "X - Topic". */
+    public static boolean looksLikeChannel(String artist) {
+        return artist != null && artist.trim().matches("(?i).*(vevo|\\brecords?|\\brecordings|\\bentertainment|\\bmusic|\\bofficial|\\btv"
+                + "|\\bchannel|\\bfilms?|\\bmedia|\\bproductions?|\\blabel|\\bstudios?|- topic|\\bworldwide|\\bgroup)\\s*$");
+    }
+
+    /**
+     * A title that names its artist without a dash ("The Rio Da Yung OG On The Radar Freestyle"),
+     * read against artists already known (from the other songs converted with it): {artist, the
+     * rest as the title}, or null when none of them is in it. The longest name found wins.
+     */
+    public static String[] artistInTitle(String title, java.util.Collection<String> known) {
+        if (title == null || known == null) return null;
+        String[] words = title.trim().split("\\s+");
+        String bestArtist = null;
+        int bestFrom = -1, bestTo = -1, bestLength = 0;
+        for (String artist : known) {
+            String k = key(artist);
+            if (k.length() < 4 || k.length() <= bestLength) continue;
+            for (int i = 0; i < words.length; i++) {
+                StringBuilder sb = new StringBuilder();
+                for (int j = i; j < words.length; j++) {
+                    sb.append(key(words[j]));
+                    if (sb.length() > k.length() || !k.startsWith(sb.toString())) break;
+                    if (sb.length() == k.length()) {
+                        bestArtist = artist.trim();
+                        bestFrom = i;
+                        bestTo = j;
+                        bestLength = k.length();
+                        break;
+                    }
+                }
+                if (bestArtist != null && bestLength == k.length()) break;
+            }
+        }
+        if (bestArtist == null) return null;
+        String before = String.join(" ", java.util.Arrays.copyOfRange(words, 0, bestFrom)).trim();
+        String after = String.join(" ", java.util.Arrays.copyOfRange(words, bestTo + 1, words.length)).trim();
+        // "The <artist> ...": a leading article belongs to neither
+        if (before.matches("(?i)(the|a|an)")) before = "";
+        String rest = (before + " " + after).trim().replaceAll("^[-:|,]+\\s*", "").replaceAll("\\s*[-:|,]+$", "");
+        return rest.isEmpty() ? null : new String[] {bestArtist, rest};
+    }
+
+    /** A title in quotes: the opening quote after a space, the closing one before a space or the end. */
+    private static final java.util.regex.Pattern QUOTED =
+            java.util.regex.Pattern.compile("(?<=^|\\s)['\u2018\"\u201c]([^'\u2019\"\u201d]{1,80})['\u2019\"\u201d](?=\\s|$)");
+
+    /**
+     * An artist without the same name in another alphabet beside it: "Girls' Generation (소녀시대)"
+     * and "Girls' Generation 소녀시대" are "Girls' Generation". A name in one alphabet only is kept.
+     */
+    static String withoutAlias(String artist) {
+        String a = artist.trim();
+        if (!a.matches(".*\\p{IsLatin}.*")) return a;
+        String before;
+        do {
+            before = a;
+            a = a.replaceFirst("\\s*[(\\[]\\s*[^\\p{IsLatin})\\]]+[)\\]]\\s*$", "").trim();
+            a = a.replaceFirst("\\s+[\\p{IsHangul}\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}]+$", "").trim();
+        } while (!a.equals(before) && !a.isEmpty());
+        return a.isEmpty() ? artist.trim() : a;
     }
 
     /** "Title Official 4K Video", "Title Lyric Video", "Title MV": a file name that lost its brackets. */

@@ -124,6 +124,15 @@ namespace YARG.Input
         /// <summary>The menu action a face / shoulder / center button does in the current layout.</summary>
         public static MenuAction ToMenuAction(PadButton button) => ToMenuAction(button, Current);
 
+        /// <summary>
+        /// The menu action for a button of this particular device. A phone joined through the remote
+        /// has colored buttons, not a controller's: its OK (green) is sent as the bottom button and its
+        /// Back (red) as the right one, so it keeps those colors whatever the layout. (With the Nintendo
+        /// or Japanese PlayStation layout, a phone not yet in a profile had OK and Back swapped.)
+        /// </summary>
+        public static MenuAction ToMenuActionFor(InputDevice device, PadButton button) =>
+            ToMenuAction(button, YARG.Remote.RemotePlayManager.IsRemoteDevice(device) ? ControllerLayoutType.Xbox : Current);
+
         public static MenuAction ToMenuAction(PadButton button, ControllerLayoutType layout)
         {
             bool confirmOnRight = layout is ControllerLayoutType.Nintendo or ControllerLayoutType.PlayStationJapan;

@@ -51,6 +51,22 @@ namespace YARG.Audio
         /// </summary>
         public static bool PlaysOutLoud { get; private set; }
 
+        /// <summary>
+        /// The Android output device (its id) the game's sound is playing on, or 0 when Android
+        /// chooses. A singer's voice played back follows it, so it comes out of the same place.
+        /// </summary>
+        public static int DeviceId
+        {
+            get
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                return _active ? _streamDevice : 0;
+#else
+                return 0;
+#endif
+            }
+        }
+
         /// <summary>The setting changed (or was loaded).</summary>
         public static void Apply(SoundOutputDevice choice)
         {

@@ -280,24 +280,42 @@
 
   // ---------- Connection ----------
 
+  // Set when this phone was opened somewhere else as well (a second tab, the QR code scanned
+  // again): the host keeps the newest connection, and this page stays off until it's used
+  // again, instead of the two taking the connection from each other every few seconds.
+  var replaced = false;
+
   function connect() {
     clearTimeout(reconnectTimer);
+    replaced = false;
+    if (ws) {
+      // An old connection that hasn't finished closing no longer speaks for this page
+      var old = ws;
+      ws = null;
+      try { old.close(); } catch (e) { }
+    }
+    connected = false;
     setStatus('Connecting…', false);
     var url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+    var sock;
     try {
-      ws = new WebSocket(url);
+      sock = new WebSocket(url);
     } catch (e) {
       scheduleReconnect();
       return;
     }
-    ws.binaryType = 'arraybuffer';
+    ws = sock;
+    sock.binaryType = 'arraybuffer';
 
-    ws.onopen = function () {
-      ws.send('hello\n' + clientId + '\n' + playerName);
+    // Every handler checks it still belongs to the current connection: a late event from an
+    // old one must not touch the new one.
+    sock.onopen = function () {
+      if (ws !== sock) return;
+      sock.send('hello\n' + clientId + '\n' + playerName);
     };
 
-    ws.onmessage = function (ev) {
-      if (typeof ev.data !== 'string') return;
+    sock.onmessage = function (ev) {
+      if (ws !== sock || typeof ev.data !== 'string') return;
       var p = ev.data.split('\n');
       if (p[0] === 'welcome') {
         connected = true;
@@ -311,10 +329,12 @@
         if (p[4]) { playerName = p[4]; }
         buttons = 0;
         sendState();
-        ws.send('role\n' + role + '\n' + difficulty + '\n' + (challenge ? '1' : '0'));
-        if (mic.on) { ws.send('mic\n' + mic.rate); }
+        sock.send('role\n' + role + '\n' + difficulty + '\n' + (challenge ? '1' : '0'));
+        if (mic.on) { sock.send('mic\n' + mic.rate); }
         updateStatus();
         updateMicName();
+      } else if (p[0] === 'replaced') {
+        replaced = true;
       } else if (p[0] === 'pong') {
         onPong(parseFloat(p[1]), parseFloat(p[2]));
         updateStatus();
@@ -332,12 +352,23 @@
       }
     };
 
-    ws.onclose = function () {
+    sock.onclose = function () {
+      if (ws !== sock) return; // an old connection finishing after a new one started
       connected = false;
       ws = null;
+      if (replaced) {
+        setStatus('Playing in another tab · tap here to play here', false);
+        notice('This phone is playing from another tab or window now. Tap the bar at the top to play from here.', 15000);
+        return;
+      }
       scheduleReconnect();
     };
   }
+
+  // After "replaced": tapping the status bar takes the connection back
+  $('status').addEventListener('click', function () {
+    if (joined && !ws) connect();
+  });
 
   function scheduleReconnect() {
     setStatus('Reconnecting…', false);

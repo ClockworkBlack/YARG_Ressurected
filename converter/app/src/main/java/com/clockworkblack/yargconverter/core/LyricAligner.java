@@ -41,6 +41,11 @@ public final class LyricAligner {
         public double[] heard, fit;
         /** The lyrics fit this recording no better than shuffled: another song's (word-by-word alignment only). */
         public boolean wrongLyrics;
+        /**
+         * How much better the words fit the voice in their own order than shuffled (NaN when not
+         * measured): about 0 for another song's words, clearly above for the right ones.
+         */
+        public double margin = Double.NaN;
         /** Lines of the lyrics found not to be sung in this recording and left out (word-by-word alignment only). */
         public int leftOut;
         /** Lines the song's repeats corrected, one note each (word-by-word alignment only); may be null. */

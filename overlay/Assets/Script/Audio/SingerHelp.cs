@@ -101,12 +101,12 @@ namespace YARG.Audio
                 return;
             }
 
-            bool mute = !_headphones || AndroidOutput.PlaysOutLoud;
-            if (!mute && !_wasMuted)
-            {
-                return;
-            }
-
+            // Sent every time, not only when headphones come and go: a microphone added since
+            // starts out silent until told (setting the same level again costs nothing). Silent
+            // while the game plays out loud (phone speaker or TV), where the mic would hear it.
+            // Karaoke (Settings > Sound) plays them out loud as well, at the user's own risk of squeal
+            bool karaoke = SettingsManager.Settings.Karaoke.Value;
+            bool mute = !karaoke && (!_headphones || AndroidOutput.PlaysOutLoud);
             float volume = mute ? 0f : SettingsManager.Settings.VocalMonitoring.Value;
             foreach (var player in PlayerContainer.Players)
             {
@@ -114,6 +114,56 @@ namespace YARG.Audio
             }
 
             _wasMuted = mute;
+        }
+
+        /// <summary>Karaoke was switched (Settings > Sound): say what it does and how to keep it from squealing.</summary>
+        public static void OnKaraokeChanged(bool on)
+        {
+            // (Also called when the settings are loaded at startup: only said when switched on later)
+            if (!on || SettingsManager.Settings == null || Time.unscaledTime < 10f)
+            {
+                return;
+            }
+
+            try
+            {
+                ToastManager.ToastInformation("Karaoke on: the singers are played through the speaker or TV too. Keep the mics " +
+                    "away from the speaker, and start with Vocal Monitoring Volume low. If it howls, the game turns the voices down.");
+            }
+            catch (Exception)
+            {
+                // Settings loading at startup: nothing to show it on yet
+            }
+        }
+
+        private static float _lastSqueal = -100f;
+
+        /// <summary>
+        /// A microphone's playback howled (the speaker heard by the mic): its player has already
+        /// halved it; the setting is turned down too, so it stays down, and the singers are told.
+        /// </summary>
+        public static void OnSquealed()
+        {
+            var settings = SettingsManager.Settings;
+            if (settings == null)
+            {
+                return;
+            }
+
+            // Several mics can report the same howl: one step down for it
+            if (Time.unscaledTime - _lastSqueal < 1.5f)
+            {
+                return;
+            }
+            _lastSqueal = Time.unscaledTime;
+
+            float before = settings.VocalMonitoring.Value;
+            float after = Mathf.Max(0f, before * 0.7f - 0.02f);
+            settings.VocalMonitoring.Value = after;
+            YargLogger.LogFormatInfo("Vocal monitoring howled: turned down from {0} to {1}", before, after);
+            ToastManager.ToastWarning("The microphones were howling (they heard the speaker), so Vocal Monitoring Volume is " +
+                "turned down to " + Mathf.RoundToInt(after * 100f) + "%. Move the mics away from the speaker, or turn the music " +
+                "down, then raise it again in Settings > Sound.");
         }
 
         private static bool HeadphonesConnected()

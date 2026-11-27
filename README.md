@@ -31,6 +31,7 @@ song with the guitar sound generated and the microphone listening (`tests/deskto
 
 `patches-yarg-dev/` keeps an earlier port of YARG's newer `dev` branch, for later.
 `tests/RemoteServerTests` checks the phone remote server on every build (runs before the Unity build).
+`tests/RemotePageTests` runs the phone page in a real browser (touch, a fake microphone) against that server.
 `tests/GameReaderCheck` runs a song written by the converter through YARG's own song scanner and chart loader.
 `tests/VocalsTests` checks singing: pitch detection, microphone timing and scoring, with the game's own engine.
 
@@ -362,9 +363,28 @@ the syllables it would count. **Hear myself** plays the microphone back; use hea
 **No vocals to pick?** Then the song has no vocals part: a message says so when the instrument
 screen opens. Songs from the converter only get one when they are converted with lyrics.
 
-**Hearing yourself.** Your voice is played back to you (**Settings > Sound > Vocal Monitoring
-Volume**) only while headphones are connected, wired, USB or Bluetooth. Through the phone's own
-speaker the microphone would hear it again and squeal, so without headphones it is silent.
+**Hearing yourself.** Every microphone is played back on the output the game's sound is on:
+the phone's own mic, a USB mic, a headset mic, and phones singing over Wi-Fi. **Settings > Sound >
+Vocal Monitoring Volume** (also in the pause menu's quick settings) sets how loud: 0 is off, 70%
+(the default) about one and a half times as recorded, 100% three times, with loud notes rounded
+off instead of crackling. It plays only while headphones or another output are connected (wired,
+USB or Bluetooth): through the phone's own speaker the microphone would hear it again and
+squeal, so without them it is silent.
+
+**Karaoke** (Settings > Sound, under Vocal Monitoring Volume; off by default) plays the singers
+through the phone speaker or the TV as well, like a karaoke machine. Keep the microphones away
+from the speaker and pointed away from it, and start with Vocal Monitoring low. A squeal guard
+listens to what is played back: a howl (a pure tone held at full loudness, which singing never
+is) is halved within a second, Vocal Monitoring is turned down, and a message says so. It was
+checked on real vocals and full mixes at 70% and 100% (no false alarms) and on howls from 300 Hz
+to 4.5 kHz (all caught in under a second). It works with headphones too.
+
+The phone's own mics are played back straight from the recorder, with the shortest delay Android
+offers. Phones over Wi-Fi arrive about a tenth of a second later (the network, and a small
+cushion against its uneven bursts): fine for hearing the singers in the room, a little late in a
+singer's own ear. Bluetooth headphones add a delay of their own, and the game says so once;
+wired or USB headphones keep the voice in time. With a Bluetooth speaker in the room, keep the
+phone mics away from it, or turn the level down, so they do not pick it up again.
 
 **Sing-off**
 
@@ -559,6 +579,9 @@ Notes:
 - Each build makes a new self-signed certificate, so guests see the warning again after an update.
 - Anyone on the same Wi-Fi can open the page, so use it on networks you trust.
 - Wi-Fi adds a little delay. Run YARG's calibration with a phone if timing feels off.
+- A phone that drops off the Wi-Fi joins again by itself as the same player, mid-song too.
+- If a guest has the page open twice (say, the QR code scanned again), the newest tab plays. The other
+  says so at the top; tap there, or go back to that tab, to play from it instead.
 
 ## Deep Music Mode: guitar and bass cover the whole song
 

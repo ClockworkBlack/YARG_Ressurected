@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Stands in for the game in tests/RemotePageTests: the real phone server, answering like RemotePlayManager. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../../overlay/Assets/Script/Remote/RemoteServer.cs" Link="RemoteServer.cs" />
+    <Compile Include="../../../overlay/Assets/Script/Remote/RemoteTiming.cs" Link="RemoteTiming.cs" />
+  </ItemGroup>
+
+</Project>

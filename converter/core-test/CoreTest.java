@@ -69,7 +69,56 @@ public final class CoreTest {
             {"Seduction.mp3", "", "Seduction"},
             {"Artist \u2013 Song Title (Live).flac", "Artist", "Song Title (Live)"},
             {"Music.mp3", "", "Music"},
+            {"Girls'_Generation_소녀시대_'FOREVER_1'_MV.mp3", "Girls' Generation", "FOREVER 1"},
+            {"Girls'_Generation_(소녀시대)_–_Genie_(소원을_말해_봐)_(Color_Coded_Lyr.mp3", "Girls' Generation", "Genie (소원을 말해 봐) (Color Coded Lyr"},
+            {"Don't Stop 'Til You Get Enough.mp3", "", "Don't Stop 'Til You Get Enough"},
+            {"소녀시대 - 소원을 말해봐.mp3", "소녀시대", "소원을 말해봐"},
+            {"MINHO_CALL_BACK_Lyrics_(민호_CALL_BACK_가사).mp3", "MINHO", "CALL BACK"},
+            {"NAYEON_(TWICE)_'BABY_ANGEL'_Lyrics_(나연_BABY_ANGEL_가사)_[Color_Coded_Han_Rom_Eng]_ShadowByYoongi.mp3", "NAYEON", "BABY ANGEL"},
+            {"SEULGI_(RED_VELVET)_'Praying'_Lyrics_(슬기_Praying_가사)_[Color_Coded_Han_Rom_Eng].mp3", "SEULGI", "Praying"},
+            {"TAEYANG_‘Shoong!_(feat._LISA_of_BLACKPINK)’_Lyrics_(태양_리사_슝_가사)_(Color_Coded_Lyrics).mp3", "TAEYANG", "Shoong! (feat. LISA of BLACKPINK)"},
+            {"TAEYEON_'INVU'_Lyrics_(태연_INVU_가사)_(Color_Coded_Lyrics).mp3", "TAEYEON", "INVU"},
+            {"Came_And_Left_Me_-_MINHO_민호_[Music_Bank]_KBS_WORLD_TV_241108.mp3", "MINHO", "Came And Left Me"},
+            {"Earth, Wind & Fire - September.mp3", "Earth, Wind & Fire", "September"},
         };
+        String[][] titles = {
+            {"Genie (소원을 말해 봐) (Color Coded Lyrics Han/Rom/Eng)", "Genie (소원을 말해 봐)"},
+            {"Genie (소원을 말해 봐) (Color Coded Lyr", "Genie (소원을 말해 봐)"},
+            {"Gee [Eng Sub]", "Gee"},
+            {"Ain't No Mountain High Enough (Remastered)", "Ain't No Mountain High Enough"},
+            {"Song (Part 2)", "Song (Part 2)"},
+        };
+        String[][] tagCases = {
+            // title tag, artist tag, file name, artist, title
+            {"Anthony Hamilton - Charlene", "anthonyhamiltonVEVO", "Anthony_Hamilton_-_Charlene_(Official_HD_Video).mp3", "Anthony Hamilton", "Charlene"},
+            {"Diddy - Last Night ft. Keyshia Cole", "Bad Boy Entertainment", "x.mp3", "Diddy", "Last Night ft. Keyshia Cole"},
+            {"Sosa - Faneto Prod By. Chief Keef", "BigGucci Sosa", "Sosa_-_Faneto.mp3", "Sosa", "Faneto Prod By. Chief Keef"},
+            {"Silk - Meeting In My Bedroom", "Atlantic Records", "x.mp3", "Silk", "Meeting In My Bedroom"},
+            {"Seduction", "Usher", "Seduction.mp3", "Usher", "Seduction"},
+            {"Hold On - Remastered", "Wilson Phillips", "x.mp3", "Wilson Phillips", "Hold On - Remastered"},
+            {"Charlene", "anthonyhamiltonVEVO", "Anthony Hamilton - Charlene.mp3", "Anthony Hamilton", "Charlene"},
+            {"Games", "Chuckii Booker - Topic", "Games.mp3", "Chuckii Booker", "Games"},
+        };
+        java.util.List<String> known = java.util.Arrays.asList("Rio Da Yung OG", "RMC Mike", "Anita Baker", "OG");
+        String[][] inTitle = {
+            {"The Rio Da Yung OG On The Radar Freestyle", "Rio Da Yung OG", "On The Radar Freestyle"},
+            {"Polynesian Rio Da Yung OG", "Rio Da Yung OG", "Polynesian"},
+            {"Whatever It Takes", null, null},
+            {"Rio Da Yung OG", null, null},
+        };
+        for (String[] c : inTitle) {
+            String[] got = com.clockworkblack.yargconverter.core.SongNames.artistInTitle(c[0], known);
+            boolean ok = c[1] == null ? got == null : got != null && got[0].equals(c[1]) && got[1].equals(c[2]);
+            check(ok, "artist in title " + c[0] + " -> " + (got == null ? "none" : "\"" + got[0] + "\" / \"" + got[1] + "\""));
+        }
+        for (String[] c : tagCases) {
+            String[] got = com.clockworkblack.yargconverter.core.SongNames.fromTags(c[0], c[1], c[2]);
+            check(got[0].equals(c[3]) && got[1].equals(c[4]), "tags " + c[1] + " / " + c[0] + " -> \"" + got[0] + "\" / \"" + got[1] + "\"");
+        }
+        for (String[] c : titles) {
+            String got = com.clockworkblack.yargconverter.core.SongNames.cleanTitle(c[0]);
+            check(got.equals(c[1]), "title " + c[0] + " -> \"" + got + "\"");
+        }
         for (String[] c : cases) {
             String[] got = com.clockworkblack.yargconverter.core.SongNames.fromFileName(c[0]);
             check(got[0].equals(c[1]) && got[1].equals(c[2]), c[0] + " -> \"" + got[0] + "\" / \"" + got[1] + "\"");

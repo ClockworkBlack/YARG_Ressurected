@@ -503,6 +503,21 @@ These are machine-made charts. Made from the full mix, expect them to follow the
 and harmony rather than exactly what the guitarist plays; made from the separated guitar they
 follow the guitar itself, as far as the separation got it right.
 
+### Songs whose artist is not known
+
+A file with no artist ("Seduction.mp3") is a guess on MusicBrainz: many songs share a title, and
+the one on the most releases (Bassic's, here) is not always the one in the file, and neither is
+the one nearest in length (Eminem's). On a computer (and in the Colab notebook) the singing
+decides: every timed lyric of that title on LRCLIB, one per artist, is fitted to the separated
+voice, and only one whose words fit clearly better in their own order than shuffled is taken
+(Usher's: 1.68; Eminem's and Alesana's: no fit). Its artist then goes on the song, with that
+artist's album and year. When none fits, the artist is left blank rather than guessed.
+
+Video sites' tags often carry the channel as the artist ("anthonyhamiltonVEVO", "Bad Boy
+Entertainment", "Atlantic Records") and "Artist - Title" as the title: those are put right before
+anything is looked up. When the lyrics found turn out to be another song's, the computer writes
+them from the voice by speech to text instead of leaving the song without vocals.
+
 ### What we learned about the charts
 
 Measured on real songs from their separated instruments ("units like the one before": the

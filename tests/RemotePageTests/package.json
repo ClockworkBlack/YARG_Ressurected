@@ -1,0 +1,11 @@
+{
+  "name": "yarg-remote-page-tests",
+  "private": true,
+  "description": "The phone page (remote.html) in a real browser, against the real phone server",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

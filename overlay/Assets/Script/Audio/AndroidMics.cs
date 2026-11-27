@@ -161,6 +161,36 @@ namespace YARG.Audio
     /// loudness, exactly as for the game's other microphones) each time the game asks for the
     /// singer's input, which it does once a frame during a song.
     /// </summary>
+    /// <summary>Playing a singer's voice back to them, for the microphones the game's sound library does not record.</summary>
+    public static class VoiceMonitor
+    {
+        private static bool _warnedBluetooth;
+
+        /// <summary>
+        /// The "Vocal Monitoring" setting (0 to 1) as a loudness for the voice: 70% is about one and
+        /// a half times as recorded, 100% three times (a phone's mic records quieter than a
+        /// computer's), with loud notes rounded off rather than crackling.
+        /// </summary>
+        public static float Gain(float volume)
+        {
+            volume = Mathf.Clamp01(volume);
+            return 3f * volume * volume;
+        }
+
+        /// <summary>Says once that Bluetooth makes the voice sound late.</summary>
+        public static void WarnBluetooth()
+        {
+            if (_warnedBluetooth)
+            {
+                return;
+            }
+
+            _warnedBluetooth = true;
+            ToastManager.ToastWarning("Your voice is played back over Bluetooth, which adds a delay of its own: " +
+                "it will sound late. Wired or USB headphones keep it in time. (Vocal Monitoring in Settings sets how loud it is; 0 turns it off.)");
+        }
+    }
+
     public sealed class AndroidMicDevice : MicDevice, IVoiceMic
     {
         private const float MIC_HIT_INPUT_THRESHOLD = 25f;
@@ -186,6 +216,11 @@ namespace YARG.Audio
 
         private float? _lastPitch;
         private float? _lastAmplitude;
+
+        // The voice played back ("Vocal Monitoring"); set by the game and by SingerHelp
+        private float _monitorGain;
+        private bool _checkedBluetooth;
+        private int _monitorOutput = -1;
 
         // The new voice analysis (see Vocals/VoiceInput.cs), used while "Improved Singing
         // Detection" is on. With it off, this class listens the way it always did.
@@ -295,6 +330,9 @@ namespace YARG.Audio
                 _nextSample = -1;
                 _openedAt = Time.unscaledTime;
                 _warnedOpen = false;
+                _checkedBluetooth = false;
+                _monitorOutput = -1;
+                ApplyMonitor();
                 _lastPitch = null;
                 _lastAmplitude = null;
                 return true;
@@ -382,6 +420,30 @@ namespace YARG.Audio
                     }
 
                     CalculatePitchAndAmplitude(_chunk);
+                }
+
+                // A howl the player caught and turned down: the setting follows, and the singers are told
+                if (_monitorGain > 0f && Time.frameCount % 15 == 0 && _capture.Call<int>("takeMonitorSqueals") > 0)
+                {
+                    SingerHelp.OnSquealed();
+                }
+
+                // The voice comes out where the game's sound does (Settings > Sound Output)
+                int output = AndroidOutput.DeviceId;
+                if (output != _monitorOutput)
+                {
+                    _monitorOutput = output;
+                    _capture.Call("setMonitorOutput", output);
+                }
+
+                // Bluetooth plays the voice back late; say so once it is playing
+                if (!_checkedBluetooth && _monitorGain > 0f && Time.unscaledTime > _openedAt + 1.5f)
+                {
+                    _checkedBluetooth = true;
+                    if (_capture.Call<bool>("isMonitorOnBluetooth"))
+                    {
+                        VoiceMonitor.WarnBluetooth();
+                    }
                 }
 
                 // Some phones can only listen to one microphone at a time, and quietly feed every
@@ -545,7 +607,38 @@ namespace YARG.Audio
 
         public override void SetMonitoringLevel(float volume)
         {
-            // Hearing your own voice back isn't offered for these microphones.
+            float gain = VoiceMonitor.Gain(volume);
+            if (Mathf.Approximately(gain, _monitorGain))
+            {
+                return;
+            }
+
+            if (gain > 0f && _monitorGain <= 0f)
+            {
+                _checkedBluetooth = false;
+            }
+            _monitorGain = gain;
+            ApplyMonitor();
+        }
+
+        /// <summary>Passes the playback loudness to the recorder, which plays the voice from its own thread.</summary>
+        private void ApplyMonitor()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (_capture == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _capture.Call("setMonitorLevel", _monitorGain);
+            }
+            catch (Exception e)
+            {
+                YargLogger.LogException(e, "Couldn't play the microphone back");
+            }
+#endif
         }
 
         public override SerializedMic Serialize()
