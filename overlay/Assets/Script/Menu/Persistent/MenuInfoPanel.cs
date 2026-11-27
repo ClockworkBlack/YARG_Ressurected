@@ -202,6 +202,7 @@ namespace YARG.Menu.Persistent
             Modifier.RangeCompress => "Pro keys: the highway doesn't shift range during the song.",
             Modifier.OpensToGreens => "Open notes become green notes.",
             Modifier.DeepMusicMode => "Guitar and bass cover the whole song: the guitar adds the vocals and the beat's melody, the bass the drums. For songs made with YARG Converter (they carry these parts); other songs play as normal.",
+            Modifier.TrackMode => "Guitar and bass: on a song converted with real instrument tracks, the tracks your part plays (the guitar, and on rap songs the vocals and melody it follows) cut out when you miss and come back when you hit, as in Guitar Hero. Off, the song plays as one recording. Songs without tracks play as always.",
             Modifier.VocalsChallenge => "Vocals: you have to sing the song. Tighter on pitch, more of each line, and every note counts; breath and noise never do. Stricter from Easy to Expert.",
             _ => string.Empty,
         };

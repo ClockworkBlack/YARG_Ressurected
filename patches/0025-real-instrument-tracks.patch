@@ -59,3 +59,35 @@ index 6d1dfa8..3db06a4 100644
                  IsStemMuted = muted;
              }
          }
+diff --git a/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs b/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
+index e4ca0f0..d86d1da 100644
+--- a/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
++++ b/Assets/Script/Menu/ScoreScreen/ScoreCards/ModifierIcon.cs
+@@ -27,6 +27,13 @@ namespace YARG.Menu.ScoreScreen
+                 return;
+             }
+ 
++            // Track Mode has no drawing either: it borrows the same one as Challenge Mode
++            if (modifier == Modifier.TrackMode)
++            {
++                InitializeCustom(DYNAMIC_HIT_WINDOW);
++                return;
++            }
++
+             // Deep Music Mode has none either: it borrows "infinite front end" (more to play)
+             if (modifier == Modifier.DeepMusicMode)
+             {
+diff --git a/Assets/StreamingAssets/lang/en-US.json b/Assets/StreamingAssets/lang/en-US.json
+index b4580ca..fbf46bd 100644
+--- a/Assets/StreamingAssets/lang/en-US.json
++++ b/Assets/StreamingAssets/lang/en-US.json
+@@ -67,7 +67,8 @@
+             "RangeCompress": "No Range Shifts",
+             "OpensToGreens": "Opens To Greens",
+             "VocalsChallenge": "Challenge Mode",
+-            "DeepMusicMode": "Deep Music Mode"
++            "DeepMusicMode": "Deep Music Mode",
++            "TrackMode": "Track Mode"
+         },
+         "SortAttribute": {
+             "Album": "Album",

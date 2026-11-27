@@ -610,7 +610,14 @@ track: the guitar plays while you hit notes and cuts out when you miss. Songs fr
 can now be made the same way. Convert with **TRACKS** on (Colab notebook) or `--tracks`
 (`batch_convert.py`, `ConvertSong`) and the song folder holds `guitar.ogg`, `bass.ogg`,
 `drums.ogg`, `vocals.ogg` and `keys.ogg` (the piano and every other tuned sound) in place of the
-one recording, plus `yarg-tracks.txt`:
+one recording, plus `yarg-tracks.txt`. The notebook keeps these songs apart: with TRACKS on they
+go to `My Drive/YARG/output-tracks`, and its zips unzip into `YARG/songs/Converted Tracks`.
+
+In the game it is a modifier, **Track Mode**, on the instrument screen before a song (with the
+other modifiers, for guitar and bass). On, the tracks your part plays cut out when you miss.
+Off, the song plays as one recording that never cuts out, so the same songs work both ways.
+
+`yarg-tracks.txt`:
 
 ```
 guitar=guitar,vocals,keys
@@ -627,6 +634,8 @@ back on your next hit. With two players on tracks they share (a singer and a gui
 vocals), a miss takes the track down by that player's share instead of silencing it.
 
 - "Mute On Miss" (Settings > Sound) must not be Off; its default works.
+- Track Mode only changes guitar and bass parts (and Deep Music Mode's). A drummer or singer on
+  a track song still has their own track cut out on a miss, as in any multitrack song.
 - A song with tracks is about three to four times as big (7 MB for a two-minute song).
 - "Guitar Sound On Notes" leaves these songs alone: they have the real thing.
 - Songs converted without tracks, and every other song, play as before.

@@ -14,7 +14,8 @@
 //
 // (coop and rhythm are Deep Music Mode's guitar and bass.) When you miss, those tracks are the
 // ones that cut out, and they come back on your next hit: what you play is what you hear.
-// A song without the file behaves as always.
+// This is the Track Mode modifier, picked on the instrument screen; without it such a song plays
+// as one recording that never cuts out. A song without the file behaves as always.
 
 using System;
 using System.Collections.Generic;
@@ -37,6 +38,8 @@ namespace YARG.Gameplay
         /// <summary>
         /// The tracks this player's part plays, from the song's yarg-tracks.txt, or null when the
         /// song has none (or says nothing about the part): then the part's own track is used.
+        /// Empty (nothing cuts out) for a song with the file when the player has not turned on
+        /// the Track Mode modifier.
         /// </summary>
         public SongStem[] PlayedStems(YargPlayer player)
         {
@@ -54,6 +57,12 @@ namespace YARG.Gameplay
             if (_trackParts == null)
             {
                 return null;
+            }
+
+            // Track Mode off: the song plays as one recording, nothing of it cuts out on a miss
+            if ((player.Profile.CurrentModifiers & Modifier.TrackMode) == 0)
+            {
+                return Array.Empty<SongStem>();
             }
 
             bool deep = (player.Profile.CurrentModifiers & Modifier.DeepMusicMode) != 0;

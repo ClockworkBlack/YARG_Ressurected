@@ -1,0 +1,29 @@
+diff --git a/YARG.Core/Game/Modifier.cs b/YARG.Core/Game/Modifier.cs
+index 72ea39f..d177a2d 100644
+--- a/YARG.Core/Game/Modifier.cs
++++ b/YARG.Core/Game/Modifier.cs
+@@ -28,7 +28,13 @@ namespace YARG.Core.Game
+         // part and bass the rhythm part, where YARG Converter writes charts that add the vocals
+         // and the beat's melody to the guitar, and the drums to the bass (for playing with no
+         // drum or vocal chart). Songs without those parts play as normal.
+-        DeepMusicMode = 1 << 13
++        DeepMusicMode = 1 << 13,
++
++        // YARG Resurrected: real instrument tracks. On a song YARG Converter saved as separate
++        // instrument tracks (with a yarg-tracks.txt), the tracks your part plays cut out when you
++        // miss and come back on the next hit, as in Guitar Hero. Off, such a song plays as one
++        // recording that never cuts out. It does not change the chart.
++        TrackMode = 1 << 14
+     }
+ 
+     public static class ModifierConflicts
+@@ -88,7 +94,8 @@ namespace YARG.Core.Game
+                     Modifier.TapsToHopos   |
+                     Modifier.RangeCompress |
+                     Modifier.OpensToGreens |
+-                    Modifier.DeepMusicMode,
++                    Modifier.DeepMusicMode |
++                    Modifier.TrackMode,
+ 
+                 GameMode.FourLaneDrums or
+                 GameMode.FiveLaneDrums or
